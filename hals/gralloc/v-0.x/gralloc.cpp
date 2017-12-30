@@ -54,6 +54,7 @@ void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
 extern "C" void *nxwrap_create_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
+extern "C" void nxwrap_rmlmk(void *wrap);
 
 #if defined(V3D_VARIANT_v3d)
 static void *gl_dyn_lib;
@@ -76,12 +77,13 @@ static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
+/* yt360: qHD minimum; cert: qHD and above. */
 #if defined(V3D_VARIANT_v3d)
-#define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1080
+#define DATA_PLANE_MAX_WIDTH    2048 /*TODO*/
+#define DATA_PLANE_MAX_HEIGHT   1440
 #else
-#define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1080
+#define DATA_PLANE_MAX_WIDTH    4096
+#define DATA_PLANE_MAX_HEIGHT   2160
 #endif
 
 /* default alignment for gralloc buffers:
@@ -158,35 +160,34 @@ static void gralloc_checkpoint_callback(void *pParam, int param)
 void gralloc_explicit_load(void)
 {
    NEXUS_Error rc;
-   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
    gralloc_load_lib();
 
    rc = BKNI_CreateEvent(&hCheckpointEvent);
    if (rc) {
-      ALOGE("Unable to create checkpoint event");
       hCheckpointEvent = NULL;
       hGraphics = NULL;
-   } else {
-      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
-      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
-      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
-      if (!hGraphics) {
-         ALOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
-      } else {
-         NEXUS_Graphics2DSettings gfxSettings;
-         NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
-         gfxSettings.pollingCheckpoint = false;
-         gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
-         gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
-         rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
-         if ( rc ) {
-            ALOGW("Unable to set Graphics2D Settings");
-            NEXUS_Graphics2D_Close(hGraphics);
-            hGraphics = NULL;
-         }
-      }
    }
+}
+
+pthread_mutex_t *gralloc_g2d_lock(void)
+{
+   return &moduleLock;
+}
+
+void gralloc_g2d_hdl_end(void)
+{
+   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   if (pMutex == NULL) {
+      return;
+   }
+
+   if (hGraphics != NULL) {
+      NEXUS_Graphics2D_Close(hGraphics);
+      hGraphics = NULL;
+   }
+
+   pthread_mutex_unlock(pMutex);
 }
 
 void gralloc_explicit_unload(void)
@@ -201,15 +202,11 @@ void gralloc_explicit_unload(void)
    dlclose(gl_dyn_lib);
 #endif
 
-   if (hGraphics) {
-      NEXUS_Graphics2D_Close(hGraphics);
-      hGraphics = NULL;
-   }
-
    if (hCheckpointEvent) {
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
    }
+   gralloc_g2d_hdl_end();
 }
 
 int gralloc_log_mapper(void)
@@ -227,18 +224,51 @@ int gralloc_boom_check(void)
    return gralloc_boom_chk;
 }
 
+int gralloc_align(void)
+{
+   return gralloc_default_align;
+}
+
 void * gralloc_v3d_get_nexus_client_context(void)
 {
    return nexus_client;
 }
 
-pthread_mutex_t *gralloc_g2d_lock(void)
-{
-   return &moduleLock;
-}
-
 NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 {
+   NEXUS_Error rc;
+   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
+
+   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   if (pMutex == NULL) {
+      hGraphics = NULL;
+      return NULL;
+   }
+   pthread_mutex_lock(pMutex);
+
+   if (hCheckpointEvent == NULL) {
+      hGraphics = NULL;
+      return NULL;
+   }
+   if (hGraphics != NULL) {
+      return hGraphics;
+   } else {
+      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
+      if (hGraphics) {
+         NEXUS_Graphics2DSettings gfxSettings;
+         NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
+         gfxSettings.pollingCheckpoint = false;
+         gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
+         gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
+         rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
+         if (rc) {
+            NEXUS_Graphics2D_Close(hGraphics);
+            hGraphics = NULL;
+         }
+      }
+   }
    return hGraphics;
 }
 
@@ -251,7 +281,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
-    pthread_mutex_t *pMutex = gralloc_g2d_lock();
     bool done=false;
     NEXUS_Addr physAddr;
     void *pMemory = NULL;
@@ -271,12 +300,11 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        goto out;
     }
 
-    if (gfx && event && pMutex) {
+    if (gfx && event) {
         NEXUS_Error errCode;
         size_t pktSize;
         void *pktBuffer, *next;
 
-        pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
@@ -298,22 +326,19 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
                  pPacket->plane.width   = pSharedData->container.width;
                  pPacket->plane.height  = pSharedData->container.height;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
                  BM2MC_PACKET_INIT( pPacket, Blend, false );
                  pPacket->color_blend   = copyColor;
                  pPacket->alpha_blend   = copyAlpha;
                  pPacket->color         = 0;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceColor, false );
                  pPacket->color         = 0x00000000;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
                  BM2MC_PACKET_INIT(pPacket, FillBlit, true);
                  pPacket->rect.x        = 0;
@@ -328,14 +353,13 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
                  if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
                     errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
                     if (errCode) {
-                       ALOGW("Timeout zeroing gralloc buffer");
+                       ALOGW("timeout null'ing gralloc buffer");
                     }
                  }
               }
            }
            break;
         }
-        pthread_mutex_unlock(pMutex);
         if (!errCode) {
            done = true;
         }
@@ -345,12 +369,14 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        bzero(pMemory, pSharedData->container.size);
     }
 
-out_release:
     if (block_handle) {
        if (!lrco) NEXUS_MemoryBlock_UnlockOffset(block_handle);
        if (!lrc)  NEXUS_MemoryBlock_Unlock(block_handle);
     }
 out:
+    if (gfx != NULL) {
+       gralloc_g2d_hdl_end();
+    }
     return;
 }
 
@@ -537,11 +563,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
       break;
       case HAL_PIXEL_FORMAT_YV12:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
-#if defined(V3D_VARIANT_v3d)
-         bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
-#else
          bufferRequirements.format = BEGL_BufferFormat_eYV12;
-#endif
       break;
       case HAL_PIXEL_FORMAT_BLOB:
       case HAL_PIXEL_FORMAT_RGBA_1010102:
@@ -563,11 +585,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
             rc = 0;
          }
       break;
-#if defined(V3D_VARIANT_v3d)
-      case BEGL_BufferFormat_eYV12_Texture:
-#else
       case BEGL_BufferFormat_eYV12:
-#endif
          hnd->oglStride = pSharedData->container.stride;
          hnd->oglFormat = bufferRequirements.format;
          hnd->oglSize   = pSharedData->container.size;
@@ -744,13 +762,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       fmt_set |= GR_NONE;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
-      fmt_set |= GR_YV12;
+      fmt_set |= (GR_YV12|GR_YV12_SW);
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
-      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
-         // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-         // the content, eg decode->encode type of scenario or if texture usage is specified;
-         // yv12 data is produced during lock.
+      if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
+         // cpu will read content, need backing buffer; yv12 plane produced during lock.
+         fmt_set |= (GR_YV12|GR_YV12_SW);
+      } else if (usage & GRALLOC_USAGE_HW_TEXTURE) {
          fmt_set |= GR_YV12;
       } else {
          fmt_set = GR_NONE;
@@ -760,11 +778,25 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.align = gralloc_default_align;
       if ((fmt_set & GR_YV12) == GR_YV12) {
-         ashmem_alloc.size = size;
+         bool skip_alloc = true;
+         if ((fmt_set & GR_YV12_SW) == GR_YV12_SW) {
+            if (w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT) {
+               skip_alloc = false;
+            }
+         }
          if (usage & GRALLOC_USAGE_HW_TEXTURE) {
-            if ((w <= DATA_PLANE_MAX_WIDTH &&
-                 h <= DATA_PLANE_MAX_HEIGHT)) {
-               fmt_set |= GR_HWTEX;
+            fmt_set |= GR_HWTEX;
+            if (skip_alloc) {
+               ashmem_alloc.size = 0; // do not allocate yet.
+            } else {
+               ashmem_alloc.size = pSharedData->container.allocSize;
+            }
+         } else if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) &&
+                    (usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
+            // note that we do not allow pure sw planes larger than max data planes because
+            // we still want to prevent performance bottleneck on composition hw.
+            if (!skip_alloc) {
+               ashmem_alloc.size = pSharedData->container.allocSize;
             }
          }
       } else {
@@ -774,15 +806,26 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          }
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
-      ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret >= 0) {
-         memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
-         ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
-         if (ret < 0) {
-            err = -ENOMEM;
-            goto alloc_failed;
-         } else {
-            pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+      if (ashmem_alloc.size > 0) {
+         ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret >= 0) {
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               /* give another try after attempting a round of rmlmk, if
+                * rmlmk fails (e.g. not enough memory could be freed up),
+                * that's game over.
+                */
+               nxwrap_rmlmk(nxwrap);
+               BKNI_Sleep(5); /* give settling time for rmlmk. */
+               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            }
+            if (ret < 0) {
+               err = -ENOMEM;
+               goto alloc_failed;
+            } else {
+               pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            }
          }
       }
    }
@@ -823,9 +866,20 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.block == 0) {
-      ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      err = -ENOMEM;
-      goto alloc_failed;
+      if (((hnd->fmt_set & GR_YV12) == GR_YV12) &&
+          ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) &&
+          !(hnd->fmt_set & GR_YV12_SW)) {
+         ALOGI("%s: dropping data plane in favor of hw-texture (%dx%d:%x), size %d", __FUNCTION__,
+            w, h, hnd->fmt_set, size);
+         if (!(w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT)) {
+            pSharedData->container.size = 0;
+            pSharedData->container.allocSize = 0;
+         }
+      } else {
+         ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+         err = -ENOMEM;
+         goto alloc_failed;
+      }
    } else if (pSharedData->container.block) {
        gralloc_bzero(pSharedData);
    }

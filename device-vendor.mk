@@ -21,12 +21,15 @@ RELEASE_PREBUILTS := release_prebuilts/user
 else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
+endif
 
 ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so),)
 
 PRODUCT_COPY_FILES += \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so:vendor/lib/mediadrm/libwvdrmengine.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvhidl.so:vendor/lib/libwvhidl.so:widevine
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvdrmengine.so:vendor/lib/mediadrm/libwvdrmengine.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvhidl.so:vendor/lib/libwvhidl.so:widevine
 
 # no prebuilt binaries included, build from source if we have it
 #

@@ -76,3 +76,26 @@ int b_nxclient_socket_listen(void)
    ALOGV("%s: server socket '%s', listen on %d", __FUNCTION__, NXSERVER_SOCKET_NAME, listen_fd);
    return listen_fd;
 }
+
+int b_nxclient_get_client_pid(int client_fd, unsigned *pid)
+{
+   int rc;
+   struct ucred credentials;
+   socklen_t ucred_length = sizeof(struct ucred);
+
+   rc = getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &credentials, &ucred_length);
+   if (rc) {
+      return rc;
+   }
+   *pid = credentials.pid;
+   return 0;
+}
+
+int b_nxclient_socket_accept(int listen_fd)
+{
+   int fd;
+
+   fd = accept(listen_fd, NULL, NULL);
+   return fd;
+}
+

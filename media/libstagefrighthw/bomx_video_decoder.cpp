@@ -37,6 +37,7 @@
  *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
+#define LOG_SAND_TO_HWTEX 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -86,14 +87,17 @@
 #define B_DATA_BUFFER_SIZE_HIGHRES (3*1024*1024)
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
-#define B_NUM_BUFFERS (12)
+#define B_NUM_INPUT_BUFFERS (5)
+#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min/max outstanding input buffers not decoded yet
+#define B_MAX_QUEUED_INPUT_BUFFERS (16)
+#define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
+#define B_INPUT_BUFFERS_FAST_RATE (16)
+#define B_INPUT_BUFFERS_SLOW_RATE (32)
+#define B_MIN_DECODER_WIDTH (128)           // Minimum dimension required by Nexus AVD
+#define B_MIN_DECODER_HEIGHT (64)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
-#define B_MAX_INPUT_TIMEOUT_RETURN (2)
-#define B_MAX_INPUT_COMPLETED_COUNT (5)
-#define B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL (20)  // 50fps - frame interval threshold to speed up returning of input buffers
-#define B_INPUT_RETURN_SPEEDUP_THRES_HEIGHT (2160)  // Minimum height for 4K
 #define B_CHECKPOINT_TIMEOUT (5000)
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
@@ -493,7 +497,7 @@ static void BOMX_VideoDecoder_StreamChangedEvent(void *pParam)
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-    ALOGV("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
+    ALOGV("%s", __FUNCTION__);
     pDecoder->InputBufferTimeoutCallback();
 }
 
@@ -996,6 +1000,8 @@ static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int heigh
 static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer *pFrameBuffer)
 {
    if (pFrameBuffer->hStripedSurface) {
+      NEXUS_Platform_SetSharedHandle(pFrameBuffer->hStripedSurface, false);
+      ALOGI_IF(LOG_SAND_TO_HWTEX, "[sand2tex-del]:ss:%p", pFrameBuffer->hStripedSurface);
       NEXUS_StripedSurface_Destroy(pFrameBuffer->hStripedSurface);
       pFrameBuffer->hStripedSurface = NULL;
    }
@@ -1059,6 +1065,84 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    return true;
 }
 
+BOMX_InputDataTracker::BOMX_InputDataTracker()
+{
+    Reset();
+}
+
+void BOMX_InputDataTracker::AddEntry(unsigned pts)
+{
+    m_ptsTracker.push_back(pts);
+    ++m_numInputBuffers;
+}
+
+size_t BOMX_InputDataTracker::GetNumEntries()
+{
+    return m_ptsTracker.size();
+}
+
+// Evaluates to true if (a < b)
+// Very simple unsigned comparison taking into account possible
+// wrap-around. The assumption is that no consecutive frames
+// will have a delta timestamp value larger than UINT_MAX/2
+#define UNSIGNED_LESS_THAN(a, b) ( ((b) - (a)) <  ((a) - (b)) )
+
+void BOMX_InputDataTracker::SetLastReturnedPts(unsigned pts)
+{
+    unsigned erasedFrames = 0;
+
+    List<unsigned>::iterator it = m_ptsTracker.begin();
+    while ( it != m_ptsTracker.end() ) {
+       if ( *it == pts || UNSIGNED_LESS_THAN(*it, pts) ) {
+          it = m_ptsTracker.erase(it);
+          ++erasedFrames;
+       } else {
+          ++it;
+       }
+    }
+
+    if (erasedFrames >= 2) {
+      ALOGV("Erased more than one frame:%u, pts:%u, size:%zu",
+          erasedFrames, pts, m_ptsTracker.size());
+      m_numNotRetBuffers += erasedFrames - 1;
+    }
+    ++m_numRetBuffers;
+}
+
+unsigned BOMX_InputDataTracker::GetMaxDeltaPts()
+{
+    unsigned smallest, largest;
+
+    if (m_ptsTracker.empty())
+      return 0;
+
+    List<unsigned>::iterator it = m_ptsTracker.begin();
+    smallest = largest = *it;
+    for (; it != m_ptsTracker.end(); ++it) {
+        if (*it != smallest && UNSIGNED_LESS_THAN(*it, smallest) ) {
+            smallest = *it;
+        } else if (*it != largest && UNSIGNED_LESS_THAN(largest, *it)) {
+            largest = *it;
+        }
+    }
+    return (largest - smallest);
+}
+
+void BOMX_InputDataTracker::PrintStats()
+{
+    if ( m_numInputBuffers > 0 )
+        ALOGD("id stats ib:%zu rb:%zu nrb:%zu", m_numInputBuffers, m_numRetBuffers, m_numNotRetBuffers);
+}
+
+void BOMX_InputDataTracker::Reset()
+{
+    m_ptsTracker.clear();
+    m_numInputBuffers = 0;
+    m_numRetBuffers = 0;
+    m_numNotRetBuffers = 0;
+}
+
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -1093,7 +1177,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_submittedDescriptors(0),
     m_maxDescriptorsPerBuffer(0),
     m_pPlaypumpDescList(NULL),
-    m_completedInputBuffers(0),
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
@@ -1228,7 +1311,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     SetRole(m_pRoles[0].name);
     m_maxDescriptorsPerBuffer = B_MAX_DESCRIPTORS_PER_BUFFER(B_DATA_BUFFER_SIZE_DEFAULT);
     m_numVideoPorts = 0;
-    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE_DEFAULT, false, 0, &portDefs, portFormats, numRoles);
+    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_INPUT_BUFFERS, B_DATA_BUFFER_SIZE_DEFAULT, false, 0, &portDefs, portFormats, numRoles);
     if ( NULL == m_pVideoPorts[0] )
     {
         ALOGW("Unable to create video input port");
@@ -2531,13 +2614,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
             m_pVideoPorts[1]->GetDefinition(&portDef);
-            // Validate portdef width/height against their counterpart platform maximum values
+            // Validate portdef width/height against their counterpart platform min/max values
             if ((portDef.format.video.nFrameWidth > m_maxDecoderWidth)
                     || (portDef.format.video.nFrameHeight > m_maxDecoderHeight))
             {
                 ALOGE("Video stream exceeds decoder capabilities, w:%u,h:%u,maxW:%u,maxH:%u",
                         portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
                         m_maxDecoderWidth, m_maxDecoderHeight);
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            if ((portDef.format.video.nFrameWidth < B_MIN_DECODER_WIDTH)
+                    || (portDef.format.video.nFrameHeight < B_MIN_DECODER_HEIGHT))
+            {
+                ALOGE("Video stream doesn't have minimum required dimensions w:%u,h:%u,minW:%u,minH:%u",
+                        portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
+                        B_MIN_DECODER_WIDTH, B_MIN_DECODER_HEIGHT);
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
 
@@ -2789,13 +2880,14 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 // Exclude early frame drops from total tally
                 ALOGD("stats df:%zu edf:%zu mcdf:%zu",
                    m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
+                m_inputDataTracker.PrintStats();
             }
 
             NEXUS_Playpump_Stop(m_hPlaypump);
             NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
 
             m_submittedDescriptors = 0;
-            m_completedInputBuffers = 0;
+            m_inputDataTracker.Reset();
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
@@ -2804,7 +2896,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_displayFrameAvailable = false;
             B_Mutex_Unlock(m_hDisplayMutex);
             m_pBufferTracker->Flush();
-            InputBufferCounterReset();
             NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
 
@@ -2820,6 +2911,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
+            CancelTimerId(m_inputBuffersTimerId);
             CancelTimerId(m_formatChangeTimerId);
             m_waitingForStc = false;
             if (m_stcResumePending) {
@@ -2944,10 +3036,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_eosReceived = false;
                 m_ptsReceived = false;
                 m_pBufferTracker->Flush();
-                InputBufferCounterReset();
                 ReturnPortBuffers(m_pVideoPorts[0]);
                 m_submittedDescriptors = 0;
-                m_completedInputBuffers = 0;
+                m_inputDataTracker.PrintStats();
+                m_inputDataTracker.Reset();
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
@@ -3076,7 +3168,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                    NEXUS_SimpleVideoDecoder_SetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
                 }
                 m_submittedDescriptors = 0;
-                m_completedInputBuffers = 0;
+                m_inputDataTracker.PrintStats();
+                m_inputDataTracker.Reset();
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
                 if ( errCode )
                 {
@@ -3141,7 +3234,6 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
-        CancelTimerId(m_inputBuffersTimerId);
         CancelTimerId(m_formatChangeTimerId);
 
         // Return all pending buffers to the client
@@ -3364,9 +3456,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 NEXUS_Playpump_Flush(m_hPlaypump);
                 m_eosPending = false;
                 m_ptsReceived = false;
-                PlaypumpEvent();
+                ReturnInputBuffers(InputReturnMode_eAll);
                 ALOG_ASSERT(m_submittedDescriptors == 0);
-                ReturnInputBuffers(0, InputReturnMode_eAll);
                 m_configBufferState = ConfigBufferState_eFlushed;
 
                 m_inputFlushing = false;
@@ -3950,7 +4041,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
     android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                  &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
-    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat, pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
+    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate,
+             ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat,
+             pPort->GetDefinition()->format.video.nStride,
+             pPort->GetDefinition()->format.video.nSliceHeight),
+             (OMX_U8 *)pPrivateHandle, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
@@ -4277,7 +4372,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             {
                 // Drop the buffer in the decoder
                 ALOGV("Dropping frame %u on FreeBuffer", pFrameBuffer->frameStatus.serialNumber);
-                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
+                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
                 ReturnDecodedFrames();
             }
             else if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered ||
@@ -4583,8 +4678,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     desc = m_pPlaypumpDescList;
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
+    --m_AvailInputBuffers;
 
-    ALOGV("%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers-1);
+    ALOGV("%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers);
     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen, m_AvailInputBuffers);
 
     if ( m_pInputFile )
@@ -4604,6 +4700,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
 
         ALOGV("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen);
+        m_inputBuffersTimerId = StartTimer(10,
+            BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
 
         err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen);
         if ( err != OMX_ErrorNone )
@@ -4612,7 +4710,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
 
         // Config buffers aren't sent individually, they are just appended above and sent with the next frame.  Queue this buffer with no descriptors so it will be returned immediately.
-        InputBufferNew();
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
         if ( err )
         {
@@ -4728,8 +4825,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
             ALOG_ASSERT(numConsumed == numRequested);
             pInfo->numDescriptors += numRequested;
             m_submittedDescriptors += numConsumed;
+            m_inputDataTracker.AddEntry(pInfo->pts);
         }
-        InputBufferNew();
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
         if ( err )
         {
@@ -4739,7 +4836,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     else
     {
         // Mark the empty frame as queued.
-        InputBufferNew();
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
         if ( err )
         {
@@ -4826,7 +4922,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
-        bool dropFrame = true;
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
@@ -4839,32 +4934,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // Any state other than delivered and we've done something horribly wrong.
             ALOG_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
-            // Need to check if this buffer is the same as the frame waiting to be displayed
-            B_Mutex_Lock(m_hDisplayMutex);
-            if (m_displayFrameAvailable && pFrameBuffer->frameStatus.serialNumber == m_frameSerial) {
-                ALOGV("%s: Don't drop frame ready to be displayed!, serial:%d", __FUNCTION__, m_frameSerial);
-                dropFrame = false;
-            }
-            B_Mutex_Unlock(m_hDisplayMutex);
-            if (dropFrame) {
-                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
-                switch ( pInfo->type )
-                {
-                case BOMX_VideoDecoderOutputBufferType_eStandard:
-                    ALOGV("Standard Buffer - Drop");
-                    break;
-                case BOMX_VideoDecoderOutputBufferType_eNative:
-                    ALOGV("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber);
-                    break;
-                case BOMX_VideoDecoderOutputBufferType_eMetadata:
-                    ALOGV("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber);
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
-        if (dropFrame) {
+            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
             pFrameBuffer->pBufferInfo = NULL;
             pFrameBuffer->pPrivateHandle = NULL;
         }
@@ -4921,7 +4991,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
     m_pVideoPorts[0]->GetDefinition(&portDef);
     // Check if we have to recalculate the number of input buffers
     if (portDef.nBufferSize > B_DATA_BUFFER_SIZE_HIGHRES) {
-        size_t maxInputBuffMem = B_DATA_BUFFER_SIZE_HIGHRES * B_NUM_BUFFERS;
+        size_t maxInputBuffMem = B_DATA_BUFFER_SIZE_HIGHRES * B_NUM_INPUT_BUFFERS;
         size_t newBufferCount = maxInputBuffMem / portDef.nBufferSize;
         ALOGV("%s: setting input buffer count to:%zu", __FUNCTION__, newBufferCount);
         if (newBufferCount < 2)
@@ -4955,17 +5025,19 @@ OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
     return OMX_ErrorNone;
 }
 
-unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
+void BOMX_VideoDecoder::ProcessFifoData(bool *pendingData)
 {
     NEXUS_PlaypumpStatus playpumpStatus;
-    unsigned numComplete, res = 0;
+    unsigned numComplete;
+    NEXUS_VideoDecoderFifoStatus fifoStatus;
 
-    CancelTimerId(m_playpumpTimerId);
+    if (pendingData != NULL)
+        *pendingData = false;
     if ( NULL == m_hPlaypump )
     {
         // This can happen with rapid startup/shutdown sequences such as random action tests
         ALOGW("Playpump event received, but playpump has been closed.");
-        return 0;
+        return;
     }
 
     NEXUS_Playpump_GetStatus(m_hPlaypump, &playpumpStatus);
@@ -4975,7 +5047,6 @@ unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
 
         if ( m_hSimpleVideoDecoder && !m_inputFlushing )
         {
-            NEXUS_VideoDecoderFifoStatus fifoStatus;
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_GetFifoStatus(m_hSimpleVideoDecoder, &fifoStatus);
             if ( NEXUS_SUCCESS == errCode && fifoStatus.pts.valid )
             {
@@ -4986,7 +5057,7 @@ unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
         numComplete = m_submittedDescriptors - playpumpStatus.descFifoDepth;
 
         for (pBuffer = m_pVideoPorts[0]->GetBuffer();
-             (pBuffer != NULL) && (bTimeout || (pBuffer != pFifoHead));
+             (pBuffer != NULL);
              pBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer))
         {
             BOMX_VideoDecoderInputBufferInfo *pInfo =
@@ -5000,8 +5071,6 @@ unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
                 ALOG_ASSERT(m_submittedDescriptors >= pInfo->numDescriptors);
                 m_submittedDescriptors -= pInfo->numDescriptors;
                 pInfo->complete = true;
-                ++m_completedInputBuffers;
-                ++res;
             }
             else
             {
@@ -5010,141 +5079,102 @@ unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
             }
         }
 
+        ALOGV("%s: submitted:%u pfifo:%zu decoder fifo ts [%d %u %u], queued:%zu",
+           __FUNCTION__, m_submittedDescriptors, playpumpStatus.descFifoDepth,
+            fifoStatus.pts.valid, fifoStatus.pts.leastRecent, fifoStatus.pts.mostRecent,
+            m_inputDataTracker.GetNumEntries());
         // If there are still input buffers waiting in rave, set the timer to try again later.
-        if ( pFifoHead )
-        {
-            ALOGV("Data still pending in RAVE.  Starting Timer.");
-            m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
-        }
-    }
-
-    return res;
-}
-
-void BOMX_VideoDecoder::InputBufferNew()
-{
-    ALOG_ASSERT(m_AvailInputBuffers > 0);
-    --m_AvailInputBuffers;
-    if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: reached zero input buffers, m_inputBuffersTimerId:%p rate:%s",
-              __FUNCTION__, m_inputBuffersTimerId, BOMX_VideoDecoder_GetFrameString(m_frameRate));
-        CancelTimerId(m_inputBuffersTimerId);
-        m_inputBuffersTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate)*2, BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
+        if ( pFifoHead && (pendingData != NULL))
+            *pendingData = true;
     }
 }
 
-void BOMX_VideoDecoder::InputBufferReturned()
+void BOMX_VideoDecoder::PlaypumpEvent()
 {
-    unsigned totalBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
-    CancelTimerId(m_inputBuffersTimerId);
-    ++m_AvailInputBuffers;
-    --m_completedInputBuffers;
-    ALOG_ASSERT(m_AvailInputBuffers <= totalBuffers && m_completedInputBuffers <= totalBuffers);
+    bool pendingData;
+
+    CancelTimerId(m_playpumpTimerId);
+    ProcessFifoData(&pendingData);
+    if ( pendingData )
+    {
+        ALOGV("%s: Data still pending in RAVE.  Starting Timer.", __FUNCTION__);
+        m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate),
+            BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
+    }
+
+    ReturnInputBuffers();
 }
 
-void BOMX_VideoDecoder::InputBufferCounterReset()
+void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
 {
-    CancelTimerId(m_inputBuffersTimerId);
-    m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
-}
-
-uint32_t BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode)
-{
-    uint32_t count = 0, timeoutCount = 0;
+    unsigned count = 0, maxCount = 0;
     BOMX_VideoDecoderInputBufferInfo *pInfo;
-    BOMX_Buffer *pNextBuffer, *pReturnBuffer = NULL, *pBuffer = m_pVideoPorts[0]->GetBuffer();
-    while ( pBuffer != NULL )
+    BOMX_Buffer *pNextBuffer = NULL, *pBuffer = m_pVideoPorts[0]->GetBuffer();
+    unsigned queuedInputBuffers = m_inputDataTracker.GetNumEntries();
+    unsigned ptsDiff = m_inputDataTracker.GetMaxDeltaPts();
+
+    CancelTimerId(m_inputBuffersTimerId);
+
+    // Determine the maximum number of buffers to return as follows:
+    // 1. When we haven't reached B_MIN_QUEUED_INPUT_BUFFERS, return as many buffers as possible
+    // 2. Return buffers at a slower pace otherwise (maximum 1) if we haven't reached the minimum
+    //    pts delta criteria (B_MIN_PTS_DIFF) or if we haven't reached B_MAX_QUEUED_INPUT_BUFFERS
+    //    and the framework hasn't had any available buffer during a "B_INPUT_BUFFERS_SLOW_RATE" period
+    if ( mode != InputReturnMode_eAll )
+    {
+        bool minBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MIN_QUEUED_INPUT_BUFFERS;
+        bool maxBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MAX_QUEUED_INPUT_BUFFERS;
+        bool minPtsDiffCond = ptsDiff >= B_MIN_QUEUED_PTS_DIFF;
+        if ( !minBuffersCond )
+          maxCount = B_MIN_QUEUED_INPUT_BUFFERS - (queuedInputBuffers + m_AvailInputBuffers);
+        else if ( !minPtsDiffCond )
+          maxCount = 1;
+        else if ( !maxBuffersCond && (m_AvailInputBuffers == 0) && (mode == InputReturnMode_eTimeout) )
+          maxCount = 1;
+    }
+
+    ProcessFifoData();
+    while ( pBuffer != NULL && (mode == InputReturnMode_eAll || count < maxCount) )
     {
         pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
         ALOG_ASSERT(NULL != pInfo);
         if ( !pInfo->complete )
         {
-            ALOGV("Buffer:%p not completed yet", pBuffer);
+            ALOGV("Buffer:%p (ts:%u) not completed yet", pBuffer, pInfo->pts);
             break;
         }
 
-        if ( BOMX_VideoDecoder_GetFrameInterval(m_frameRate) <= B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL &&
-             m_outputHeight >= B_INPUT_RETURN_SPEEDUP_THRES_HEIGHT &&
-             m_completedInputBuffers > B_MAX_INPUT_COMPLETED_COUNT &&
-             !m_tunnelMode )
-        {
-            pReturnBuffer = pBuffer;
-        }
-        else if ( mode != InputReturnMode_eTimestamp || pReturnBuffer == NULL )
-        {
-            if ( mode == InputReturnMode_eTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
-            {
-                break;
-            }
-
-            pReturnBuffer = pBuffer;
-        }
-        else if ( *pBuffer->GetTimestamp() == decodeTs )
-        {
-            pReturnBuffer = pBuffer;
-            break;
-        }
-
-        pBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer);
+        pNextBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer);
+        ReturnInputPortBuffer(pBuffer);
+        ++count;
+        pBuffer = pNextBuffer;
     }
 
-    if ( pReturnBuffer != NULL )
+    // Re-schedule itself at a fast/slow rate depending on the input buffers criteria
+    if ( ((queuedInputBuffers + m_AvailInputBuffers) < B_MIN_QUEUED_INPUT_BUFFERS)
+         || (ptsDiff < B_MIN_QUEUED_PTS_DIFF) )
     {
-        pBuffer = m_pVideoPorts[0]->GetBuffer();
-        while ( pBuffer != pReturnBuffer )
-        {
-            pNextBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer);
-
-            // If the buffer has codec config flags it shouldn't be added
-            // to count. These buffers don't have a corresponding output frame
-            // so it's ok to return them as soon as possible.
-            if ( ReturnInputPortBuffer(pBuffer) )
-            {
-                ++count;
-            }
-
-            pBuffer = pNextBuffer;
-        }
-
-        // The last returned buffer
-        if ( ReturnInputPortBuffer(pBuffer) )
-        {
-            ++count;
-        }
+        m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_FAST_RATE,
+                                BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
+    } else if ( m_AvailInputBuffers == 0 ) {
+        m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_SLOW_RATE,
+                                BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
     }
 
-    ALOGV("%s: returned %u buffers, %u available, mode %u", __FUNCTION__, count, m_AvailInputBuffers, mode);
-    return count;
+    ALOGV("%s: returned %u buffers, %u max, %u available, %u queued, ptsDiff %u, mode %u",
+        __FUNCTION__, count, maxCount, m_AvailInputBuffers, queuedInputBuffers, ptsDiff, mode);
 }
 
-bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
+void BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
 {
     ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
-    InputBufferReturned();
-
-    // If the buffer has codec config flags it shouldn't be added
-    // to count. These buffers don't have a corresponding output frame
-    // so it's ok to return them as soon as possible.
-    OMX_BUFFERHEADERTYPE *pHeader = pBuffer->GetHeader();
-    ALOG_ASSERT(pHeader != NULL);
-    return (!(pHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG ));
+    ++m_AvailInputBuffers;
 }
 
 void BOMX_VideoDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
-    if ( ReturnInputBuffers(0, InputReturnMode_eTimeout) == 0 )
-    {
-        // Retry returning the input buffers again by marking all the
-        // input buffers in RAVE as completed.
-        if ( PlaypumpEvent(true) == 0 )
-        {
-            ALOGV("Keep retrying to return input buffers after timeout");
-
-            CancelTimerId(m_inputBuffersTimerId);
-            m_inputBuffersTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
-        }
-    }
+    ReturnInputBuffers(InputReturnMode_eTimeout);
 }
 
 void BOMX_VideoDecoder::FormatChangeTimeoutCallback()
@@ -5817,11 +5847,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 EstimateFrameRate(omxHeader.nTimeStamp);
 
                 // Use this event to return input buffers
-                ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
+                m_inputDataTracker.SetLastReturnedPts(status.pts);
+                ReturnInputBuffers();
             } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
                 // when we're in the process of dropping frames to reach the start pts, return as many
                 // input buffers as possible to speed up the task
-                ReturnInputBuffers(0, InputReturnMode_eAll);
+                ReturnInputBuffers(InputReturnMode_eAll);
             }
 
             if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
@@ -5873,6 +5904,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReady;
+                    pBuffer->display = false;
                     BLST_Q_INSERT_TAIL(&m_frameBufferAllocList, pBuffer, node);
                     pFrameStatus++;
                     numFrames--;
@@ -6059,7 +6091,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
                         pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                        if ( NULL == pBuffer->hStripedSurface )
+                        if ( pBuffer->hStripedSurface )
+                        {
+                            NEXUS_Platform_SetSharedHandle(pBuffer->hStripedSurface, true);
+                        }
+                        else
                         {
                             (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
                         }
@@ -6150,17 +6186,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.eColorFormat, m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             pInfo->typeInfo.native.pSharedData->videoFrame.status = pBuffer->frameStatus;
                             pBuffer->pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
-                            rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                            if ( 0 == rc )
-                            {
-                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
-                                pInfo->typeInfo.native.pSharedData->videoFrame.destripeComplete = 0;
-                                private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                            }
-                            else
-                            {
-                                ALOGW("Timeout locking video frame");
-                            }
+                            pInfo->typeInfo.native.pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
                         }
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eMetadata:
@@ -6182,50 +6208,57 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
-                                // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.
-                                pSharedData->videoFrame.hStripedSurface = NULL;
-
-                                if ( pBuffer->hStripedSurface )
+                                if (pBuffer->hStripedSurface)
                                 {
-                                    int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                                    if ( err )
-                                    {
-                                        ALOGW("Timeout locking video frame in metadata mode - %d", err);
-                                    }
-                                    else
-                                    {
-                                        nsecs_t tStart;
-                                        if (m_showDestripeDelay) { tStart = systemTime(SYSTEM_TIME_MONOTONIC); }
-                                        Unlock();
-                                        OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
-                                        Lock();
-                                        if (m_showDestripeDelay) { ALOGI("%lux%lu took %dms", pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight, toMillisecondTimeoutDelay(tStart, systemTime(SYSTEM_TIME_MONOTONIC))); }
+                                    NEXUS_StripedSurfaceCreateSettings cs;
+                                    NEXUS_Addr csAddr, lsAddr;
+                                    unsigned current = pSharedData->container.vBackingUpdated; //TODO: wrap?
+                                    NEXUS_StripedSurface_GetCreateSettings(pBuffer->hStripedSurface, &cs);
+                                    NEXUS_MemoryBlock_LockOffset(cs.lumaBuffer, &lsAddr);
+                                    NEXUS_MemoryBlock_UnlockOffset(cs.lumaBuffer);
+                                    NEXUS_MemoryBlock_LockOffset(cs.chromaBuffer, &csAddr);
+                                    NEXUS_MemoryBlock_UnlockOffset(cs.chromaBuffer);
 
-                                        if ( res != OMX_ErrorNone )
-                                        {
-                                            ALOGE("Unable to destripe to YV12 - %d", res);
-                                            (void)BOMX_ERR_TRACE(res);
-                                            destripedSuccess = false;
-                                            pSharedData->videoFrame.destripeComplete = true;
-                                        }
-                                        else
-                                        {
-                                            if ( NULL != m_pOutputFile && !m_secureDecoder )
-                                            {
-                                                void *pDestripedMemory;
-                                                NEXUS_MemoryBlockHandle handle = (NEXUS_MemoryBlockHandle)pSharedData->container.block;
-                                                if ((NEXUS_MemoryBlock_Lock(handle, &pDestripedMemory) == NEXUS_SUCCESS) && (pDestripedMemory != NULL))
-                                                {
-                                                    unsigned ySize = pSharedData->container.stride * pSharedData->container.height;
-                                                    unsigned cSize = ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1)));
-                                                    fwrite(pDestripedMemory, ySize + cSize * 2, 1, m_pOutputFile);
-                                                    NEXUS_MemoryBlock_Unlock(handle);
-                                                }
-                                            }
-                                        }
+                                    NEXUS_Platform_SetSharedHandle(cs.lumaBuffer, true);
+                                    NEXUS_Platform_SetSharedHandle(cs.chromaBuffer, true);
 
-                                        private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                                    }
+                                    pSharedData->container.vBackingUpdated =
+                                       (pSharedData->container.vLumaAddr     != lsAddr ||
+                                        pSharedData->container.vLumaOffset   != cs.lumaBufferOffset ||
+                                        pSharedData->container.vChromaAddr   != csAddr ||
+                                        pSharedData->container.vChromaOffset != cs.chromaBufferOffset) ? ++current : current;
+                                    pSharedData->container.vLumaBlock     = cs.lumaBuffer;
+                                    pSharedData->container.vLumaAddr      = lsAddr;
+                                    pSharedData->container.vLumaOffset    = cs.lumaBufferOffset;
+                                    pSharedData->container.vChromaBlock   = cs.chromaBuffer;
+                                    pSharedData->container.vChromaAddr    = csAddr;
+                                    pSharedData->container.vChromaOffset  = cs.chromaBufferOffset;
+                                    pSharedData->container.vsWidth        = cs.stripedWidth;
+                                    pSharedData->container.vsLumaHeight   = cs.lumaStripedHeight;
+                                    pSharedData->container.vsChromaHeight = cs.chromaStripedHeight;
+                                    pSharedData->container.vDepth         = (cs.lumaPixelFormat == NEXUS_PixelFormat_eY10) ? 10 : 8;
+                                    pSharedData->container.vImageWidth    = cs.imageWidth;
+                                    pSharedData->container.vImageHeight   = cs.imageHeight;
+                                    pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
+
+                                    ALOGI_IF(LOG_SAND_TO_HWTEX,
+                                       "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit",
+                                       pBuffer->frameStatus.serialNumber,
+                                       pBuffer->pPrivateHandle,
+                                       pBuffer->hStripedSurface,
+                                       pSharedData->container.vImageWidth,
+                                       pSharedData->container.vImageHeight,
+                                       pSharedData->container.vBackingUpdated,
+                                       pSharedData->container.vLumaAddr,
+                                       pSharedData->container.vLumaOffset,
+                                       pSharedData->container.vLumaBlock,
+                                       pSharedData->container.vChromaAddr,
+                                       pSharedData->container.vChromaOffset,
+                                       pSharedData->container.vChromaBlock,
+                                       pSharedData->container.vsWidth,
+                                       pSharedData->container.vsLumaHeight,
+                                       pSharedData->container.vsChromaHeight,
+                                       pSharedData->container.vDepth);
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
@@ -6249,7 +6282,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
-                    ReturnInputBuffers(pHeader->nTimeStamp, InputReturnMode_eTimestamp);
+                    m_inputDataTracker.SetLastReturnedPts(pBuffer->frameStatus.pts);
+                    ReturnInputBuffers();
                     ALOG_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )
@@ -6269,6 +6303,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 break;
             }
         }
+    } else {
+        ALOGV("%s: no client output buffers available", __FUNCTION__);
     }
 }
 
@@ -6324,8 +6360,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         {
             switch ( pBuffer->state )
             {
-            case BOMX_VideoDecoderFrameBufferState_eDisplayReady:
-            case BOMX_VideoDecoderFrameBufferState_eDropReady:
+            case BOMX_VideoDecoderFrameBufferState_eDelivered:
+            case BOMX_VideoDecoderFrameBufferState_eReturned:
                 pEnd = pBuffer;
                break;
             default:
@@ -6350,47 +6386,34 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 if ( m_outputFlushing )
                 {
                     ALOGW("Dropping outstanding frame %u still owned by client - flushing", pBuffer->frameStatus.serialNumber);
+                    returnSettings[numFrames].recycle = true;
+                    returnSettings[numFrames].display = false;
+                    pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
                 }
                 else
                 {
-                    ALOGW("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber);
+                    // Leave frame outstanding
+                    returnSettings[numFrames].recycle = false;
+                    returnSettings[numFrames].display = pBuffer->display;
                 }
-                pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
-                returnSettings[numFrames].display = false;
             }
             else
             {
                 PSHARED_DATA pSharedData = NULL;
                 void *pMemory;
-                // Display only the last frame we're returning if the app is falling behind.
-                if ( pNext == pEnd )
+
+                returnSettings[numFrames].display = pBuffer->display;
+                returnSettings[numFrames].recycle = true;
+
+                if ( m_outputFlushing )
                 {
-                    returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
-                    if (!returnSettings[numFrames].display)
-                    {
-                        if ( m_outputFlushing )
-                        {
-                            ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
-                        }
-                        else
-                        {
-                            ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
-                                  pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
-                        }
-                    }
+                    ALOGV("Recycling outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
                 }
                 else
                 {
-                    returnSettings[numFrames].display = false;
-                    if ( m_outputFlushing )
-                    {
-                        ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
-                    }
-                    else
-                    {
-                        ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
-                    }
+                    ALOGV("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
                 }
+
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
                 {
                     BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
@@ -6398,21 +6421,13 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     {
                         pSharedData = (PSHARED_DATA)pMemory;
                     }
-                    if ( pSharedData && pSharedData->videoFrame.hStripedSurface )
+                    if ( pSharedData && pSharedData->container.stripedSurface )
                     {
                         NEXUS_StripedSurfaceHandle hStripedSurface;
                         int rc;
 
-                        // Lock the video frame to try and avoid problems with gralloc still using this handle.
-                        // If we timeout, we still have to return the frame to nexus so too bad...
-
-                        rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 250);
-                        hStripedSurface = pSharedData->videoFrame.hStripedSurface;
-                        pSharedData->videoFrame.hStripedSurface = NULL;
-                        if ( 0 == rc )
-                        {
-                            private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                        }
+                        hStripedSurface = pSharedData->container.stripedSurface;
+                        pSharedData->container.stripedSurface = NULL;
                     }
                     BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                 }
@@ -6435,7 +6450,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
             }
             for (uint32_t j=0; j < numFrames; ++j) {
-                if (!returnSettings[j].display) {
+                if (!returnSettings[j].display && returnSettings[j].recycle) {
                     ++m_droppedFrames;
                     if (m_startTime != -1) {
                         if (currentPlayTime < m_earlyDropThresholdMs) {
@@ -6729,11 +6744,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
         {
             // Mark buffer as ready to display
-            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDisplayReady;
-            // Break linkage between omx output buffer and frame buffer
-            pFrameBuffer->pPrivateHandle = NULL;
-            pFrameBuffer->pBufferInfo->pFrameBuffer = NULL;
-            pFrameBuffer->pBufferInfo = NULL;
+            pFrameBuffer->display = true;
             // Return frames to nexus decoder
             ReturnDecodedFrames();
             // We just returned something to nexus, kick off the output frame thread

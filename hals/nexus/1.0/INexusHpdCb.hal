@@ -1,0 +1,6 @@
+package bcm.hardware.nexus@1.0;
+
+interface INexusHpdCb {
+    oneway onHpd(bool connected);
+};
+

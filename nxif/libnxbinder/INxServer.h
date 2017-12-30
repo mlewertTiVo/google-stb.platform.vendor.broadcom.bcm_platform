@@ -38,6 +38,8 @@ public:
 
    virtual status_t regDspEvt(const sp<INxDspEvtSrc> &listener) = 0;
    virtual status_t unregDspEvt(const sp<INxDspEvtSrc> &listener) = 0;
+
+   virtual void rmlmk(uint64_t client) = 0;
 };
 
 class BnNxServer: public BnInterface<INxServer>

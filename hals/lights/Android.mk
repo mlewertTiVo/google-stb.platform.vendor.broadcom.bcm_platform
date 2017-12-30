@@ -15,17 +15,10 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxbinder
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
-LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
-
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
-LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap libbinder
+LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
 
 LOCAL_SRC_FILES := wifi-lights.cpp
 LOCAL_MODULE := lights.$(TARGET_BOARD_PLATFORM)

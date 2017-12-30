@@ -43,6 +43,7 @@
 #include <fcntl.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <cutils/atomic.h>
 
 #include "bomx_audio_decoder.h"
 #include "nexus_platform.h"
@@ -1130,10 +1131,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
             }
             if ((int)nParamIndex == OMX_IndexParamAudioAndroidAc3) {
                 pAc3->nChannels = nChannels;
-                pAc3->nSampleRate = decStatus.sampleRate;
+                pAc3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             } else {
                 pEAc3->nChannels = nChannels;
-                pEAc3->nSampleRate = decStatus.sampleRate;
+                pEAc3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             }
             return OMX_ErrorNone;
         }
@@ -1171,7 +1172,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
                 pMp3->eChannelMode = OMX_AUDIO_ChannelModeMono;
                 break;
             }
-            pMp3->nSampleRate = decStatus.sampleRate;
+            pMp3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             pMp3->nAudioBandWidth = 0;
             if ( decStatus.sampleRate >= 32000 )
             {
@@ -1235,7 +1236,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
                 pAac->nFrameLength = 0;
                 pAac->nAACtools = 0;
                 pAac->nAACERtools = 0;
-                pAac->nSampleRate = decStatus.sampleRate;
+                pAac->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
                 m_aacParams = *pAac;
             }
             return OMX_ErrorNone;
@@ -1507,31 +1508,66 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             ALOGI("Configuring decoder for %u channels", pPcm->nChannels);
             if ( pPcm->nChannels >= 2 )
             {
-                decSettings.numPcmChannels = pPcm->nChannels;
+                // Round up to nearest supported channel count of 2/6/8.
+                decSettings.numPcmChannels = pPcm->nChannels > 6 ? 8 : pPcm->nChannels > 2 ? 6 : 2;
                 for ( unsigned i = 0; i < OMX_AUDIO_MAXCHANNELS && i < decSettings.numPcmChannels; i++ )
                 {
-                    switch ( pPcm->eChannelMapping[i] )
+                    if ( i >= pPcm->nChannels )
                     {
-                    case OMX_AUDIO_ChannelLF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeft; break;
-                    case OMX_AUDIO_ChannelRF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRight; break;
-                    case OMX_AUDIO_ChannelLR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftSurround; break; // Note: Android reverses the definition of Rear and Surround
-                    case OMX_AUDIO_ChannelRR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightSurround; break;
-                    case OMX_AUDIO_ChannelLS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftRear; break;
-                    case OMX_AUDIO_ChannelRS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightRear; break;
-                    case OMX_AUDIO_ChannelCF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eCenter; break;
-                    case OMX_AUDIO_ChannelLFE:              decSettings.channelLayout[i] = NEXUS_AudioChannel_eLfe; break;
-                    default:                                decSettings.channelLayout[i] = NEXUS_AudioChannel_eMax; break;
+                        NEXUS_AudioChannel chan;
+                        // Find first unused nexus channel value to use.  You can't duplicate channels.
+                        for ( chan = NEXUS_AudioChannel_eLeft; chan < NEXUS_AudioChannel_eMax; chan = (NEXUS_AudioChannel)((int)chan + 1) )
+                        {
+                            unsigned j;
+                            for ( j = 0; j < i; j++ )
+                            {
+                                if ( decSettings.channelLayout[j] == chan )
+                                {
+                                    break;
+                                }
+                            }
+
+                            if ( j >= i )
+                            {
+                                break;
+                            }
+                        }
+                        decSettings.channelLayout[i] = chan;
+                        ALOGV("PCM Channel %u -> Unused / %u nexus", i, decSettings.channelLayout[i]);
                     }
-                    ALOGV("PCM Channel %u -> %u OMX %u nexus", i, pPcm->eChannelMapping[i], decSettings.channelLayout[i]);
+                    else
+                    {
+                        switch ( pPcm->eChannelMapping[i] )
+                        {
+                        case OMX_AUDIO_ChannelLF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeft; break;
+                        case OMX_AUDIO_ChannelRF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRight; break;
+                        case OMX_AUDIO_ChannelLR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftSurround; break; // Note: Android reverses the definition of Rear and Surround
+                        case OMX_AUDIO_ChannelRR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightSurround; break;
+                        case OMX_AUDIO_ChannelLS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftRear; break;
+                        case OMX_AUDIO_ChannelRS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightRear; break;
+                        case OMX_AUDIO_ChannelCF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eCenter; break;
+                        case OMX_AUDIO_ChannelLFE:              decSettings.channelLayout[i] = NEXUS_AudioChannel_eLfe; break;
+                        default:                                decSettings.channelLayout[i] = NEXUS_AudioChannel_eMax; break;
+                        }
+                        ALOGV("PCM Channel %u -> %u OMX %u nexus", i, pPcm->eChannelMapping[i], decSettings.channelLayout[i]);
+                    }
                 }
             }
             else
             {
-                // Force mono to output as stereo
+                // Force mono to output as stereo, allow right channel only for dual-mono, otherwise pick left.
                 ALOGV("PCM config mono -> stereo");
                 decSettings.numPcmChannels = 2;
-                decSettings.channelLayout[0] = NEXUS_AudioChannel_eLeft;
-                decSettings.channelLayout[1] = NEXUS_AudioChannel_eRight;
+                if ( pPcm->eChannelMapping[0] == OMX_AUDIO_ChannelRF )
+                {
+                    decSettings.channelLayout[0] = NEXUS_AudioChannel_eRight;
+                    decSettings.channelLayout[1] = NEXUS_AudioChannel_eLeft;
+                }
+                else
+                {
+                    decSettings.channelLayout[0] = NEXUS_AudioChannel_eLeft;
+                    decSettings.channelLayout[1] = NEXUS_AudioChannel_eRight;
+                }
             }
             decSettings.bitsPerSample = pPcm->nBitPerSample;
             errCode = NEXUS_AudioDecoder_SetDecodeToMemorySettings(m_hAudioDecoder, &decSettings);
@@ -1969,6 +2005,10 @@ NEXUS_Error BOMX_AudioDecoder::SetOutputPortState(OMX_STATETYPE newState)
                 NEXUS_AudioDecoder_Resume(m_hAudioDecoder);
                 m_decoderState = BOMX_AudioDecoderState_eStarted;
                 AddOutputBuffers();
+                // Return all the available input buffers because the output buffers might have been removed
+                // during port reconfiguration so there might be a case where no event is triggered to return the available
+                // input buffers.
+                ReturnInputBuffers(0, true);
                 break;
             case BOMX_AudioDecoderState_eStopped:
                 // This is fine, the decoder will start later when the input port starts.
@@ -3130,7 +3170,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     pBuffer->Reset();
 
-    if ( m_decoderState == BOMX_AudioDecoderState_eStarted )
+    if ( m_decoderState == BOMX_AudioDecoderState_eStarted && !pInfo->nexusOwned )
     {
         NEXUS_Error errCode;
         errCode = NEXUS_AudioDecoder_QueueBuffer(m_hAudioDecoder, pInfo->hMemoryBlock, 0, pBufferHeader->nAllocLen);
@@ -3587,28 +3627,30 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 if ( filledBytes > 0 && NULL != pInfo->pClientMemory )
                 {
                     NEXUS_FlushCache(pInfo->pNexusMemory, filledBytes);
-                    if ( m_numPcmChannels > 1)
+                    switch ( m_numPcmChannels )
                     {
+                    case 2:
+                    case 6:
+                    case 8:
+                        /* The decoder natively supports these modes */
                         BKNI_Memcpy(pInfo->pClientMemory, pInfo->pNexusMemory, m_pFrameStatus[i].filledBytes);
-                    }
-                    else
-                    {
-                        // Mono has been forced to output stereo. Need to downmix back to mono here.
-                        unsigned frameSizeBytes = m_bitsPerSample / 4;
-                        unsigned halfFrameSizeBytes = frameSizeBytes / 2;
-                        size_t numFrames = filledBytes / frameSizeBytes;
-                        size_t numHalfFrames = numFrames * 2;
-                        uint8_t *pDest = (uint8_t *)(pInfo->pClientMemory);
-                        uint8_t *pSrc = (uint8_t *)(pInfo->pNexusMemory);
-
-                        for ( size_t k = 0; k < numHalfFrames; k++ )
+                        break;
+                    default:
+                        /* Other conversions, copy each bunch of valid channels into output skipping invalid channels */
                         {
-                            BKNI_Memcpy(pDest, pSrc, halfFrameSizeBytes);
-                            pDest += halfFrameSizeBytes;
-                            pSrc += frameSizeBytes;
-                        }
+                            unsigned copyBytes = (m_bitsPerSample * m_numPcmChannels)/8;
+                            unsigned actualChannels = m_numPcmChannels > 6 ? 8 : m_numPcmChannels > 2 ? 6 : 2; // Round up to the next valid 2/6/8 channels amount
+                            unsigned srcSkipBytes = (m_bitsPerSample * actualChannels)/8;
+                            unsigned bytesToFill = (m_pFrameStatus[i].filledBytes * m_numPcmChannels) / actualChannels;
+                            uint8_t *pDest = (uint8_t *)(pInfo->pClientMemory);
+                            uint8_t *pSrc = (uint8_t *)(pInfo->pNexusMemory);
 
-                        filledBytes >>= 1;
+                            for ( filledBytes = 0; filledBytes < bytesToFill; filledBytes += copyBytes, pSrc += srcSkipBytes, pDest += copyBytes )
+                            {
+                                BKNI_Memcpy(pDest, pSrc, copyBytes);
+                            }
+                        }
+                        break;
                     }
                 }
 

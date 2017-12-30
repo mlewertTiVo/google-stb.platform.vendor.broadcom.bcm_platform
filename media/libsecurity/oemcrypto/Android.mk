@@ -15,32 +15,6 @@
 LOCAL_PATH := $(call my-dir)
 
 ifneq ($(ANDROID_SUPPORTS_WIDEVINE), n)
-ifneq ($(WIDEVINE_CLASSIC), n)
-#---------------
-# liboemcrypto.a
-#---------------
-include $(CLEAR_VARS)
-LOCAL_MODULE := liboemcrypto
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .a
-LOCAL_MODULE_CLASS := STATIC_LIBRARIES
-ifeq ($(TARGET_2ND_ARCH),arm)
-LOCAL_MULTILIB := 32
-# LOCAL_MULTILIB := both
-LOCAL_MODULE_TARGET_ARCH := arm arm64
-LOCAL_SRC_FILES_arm64 := lib/arm64/liboemcrypto.a
-LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
-else
-LOCAL_MODULE_TARGET_ARCH := arm
-ifeq ($(SAGE_VERSION),2x)
-LOCAL_SRC_FILES_arm := lib/arm/s2x/liboemcrypto.a
-else
-LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
-endif
-endif
-LOCAL_PROPRIETARY_MODULE := true
-include $(BUILD_PREBUILT)
-endif
 
 ifeq ($(SAGE_SUPPORT), y)
 #---------------
@@ -55,6 +29,9 @@ ifeq ($(TARGET_BUILD_VARIANT),user)
 RELEASE_PREBUILTS := release_prebuilts/user
 else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
+endif
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
 endif
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
@@ -122,4 +99,3 @@ include $(BUILD_SHARED_LIBRARY)
 endif
 endif
 endif
-

@@ -1,0 +1,6 @@
+package bcm.hardware.nexus@1.0;
+
+interface INexusDspCb {
+    oneway onDsp();
+};
+

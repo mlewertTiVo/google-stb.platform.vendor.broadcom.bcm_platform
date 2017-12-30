@@ -55,6 +55,9 @@ RELEASE_PREBUILTS := release_prebuilts/user
 else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
+endif
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
@@ -135,7 +138,7 @@ include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 # Go through all <DRM>_SAGE variables from config.inc and include those
 # <drm>.inc files
 #vvvv#####################vvvvvvvvvvvvvvvvvvvvvvv#####################vvvv##
-ifeq ($(findstring $(BCHP_CHIP), 7445 7366 7439 7364), $(BCHP_CHIP))
+ifeq ($(findstring $(BCHP_CHIP), 7271 7445 7366 7439 7364), $(BCHP_CHIP))
 include $(LOCAL_PATH)/config/config_zeus4x.inc
 else ifeq ($(findstring $(BCHP_CHIP), 7435), $(BCHP_CHIP))
 include $(LOCAL_PATH)/config/config_zeus30.inc
@@ -160,6 +163,14 @@ else
 include $(LOCAL_PATH)/drm_tl/playback/playback.inc
 COMMON_DRM_TL_SOURCES += ${PLAYBACK_SOURCES}
 COMMON_DRM_TL_DEFINES += ${PLAYBACK_DEFINES}
+endif
+
+#################### DTCP IP ################################
+ifeq (${DTCP_IP_SAGE},OFF)
+else
+include $(LOCAL_PATH)/drm_tl/dtcp_ip/dtcp_ip.inc
+COMMON_DRM_TL_SOURCES += ${DTCP_IP_SOURCES}
+COMMON_DRM_TL_DEFINES += ${DTCP_IP_DEFINES}
 endif
 
 #################### NETFLIX ################################

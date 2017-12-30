@@ -27,7 +27,6 @@
 #include <hardware/hardware.h>
 #include <hardware/hdmi_cec.h>
 
-#include "nexus_hdmi_cec.h"
 #include "hdmi_ext.h"
 
 #define HDMI_CEC_TRACE_ENTER ALOGV("%s: Enter\n", __FUNCTION__)

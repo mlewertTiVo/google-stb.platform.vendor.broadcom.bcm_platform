@@ -155,10 +155,11 @@ static int markBootSuccessful(struct boot_control_module *module __unused) {
       ALOGE("markBootSuccessful: bad magic (%x), not setup?", bc_eio.magic);
       return 0;
    }
-   bc_eio.slot[bc_eio.current].boot_ok   = 1;
-   bc_eio.slot[bc_eio.current].boot_fail = 0;
-   bc_eio.slot[bc_eio.current].boot_try  = 0;
+   bc_eio.slot[bc_eio.current].boot_ok     = 1;
+   bc_eio.slot[bc_eio.current].boot_fail   = 0;
+   bc_eio.slot[bc_eio.current].boot_try    = 0;
    bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
+   bc_eio.onboot                           = -1;
    ALOGI_IF(verbose, "markBootSuccessful(%d)", bc_eio.current);
    return write_device(&bc_eio);
 }
@@ -174,14 +175,14 @@ static int setActiveBootSlot(struct boot_control_module *module __unused, unsign
    }
    /* application wants us to boot into this new slot.
     */
-   bc_eio.current = slot;
+   bc_eio.onboot                          = slot;
    /* reset prior settings for the slot; it gets a clean start.
     */
-   bc_eio.slot[bc_eio.current].boot_ok   = 0;
-   bc_eio.slot[bc_eio.current].boot_fail = 0;
-   bc_eio.slot[bc_eio.current].boot_try  = 0;
-   bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
-   ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.current);
+   bc_eio.slot[bc_eio.onboot].boot_ok     = 0;
+   bc_eio.slot[bc_eio.onboot].boot_fail   = 0;
+   bc_eio.slot[bc_eio.onboot].boot_try    = 0;
+   bc_eio.slot[bc_eio.onboot].dmv_corrupt = 0;
+   ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.onboot);
    return write_device(&bc_eio);
 }
 
@@ -198,6 +199,7 @@ static int setSlotAsUnbootable(struct boot_control_module *module __unused, unsi
     * update process completes.
     */
    bc_eio.slot[slot].boot_fail = 1;
+   bc_eio.onboot               = -1;
    ALOGI_IF(verbose, "setSlotAsUnbootable(%d,current:%d)", slot, bc_eio.current);
    return write_device(&bc_eio);
 }

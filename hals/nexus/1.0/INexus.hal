@@ -1,0 +1,50 @@
+package bcm.hardware.nexus@1.0;
+
+import INexusHpdCb;
+import INexusDspCb;
+
+interface INexus {
+    /**
+     * get nexus client identifier for this user (process).
+     *
+     */
+    client(int32_t pid) generates (uint64_t cId);
+
+    /**
+     * register client cId for hot-plug callback, pass NULL to unregister.
+     *
+     */
+    registerHpdCb(uint64_t cId, INexusHpdCb cb) generates (NexusStatus s);
+
+    /**
+     * register client cId for display event callback, pass NULL to unregister.
+     *
+     */
+    registerDspCb(uint64_t cId, INexusDspCb cb) generates (NexusStatus s);
+
+    /**
+     * get power state information from middleware.
+     *
+     */
+    getPwr() generates (NexusPowerState p);
+
+    /**
+     * set power state information to middleware.
+     *
+     */
+    setPwr(NexusPowerState p) generates (NexusStatus s);
+
+    /**
+     * rmlmk call to trim memory for re-attempting allocation.
+     *
+     */
+    rmlmk(uint64_t cId) generates (NexusStatus s);
+
+    /**
+     * issue wake on lan configuration for named interface.
+     *
+     */
+    setWoL(string ifc) generates (NexusStatus s);
+};
+
+

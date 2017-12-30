@@ -30,6 +30,7 @@ extern "C" {
 #include <errno.h>
 #include <unistd.h>
 #include <cutils/native_handle.h>
+#include <cutils/atomic.h>
 #include <linux/fb.h>
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder_types.h"
@@ -56,6 +57,7 @@ extern "C" {
 #define GR_HWTEX                (1<<3)
 #define GR_BLOB                 (1<<4)
 #define GR_FP                   (1<<5)
+#define GR_YV12_SW              (1<<6)
 
 /*****************************************************************************/
 
@@ -76,12 +78,8 @@ typedef struct __SHARED_DATA_ {
       uint64_t         nexusClientContext;
    } videoWindow;
 
-   //Metadata For Video Buffers
    struct {
-      int32_t locked;
-      bool  destripeComplete;
       NEXUS_VideoDecoderFrameStatus status;
-      NEXUS_StripedSurfaceHandle hStripedSurface;
    } videoFrame;
 
    struct {
@@ -93,6 +91,24 @@ typedef struct __SHARED_DATA_ {
       unsigned size;
       unsigned allocSize;
       unsigned stride;
+
+      NEXUS_StripedSurfaceHandle stripedSurface; // gralloc only.
+      unsigned destriped;
+
+      unsigned vDepth;
+      unsigned vColor;
+      unsigned vsWidth;
+      unsigned vsLumaHeight;
+      unsigned vsChromaHeight;
+      unsigned vBackingUpdated;
+      unsigned vImageWidth;
+      unsigned vImageHeight;
+      NEXUS_MemoryBlockHandle vLumaBlock;
+      NEXUS_MemoryBlockHandle vChromaBlock;
+      uint64_t vLumaAddr __attribute__((aligned(8)));
+      uint64_t vChromaAddr __attribute__((aligned(8)));
+      uint32_t vLumaOffset __attribute__((aligned(4)));
+      uint32_t vChromaOffset __attribute__((aligned(4)));
   } container;
 
 } SHARED_DATA, *PSHARED_DATA;
@@ -198,83 +214,6 @@ struct private_handle_int_t {
 
        return 0;
     }
-
-    static int lock_video_frame(private_handle_int_t *pHandle, int timeoutMs)
-    {
-        PSHARED_DATA pSharedData = NULL;
-        NEXUS_Error lrc = NEXUS_SUCCESS;
-        NEXUS_MemoryBlockHandle block_handle = NULL;
-        int rc = 0;
-        void *pMemory;
-
-        get_block_handles(pHandle, &block_handle, NULL);
-        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-        if (lrc == BERR_NOT_SUPPORTED) {
-           NEXUS_MemoryBlock_Unlock(block_handle);
-        }
-        pSharedData = (PSHARED_DATA) pMemory;
-
-        struct timespec ts_end, ts_now;
-        if (NULL == pSharedData) {
-          rc = -EINVAL;
-          goto out;
-        }
-        // Compute timeout
-        clock_gettime(CLOCK_MONOTONIC, &ts_end);
-        ts_end.tv_sec += timeoutMs/1000;
-        ts_end.tv_nsec += (timeoutMs%1000)*1000000;
-        if (ts_end.tv_nsec >= 1000000000) {
-            ts_end.tv_sec++;
-            ts_end.tv_nsec -= 1000000000;
-        }
-        // Lock "semaphore" with timeout
-        while (android_atomic_acquire_cas(0, 1, &pSharedData->videoFrame.locked)) {
-            BKNI_Sleep(1);
-            clock_gettime(CLOCK_MONOTONIC, &ts_now);
-            /* equivalent to if ( timespec_compare(&ts_now, &ts_end) >= 0 ) return -EBUSY; */
-            if (ts_now.tv_sec < ts_end.tv_sec) {
-                continue;
-            }
-            if (ts_now.tv_sec > ts_end.tv_sec || ts_now.tv_nsec > ts_end.tv_nsec) {
-                rc = -EBUSY;
-                goto out;
-            }
-        }
-
-out:
-        if (block_handle) {
-           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
-        }
-        return rc;
-    }
-
-    static void unlock_video_frame(private_handle_int_t *pHandle)
-    {
-        PSHARED_DATA pSharedData = NULL;
-        NEXUS_MemoryBlockHandle block_handle = NULL;
-        NEXUS_Error lrc = NEXUS_SUCCESS;
-        int rc = 0;
-        void *pMemory;
-
-        get_block_handles(pHandle, &block_handle, NULL);
-        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-        if (lrc == BERR_NOT_SUPPORTED) {
-           NEXUS_MemoryBlock_Unlock(block_handle);
-        }
-        pSharedData = (PSHARED_DATA) pMemory;
-
-        if (NULL == pSharedData) {
-          goto out;
-        }
-        rc = android_atomic_release_cas(1, 0, &pSharedData->videoFrame.locked);
-        assert(rc);
-
-out:
-        if (block_handle) {
-           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
-        }
-    }
-
 #endif
 };
 

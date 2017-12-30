@@ -57,6 +57,7 @@
 #include "bomx_pes_formatter.h"
 #include <stdio.h>
 #include <cutils/native_handle.h>
+#include <utils/List.h>
 
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 
@@ -83,8 +84,7 @@ enum BOMX_VideoDecoderFrameBufferState
 {
     BOMX_VideoDecoderFrameBufferState_eReady,           // Frame decoded and ready to be delivered to client
     BOMX_VideoDecoderFrameBufferState_eDelivered,       // Frame delivered to client
-    BOMX_VideoDecoderFrameBufferState_eDisplayReady,    // Frame returned from client and ready to display
-    BOMX_VideoDecoderFrameBufferState_eDropReady,       // Frame returned from client and ready to drop
+    BOMX_VideoDecoderFrameBufferState_eReturned,        // Frame returned from client and ready to recycle
     BOMX_VideoDecoderFrameBufferState_eInvalid,         // Frame has been invalidated or is not yet decoded
     BOMX_VideoDecoderFrameBufferState_eMax
 };
@@ -143,6 +143,7 @@ struct BOMX_VideoDecoderFrameBuffer
     NEXUS_StripedSurfaceHandle hStripedSurface;
     private_handle_t *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
+    bool display;
 };
 
 struct BOMX_VideoDecoderRole
@@ -152,6 +153,25 @@ struct BOMX_VideoDecoderRole
 };
 
 #define NXCLIENT_INVALID_ID (0xffffffff)
+
+class BOMX_InputDataTracker
+{
+public:
+    BOMX_InputDataTracker();
+    ~BOMX_InputDataTracker() {};
+    void AddEntry(unsigned pts);
+    inline size_t GetNumEntries();
+    void SetLastReturnedPts(unsigned pts);
+    unsigned GetMaxDeltaPts();
+    void PrintStats();
+    void Reset();
+
+private:
+    List<unsigned> m_ptsTracker;
+    size_t m_numInputBuffers;
+    size_t m_numRetBuffers;
+    size_t m_numNotRetBuffers;
+};
 
 class BOMX_VideoDecoder : public BOMX_Component
 {
@@ -233,7 +253,7 @@ public:
     // End OMX Command Handlers
 
     // Local Event Handlers
-    unsigned PlaypumpEvent(bool bTimeout = false);
+    void PlaypumpEvent();
     void PlaypumpTimer();
     void OutputFrameEvent();
     void SourceChangedEvent();
@@ -260,10 +280,9 @@ protected:
 
     enum InputReturnMode
     {
-        InputReturnMode_eTimestamp,             // Return input ports upto the specified timestamp
-        InputReturnMode_eTimeout,               // Return input ports upto the timeout limit
-        InputReturnMode_eAll,                   // Return all input ports that are marked as completed
-        InputReturnMode_eMax
+        InputReturnMode_eDefault,               // Default mode
+        InputReturnMode_eTimeout,               // Return buffers as a result of an input-buffers timeout event
+        InputReturnMode_eAll                    // Return all completed buffers
     };
 
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
@@ -287,8 +306,7 @@ protected:
     unsigned m_submittedDescriptors;
     unsigned m_maxDescriptorsPerBuffer;
     NEXUS_PlaypumpScatterGatherDescriptor *m_pPlaypumpDescList;
-    unsigned m_completedInputBuffers;
-
+    BOMX_InputDataTracker m_inputDataTracker;
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
@@ -463,11 +481,9 @@ protected:
     OMX_ERRORTYPE VerifyInputPortBuffers();
 
     // These functions are used to pace the input buffers rate
-    void InputBufferNew();
-    void InputBufferReturned();
-    void InputBufferCounterReset();
-    uint32_t ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
-    bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
+    void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);
+    void ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
+    void ProcessFifoData(bool *pendingData = NULL);
 
     // These functions are used for frame rate estimation
     void ResetEstimation();
