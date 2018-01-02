@@ -3466,6 +3466,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             {
                 ReturnPortBuffers(m_pVideoPorts[0]);
             }
+            m_inputDataTracker.PrintStats();
+            m_inputDataTracker.Reset();
         }
         else
         {
