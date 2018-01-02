@@ -87,7 +87,7 @@
 #define B_DATA_BUFFER_SIZE_HIGHRES (3*1024*1024)
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
-#define B_NUM_INPUT_BUFFERS (5)
+#define B_NUM_INPUT_BUFFERS (4)
 #define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min/max outstanding input buffers not decoded yet
 #define B_MAX_QUEUED_INPUT_BUFFERS (16)
 #define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
