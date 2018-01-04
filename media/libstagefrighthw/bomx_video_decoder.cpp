@@ -6242,9 +6242,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     pSharedData->container.vImageWidth    = cs.imageWidth;
                                     pSharedData->container.vImageHeight   = cs.imageHeight;
                                     pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
+                                    pSharedData->container.vColorSpace    = NEXUS_MatrixCoefficients_eXvYCC_601; // TODO: cs.matrixCoefficients;
 
                                     ALOGI_IF(LOG_SAND_TO_HWTEX,
-                                       "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit",
+                                       "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit::%d",
                                        pBuffer->frameStatus.serialNumber,
                                        pBuffer->pPrivateHandle,
                                        pBuffer->hStripedSurface,
@@ -6260,7 +6261,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                        pSharedData->container.vsWidth,
                                        pSharedData->container.vsLumaHeight,
                                        pSharedData->container.vsChromaHeight,
-                                       pSharedData->container.vDepth);
+                                       pSharedData->container.vDepth,
+                                       pSharedData->container.vColorSpace);
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
