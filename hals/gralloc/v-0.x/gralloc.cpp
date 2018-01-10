@@ -74,6 +74,7 @@ static int gralloc_conv_time = 0;
 static int gralloc_boom_chk = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g2dLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
@@ -177,7 +178,7 @@ pthread_mutex_t *gralloc_g2d_lock(void)
 
 void gralloc_g2d_hdl_end(void)
 {
-   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   pthread_mutex_t *pMutex = &g2dLock;
    if (pMutex == NULL) {
       return;
    }
@@ -206,7 +207,9 @@ void gralloc_explicit_unload(void)
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
    }
-   gralloc_g2d_hdl_end();
+   if (hGraphics != NULL) {
+      gralloc_g2d_hdl_end();
+   }
 }
 
 int gralloc_log_mapper(void)
@@ -239,7 +242,7 @@ NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
    NEXUS_Error rc;
    NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
-   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   pthread_mutex_t *pMutex = &g2dLock;
    if (pMutex == NULL) {
       hGraphics = NULL;
       return NULL;
@@ -248,6 +251,7 @@ NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 
    if (hCheckpointEvent == NULL) {
       hGraphics = NULL;
+      pthread_mutex_unlock(pMutex);
       return NULL;
    }
    if (hGraphics != NULL) {
@@ -268,6 +272,9 @@ NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
             hGraphics = NULL;
          }
       }
+   }
+   if (hGraphics == NULL) {
+      pthread_mutex_unlock(pMutex);
    }
    return hGraphics;
 }
