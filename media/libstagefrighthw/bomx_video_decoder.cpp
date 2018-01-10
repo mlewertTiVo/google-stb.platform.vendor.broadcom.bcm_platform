@@ -89,7 +89,7 @@
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
 #define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min/max outstanding input buffers not decoded yet
-#define B_MAX_QUEUED_INPUT_BUFFERS (16)
+#define B_MAX_QUEUED_INPUT_BUFFERS (32)
 #define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (32)
@@ -5103,8 +5103,10 @@ void BOMX_VideoDecoder::PlaypumpEvent()
         m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate),
             BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
     }
-
-    ReturnInputBuffers();
+    if ( m_inputBuffersTimerId == NULL )
+    {
+        ReturnInputBuffers();
+    }
 }
 
 void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
