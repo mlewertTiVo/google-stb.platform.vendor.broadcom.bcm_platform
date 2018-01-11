@@ -112,10 +112,8 @@ void StandbyMonitorThread::UnregisterCallback(int id)
     ALOGV("%s: Callback %d/%d unregistered", __FUNCTION__, id, mNumCallbacks);
 
     if (mNumCallbacks == 0) {
-        android::status_t status = this->requestExitAndWait();
-        if (status != android::OK){
-            ALOGE("%s: Failed to stop standby thread!", __FUNCTION__);
-        }
+        /* requestExitAndWait() creates a deadlock in the Thread library */
+        requestExit();
     }
 }
 
