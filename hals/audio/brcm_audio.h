@@ -197,6 +197,8 @@ struct brcm_stream_out_ops {
     int (*do_bout_resume)(struct brcm_stream_out *bout);
     int (*do_bout_drain)(struct brcm_stream_out *bout, int action);
     int (*do_bout_flush)(struct brcm_stream_out *bout);
+
+    int (*do_bout_get_next_write_timestamp)(struct brcm_stream_out *bout, int64_t *timestamp);
 };
 
 struct brcm_stream_out {

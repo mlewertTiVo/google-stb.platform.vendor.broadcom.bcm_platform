@@ -65,7 +65,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 /* Volume related constants */
 
 #define AUDIO_VOLUME_SETTING_MIN (0)
-#define AUDIO_VOLUME_SETTING_MAX (99)
+#define AUDIO_VOLUME_SETTING_MAX (100)
 /****************************************************
 * Volume Table in dB, Mapping as linear attenuation *
 ****************************************************/
@@ -90,7 +90,8 @@ static uint32_t Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX+1] =
     1398,   1442,   1489,   1539,   1592,
     1648,   1708,   1772,   1842,   1917,
     2000,   2092,   2194,   2310,   2444,
-    2602,   2796,   3046,   3398,   9000
+    2602,   2796,   3046,   3398,   4000,
+    9000
 };
 
 /*
@@ -604,10 +605,33 @@ static int nexus_bout_dump(struct brcm_stream_out *bout, int fd)
    return 0;
 }
 
+static uint32_t nexus_bout_get_latency(struct brcm_stream_out *bout)
+{
+   (void)bout;
+   /* See SWANDROID-4627 for calculation */
+   return NEXUS_OUT_BUFFER_DURATION_MS;
+}
+
+static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int64_t *timestamp)
+{
+   NEXUS_SimpleAudioPlaybackStatus status;
+   NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
+   NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
+
+   if (!status.started) {
+       *timestamp = 0;
+   } else {
+       struct timespec ts;
+       clock_gettime(CLOCK_MONOTONIC, &ts);
+       *timestamp = (int64_t)ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
+   }
+   return 0;
+}
+
 struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_open = nexus_bout_open,
     .do_bout_close = nexus_bout_close,
-    .do_bout_get_latency = NULL,
+    .do_bout_get_latency = nexus_bout_get_latency,
     .do_bout_start = nexus_bout_start,
     .do_bout_stop = nexus_bout_stop,
     .do_bout_write = nexus_bout_write,
@@ -620,4 +644,5 @@ struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_resume = NULL,
     .do_bout_drain = NULL,
     .do_bout_flush = NULL,
+    .do_bout_get_next_write_timestamp = nexus_bout_get_next_write_timestamp,
 };
