@@ -17,11 +17,16 @@ include $(CLEAR_VARS)
 
 LOCAL_SHARED_LIBRARIES := liblog \
                           libcutils \
-                          libutils
+                          libutils \
+                          libhwcbinder \
+                          libbinder
+
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SRC_FILES := togplm.c
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
+                    system/core/base/include
+LOCAL_SRC_FILES := togplm.cpp
 LOCAL_INIT_RC := togplm.rc
 LOCAL_MODULE := togplm
 LOCAL_MODULE_TAGS := optional

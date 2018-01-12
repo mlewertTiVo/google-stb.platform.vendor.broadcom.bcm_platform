@@ -11,13 +11,15 @@
 # of.
 
 function HELP {
-  echo -e \\n"Usage: $(basename $0) <user|userdebug> <output>"
+  echo -e \\n"Usage: $(basename $0) <user[_treble]|userdebug[_treble]> <output>"
   echo "       output         : path to where the packaged release_prebuilts"
   echo "                        tarballs will be copied to"
-  echo "       user|userdebug : Specify if the workspace contains binaries"
+  echo "       user[_treble]|userdebug[_treble] :"
+  echo "                        Specify if the workspace contains binaries"
   echo "                        from a 'user' image or a 'userdebug/eng' image"
   echo "                        For user image, use the 'user' option, otherwise"
-  echo "                        userdebug and eng image, use the 'userdebug' option"
+  echo "                        userdebug and eng image, use the 'userdebug' option."
+  echo "                        Append '_treble' for full treble enabled targets."
   exit 1
 }
 

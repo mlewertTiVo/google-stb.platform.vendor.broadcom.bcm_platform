@@ -34,6 +34,7 @@ enum {
     GET_VIDEO_GEOMETRY_CLIENT_ID,
     SET_OVERSCAN_ADJUST,
     GET_OVERSCAN_ADJUST,
+    EVAL_PLM,
 };
 
 class BpHwc : public BpInterface<IHwc>
@@ -171,6 +172,13 @@ public:
         position.y = reply.readInt32();
         position.h = reply.readInt32();
         position.w = reply.readInt32();
+    }
+
+    void evalPlm(const sp<IHwcListener>& listener) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder(listener));
+        remote()->transact(EVAL_PLM, data, &reply);
     }
 };
 
@@ -330,6 +338,15 @@ status_t BnHwc::onTransact(
          reply->writeInt32(position.y);
          reply->writeInt32(position.h);
          reply->writeInt32(position.w);
+         return NO_ERROR;
+      }
+      break;
+
+      case EVAL_PLM:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         evalPlm(listener);
          return NO_ERROR;
       }
       break;

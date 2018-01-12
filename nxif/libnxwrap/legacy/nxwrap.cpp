@@ -191,6 +191,11 @@ bool NxWrap::StdbyMon::threadLoop()
    return false;
 }
 
+void NxWrap::rmlmk(uint64_t client) {
+   if (get_nxs(false) != NULL) {
+      get_nxs(false)->rmlmk(client);
+   }
+}
 
 // helper functions for easy hook up.  creates the middleware client and returns a
 // reference to it, no standby activation in place since simple client.
@@ -217,6 +222,15 @@ extern "C" void nxwrap_destroy_client(void *nxwrap) {
       nx->leave();
       delete nx;
       nx = NULL;
+   }
+}
+
+extern "C" void nxwrap_rmlmk(void *nxwrap) {
+
+   NxWrap *nx = (NxWrap *)nxwrap;
+
+   if (nx != NULL) {
+      nx->rmlmk(nx->client());
    }
 }
 

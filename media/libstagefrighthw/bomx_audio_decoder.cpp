@@ -1131,10 +1131,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
             }
             if ((int)nParamIndex == OMX_IndexParamAudioAndroidAc3) {
                 pAc3->nChannels = nChannels;
-                pAc3->nSampleRate = decStatus.sampleRate;
+                pAc3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             } else {
                 pEAc3->nChannels = nChannels;
-                pEAc3->nSampleRate = decStatus.sampleRate;
+                pEAc3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             }
             return OMX_ErrorNone;
         }
@@ -1172,7 +1172,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
                 pMp3->eChannelMode = OMX_AUDIO_ChannelModeMono;
                 break;
             }
-            pMp3->nSampleRate = decStatus.sampleRate;
+            pMp3->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
             pMp3->nAudioBandWidth = 0;
             if ( decStatus.sampleRate >= 32000 )
             {
@@ -1236,7 +1236,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
                 pAac->nFrameLength = 0;
                 pAac->nAACtools = 0;
                 pAac->nAACERtools = 0;
-                pAac->nSampleRate = decStatus.sampleRate;
+                pAac->nSampleRate = decStatus.sampleRate > 0 ? decStatus.sampleRate : m_sampleRate;
                 m_aacParams = *pAac;
             }
             return OMX_ErrorNone;
@@ -2005,6 +2005,10 @@ NEXUS_Error BOMX_AudioDecoder::SetOutputPortState(OMX_STATETYPE newState)
                 NEXUS_AudioDecoder_Resume(m_hAudioDecoder);
                 m_decoderState = BOMX_AudioDecoderState_eStarted;
                 AddOutputBuffers();
+                // Return all the available input buffers because the output buffers might have been removed
+                // during port reconfiguration so there might be a case where no event is triggered to return the available
+                // input buffers.
+                ReturnInputBuffers(0, true);
                 break;
             case BOMX_AudioDecoderState_eStopped:
                 // This is fine, the decoder will start later when the input port starts.
@@ -3166,7 +3170,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     pBuffer->Reset();
 
-    if ( m_decoderState == BOMX_AudioDecoderState_eStarted )
+    if ( m_decoderState == BOMX_AudioDecoderState_eStarted && !pInfo->nexusOwned )
     {
         NEXUS_Error errCode;
         errCode = NEXUS_AudioDecoder_QueueBuffer(m_hAudioDecoder, pInfo->hMemoryBlock, 0, pBufferHeader->nAllocLen);

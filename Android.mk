@@ -64,7 +64,11 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplayready_svp/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxprdy30_svp/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxpsi/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd30/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxsmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxthumb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk

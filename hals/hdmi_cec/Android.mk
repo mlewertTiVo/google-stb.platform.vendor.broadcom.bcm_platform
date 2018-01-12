@@ -28,7 +28,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
-    bcm.hardware.nexus@1.0-impl
+    bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += \
     libbinder \
@@ -80,7 +80,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
-    bcm.hardware.nexus@1.0-impl
+    bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += \
     libbinder \
@@ -136,7 +136,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
-    bcm.hardware.nexus@1.0-impl
+    bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += \
     libbinder \

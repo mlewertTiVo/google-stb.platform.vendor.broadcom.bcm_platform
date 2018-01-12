@@ -2150,7 +2150,6 @@ static size_t hwc2_dump_gen(
 
    hwc2->sgl = hwc2_enabled(hwc2_tweak_scale_gles);
    hwc2_eval_log(hwc2);
-   hwc2_eval_plm(hwc2);
    if (hwc2->ext != NULL) {
       hwc2->ext->dmp =
          (enum hwc2_record_dump_e)hwc2_setting(hwc2_tweak_dump_enabled);
@@ -3362,11 +3361,6 @@ static int32_t hwc2_lyrComp(
       goto out;
    }
 
-   if (type == HWC2_COMPOSITION_CURSOR) {
-      ret = HWC2_ERROR_UNSUPPORTED;
-      goto out;
-   }
-
    /* composition type offered by surface flinger. */
    lyr->cCli = (hwc2_composition_t)type;
    /* ...reset our prefered composition type for this layer. */
@@ -3954,11 +3948,6 @@ static int32_t hwc2_cursorPos(
       goto out;
    }
 
-   if (lyr->cCli != HWC2_COMPOSITION_CURSOR) {
-      ret = HWC2_ERROR_BAD_LAYER;
-      goto out;
-   }
-
    lyr->cx = x;
    lyr->cy = y;
 
@@ -4323,12 +4312,7 @@ static uint32_t hwc2_comp_validate(
    lyr = dsp->lyr;
    while (lyr != NULL) {
       cnt++;
-      if (lyr->cCli == HWC2_COMPOSITION_CURSOR) {
-         ALOGW("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
-               getCompositionName(HWC2_COMPOSITION_CURSOR),
-               getCompositionName(HWC2_COMPOSITION_DEVICE));
-         lyr->cDev = HWC2_COMPOSITION_DEVICE;
-      } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
+      if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
          hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
          if (ret != HWC2_ERROR_NONE) {
             ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
@@ -5843,7 +5827,8 @@ static void hwc2_ext_cmp_frame(
                close(f->ftgt);
                f->ftgt = HWC2_INVALID;
             }
-         } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
+         } else if ((lyr->cCli == HWC2_COMPOSITION_DEVICE) ||
+                    (lyr->cCli == HWC2_COMPOSITION_CURSOR)) {
             if (lyr->af >= 0) {
                close(lyr->af);
                lyr->af = HWC2_INVALID;
@@ -5898,7 +5883,8 @@ static void hwc2_ext_cmp_frame(
       }
       /* [i]. validate buffer as needed.
        */
-      if (lyr->cCli == HWC2_COMPOSITION_DEVICE && !is_video) {
+      if (((lyr->cCli == HWC2_COMPOSITION_DEVICE) ||
+           (lyr->cCli == HWC2_COMPOSITION_CURSOR)) && !is_video) {
          bool lyr_err = false;
          if (lyr->bh == NULL) {
             ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
@@ -6153,6 +6139,27 @@ static void hwc2_ext_cmp_frame(
          }
       break;
       case HWC2_COMPOSITION_CURSOR:
+         if (vl != 0) {
+            blt = HWC2_INVALID;
+            ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
+                  dsp->pres, dsp->post);
+         } else {
+             blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms, c);
+         }
+         if (lrcp == NEXUS_SUCCESS) {
+            hwc2_mem_unlock(hwc2, bhp);
+            lrcp = NEXUS_NOT_INITIALIZED;
+         }
+         if (lrc == NEXUS_SUCCESS) {
+            hwc2_mem_unlock(hwc2, bh);
+            lrc = NEXUS_NOT_INITIALIZED;
+         }
+         /* [iv]. count of composed layers. */
+         if (!blt) c++;
+         ALOGI_IF(!blt && (dsp->lm & LOG_COMP_DEBUG),
+                  "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": cursor layer (%zu)\n",
+                  dsp->pres, dsp->post, c);
+      break;
       default:
          ALOGW("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s - not handled!\n",
                lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
@@ -6507,6 +6514,9 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_OVERSCAN:
       hwc2_op(hwc2->ext, &ntfy);
+   break;
+   case HWC_BINDER_NTFY_EVALPLM:
+      hwc2_eval_plm(hwc2);
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
