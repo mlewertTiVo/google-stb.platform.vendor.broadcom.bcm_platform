@@ -86,6 +86,7 @@ extern "C" {
 #endif
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HD_OUT_HWC                  "dyn.nx.vidout.hwc"
 #define NX_HDCP_TOGGLE                 "nx.hdcp.force" /* needs prefixing. */
 
 BDBG_OBJECT_ID(NexusClientContext);
@@ -510,11 +511,16 @@ NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
    char value[PROPERTY_VALUE_MAX];
    char name[PROPERTY_VALUE_MAX];
 
-   memset(value, 0, sizeof(value));
-   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
-   if (property_get(name, value, "")) {
-      if (strlen(value)) {
-         forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+   forced_format =
+      (NEXUS_VideoFormat) property_get_int32(NX_HD_OUT_HWC, (int)NEXUS_VideoFormat_eUnknown);
+
+   if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
+      memset(value, 0, sizeof(value));
+      sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+      if (property_get(name, value, "")) {
+         if (strlen(value)) {
+            forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+         }
       }
    }
 
