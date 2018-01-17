@@ -4696,7 +4696,7 @@ static int32_t hwc2_preDsp(
             scnt++;
          } else if (hwc2_is_video(hwc2, lyr, &vid)) {
             vcnt++;
-            if ((vid <= 0) || (vid > HWC2_VID_WIN)) {
+            if ((vid < HWC2_VID_MAGIC) || (vid > HWC2_VID_MAGIC+HWC2_VID_WIN)) {
                ivid = true;
                ALOGW("[oob]:[pres]:%" PRIu64 ":%" PRIu64 ": invalid vid=%d, skip!",
                      dsp->pres, dsp->post, vid);
@@ -4716,7 +4716,7 @@ static int32_t hwc2_preDsp(
                lrc = hwc2_mem_lock(hwc2, bh, &map);
                shared = (PSHARED_DATA) map;
                if ((lrc == NEXUS_SUCCESS) && (shared != NULL)) {
-                  if (hwc2->rlpf[vid-1]) {
+                  if (hwc2->rlpf[vid-HWC2_VID_MAGIC]) {
                      lyr->lpf = HWC2_RLPF;
                   }
                   c = {(int16_t)lyr->crp.left,
@@ -4728,10 +4728,10 @@ static int32_t hwc2_preDsp(
                        (uint16_t)(lyr->fr.right - lyr->fr.left),
                        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
                   if ((lyr->lpf == HWC2_RLPF) ||
-                      memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[vid-1].crp, sizeof(dsp->u.ext.vid[vid-1].crp)) != 0 ||
-                      memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[vid-1].fr, sizeof(dsp->u.ext.vid[vid-1].fr)) != 0) {
-                     memcpy((void *)&dsp->u.ext.vid[vid-1].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[vid-1].fr));
-                     memcpy((void *)&dsp->u.ext.vid[vid-1].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[vid-1].crp));
+                      memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp)) != 0 ||
+                      memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr)) != 0) {
+                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr));
+                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp));
                      hwc2_lyr_adj(dsp, &c, &p, NULL);
                      fr.x = p.x;
                      fr.y = p.y;
@@ -4742,19 +4742,18 @@ static int32_t hwc2_preDsp(
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
                      // TODO: associate relative z-order from android z-layer.
-                     z = (vid==1)?2:(vid==2)?3:1; /* main is on 5-3, pip is on 5-2, others on 1. */
-                     hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-1, fr, cl, z, 1);
+                     z = 3;
+                     hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-HWC2_VID_MAGIC, fr, cl, z, 1);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
-                     /* vid - 1 for main, 2 for pip, other not assigned yet. */
-                     hwc2->hb->setframe(HWC2_VID_MAGIC+(vid-1), lyr->lpf);
+                     hwc2->hb->setframe(vid, lyr->lpf);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
-                              "[oob]:[%s]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
-                              (vid==1)?"full":(vid==2)?"pip":"mos", dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
+                              "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
+                              dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
                   dc = true;
                }

@@ -81,6 +81,7 @@
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
+#define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -254,6 +255,45 @@ static const OMX_VIDEO_VP9LEVELTYPE g_vp9StandardLevels[] =  {OMX_VIDEO_VP9Level
                                                               OMX_VIDEO_VP9Level41,
                                                               OMX_VIDEO_VP9Level5};
 static const size_t g_numVp9StandardLevels = sizeof(g_vp9StandardLevels)/sizeof(OMX_VIDEO_VP9LEVELTYPE);
+
+static BOMX_VideoSurfaceIndex g_indexSurface[HWC_BINDER_VIDEO_SURFACE_SIZE];
+static unsigned g_mainDecoderVirtualSession = 0;
+
+extern "C" int BOMX_VideoDecoder_GetIndexSurface(void *user)
+{
+   int i;
+   for (i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+      if (!g_indexSurface[i].used) {
+         g_indexSurface[i].user = user;
+         g_indexSurface[i].used = true;
+         return i;
+      }
+   }
+   return -1;
+}
+
+extern "C" void BOMX_VideoDecoder_SetIndexSurfaceClient(int index, int hwc_cli)
+{
+   if (index >= 0 && index < HWC_BINDER_VIDEO_SURFACE_SIZE) {
+      g_indexSurface[index].hwc_cli = hwc_cli;
+   }
+}
+
+extern "C" int BOMX_VideoDecoder_GetIndexSurfaceClient(int index)
+{
+   if (index >= 0 && index < HWC_BINDER_VIDEO_SURFACE_SIZE) {
+      return g_indexSurface[index].hwc_cli;
+   }
+   return -1;
+}
+
+extern "C" void BOMX_VideoDecoder_FreeIndexSurface(int index)
+{
+   if (index >= 0 && index < HWC_BINDER_VIDEO_SURFACE_SIZE) {
+      g_indexSurface[index].user = NULL;
+      g_indexSurface[index].used = false;
+   }
+}
 
 enum BOMX_VideoDecoderEventType
 {
@@ -1246,7 +1286,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_ptsReceived(false),
     m_hdrStaticInfoSet(false),
     m_colorAspectsSet(false),
-    m_redux(false)
+    m_redux(false),
+    m_indexSurface(-1),
+    m_virtual(false)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1268,6 +1310,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
         ALOGW("Redux-decoder '%s'", pName);
         m_redux = true;
+    }
+    // ... for the moment, redux decoder cannot be virtualized, so the two are mutually exclusive.
+    if (!m_redux)
+    {
+       if (property_get_int32(B_PROPERTY_VDEV_MAIN_VIRT, 0))
+       {
+           m_virtual = true;
+       }
+       else if (g_mainDecoderVirtualSession > 0)
+       {
+           // ... virtualized once, need to continue unless all decoders tear down.
+           m_virtual = true;
+       }
+       if (m_virtual)
+       {
+          ALOGW("Virtualized-decoder '%s' (total=%u)", pName, ++g_mainDecoderVirtualSession);
+       }
     }
 
     m_memTracker = BOMX_VideoDecoder_AdvertisePresence(m_secureDecoder);
@@ -1481,6 +1540,29 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         android_atomic_release_store(m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR, &g_decActiveState);
     }
 
+    NEXUS_VideoDecoderCapabilities caps;
+
+    if (m_virtual)
+    {
+        NEXUS_GetVideoDecoderCapabilities(&caps);
+        bool maxedout = true;
+        for ( i = 0; i < caps.numVideoDecoders; i++ )
+        {
+           if (caps.memory[i].mosaic.maxNumber &&
+               caps.memory[i].mosaic.maxNumber >= g_mainDecoderVirtualSession)
+           {
+               maxedout = false;
+           }
+        }
+
+        if (maxedout)
+        {
+           ALOGW("Virtualized-decoder maximum already reached (%u)", g_mainDecoderVirtualSession);
+           this->Invalidate(OMX_ErrorInsufficientResources);
+           return;
+        }
+    }
+
     NxClient_AllocSettings nxAllocSettings;
     NxClient_GetDefaultAllocSettings(&nxAllocSettings);
     nxAllocSettings.simpleVideoDecoder = 1;
@@ -1494,26 +1576,39 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     NEXUS_VideoFormatInfo videoInfo;
-    NEXUS_VideoDecoderCapabilities caps;
 
     // Check the decoder capabilities for the highest resolution if not using
     // redux decoder.
     if (!m_redux)
     {
-        NEXUS_GetVideoDecoderCapabilities(&caps);
-        for ( i = 0; i < caps.numVideoDecoders; i++ )
-        {
-            NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
-            if ( videoInfo.width > m_maxDecoderWidth ) {
+       NEXUS_GetVideoDecoderCapabilities(&caps);
+       if (m_virtual)
+       {
+          for ( i = 0; i < caps.numVideoDecoders; i++ )
+          {
+             if (caps.memory[i].mosaic.maxWidth > m_maxDecoderWidth ) {
+                m_maxDecoderWidth = caps.memory[i].mosaic.maxWidth;
+             }
+             if (caps.memory[i].mosaic.maxHeight > m_maxDecoderHeight ) {
+                m_maxDecoderHeight = caps.memory[i].mosaic.maxHeight;
+             }
+          }
+       }
+       else
+       {
+          for ( i = 0; i < caps.numVideoDecoders; i++ )
+          {
+             NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
+             if ( videoInfo.width > m_maxDecoderWidth ) {
                 m_maxDecoderWidth = videoInfo.width;
-            }
-            if ( videoInfo.height > m_maxDecoderHeight ) {
+             }
+             if ( videoInfo.height > m_maxDecoderHeight ) {
                 m_maxDecoderHeight = videoInfo.height;
-            }
-        }
+             }
+          }
+       }
     }
 
-    ALOGV("max decoder height:%u width:%u", m_maxDecoderHeight, m_maxDecoderWidth);
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
@@ -1526,6 +1621,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.virtualized = m_virtual;
+    ALOGI("%s; max decoder height:%u width:%u", m_virtual?"virtualized":"full", m_maxDecoderWidth, m_maxDecoderHeight);
 
     memset(value, 0, sizeof(value));
     property_get(B_PROPERTY_SVP, value, "play");
@@ -1774,9 +1871,18 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     else
     {
-        int surfaceClientId;
-        m_omxHwcBinder->getvideo(m_redux ? 1 : 0,  /* link to hwc, fixed knowledge indexed. */
-                                 surfaceClientId);
+        m_indexSurface = BOMX_VideoDecoder_GetIndexSurface((void *)this);
+        if (m_indexSurface != -1)
+        {
+           int hwc_cli;
+           m_omxHwcBinder->getvideo(m_indexSurface, hwc_cli);
+           BOMX_VideoDecoder_SetIndexSurfaceClient(m_indexSurface, hwc_cli);
+           ALOGI("surface index %d (%x)", m_indexSurface, hwc_cli);
+        }
+        else
+        {
+           ALOGW("invalid surface index - leakage?");
+        }
     }
 
     m_videoStreamInfo.valid = false;
@@ -1810,10 +1916,19 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
 
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
+    BOMX_VideoDecoder_FreeIndexSurface(m_indexSurface);
     if (m_omxHwcBinder)
     {
         delete m_omxHwcBinder;
         m_omxHwcBinder = NULL;
+    }
+
+    if (m_virtual)
+    {
+       if (g_mainDecoderVirtualSession > 0)
+       {
+          --g_mainDecoderVirtualSession;
+       }
     }
 
     ShutdownScheduler();
@@ -4042,8 +4157,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     }
     // Setup window parameters for display
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_nexusClient;
-    android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
-                                 &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
+    android_atomic_release_store(BOMX_VideoDecoder_GetIndexSurfaceClient(m_indexSurface),
+                                 &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne);
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate,
              ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat,
              pPort->GetDefinition()->format.video.nStride,
@@ -6209,8 +6324,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                                 // Setup window parameters for display and provide buffer status
                                 pSharedData->videoWindow.nexusClientContext = m_nexusClient;
-                                android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
-                                                             &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
+                                android_atomic_release_store(BOMX_VideoDecoder_GetIndexSurfaceClient(m_indexSurface),
+                                                             &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
                                 if (pBuffer->hStripedSurface)
                                 {
