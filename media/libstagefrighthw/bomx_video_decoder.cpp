@@ -1185,6 +1185,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_deltaUs(0),
     m_lastTsUs(B_TIMESTAMP_INVALID),
     m_pNxWrap(pNxWrap),
+    m_nexusClient(0),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSurfaceClient(NULL),
     m_hVideoClient(NULL),
@@ -1448,6 +1449,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             m_pNxWrap->join();
         }
     }
+    m_nexusClient = m_pNxWrap->client();
 
     if (property_get_int32(B_PROPERTY_DTU, 0))
     {
@@ -4040,7 +4042,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
        pInfo->typeInfo.native.pSharedData = (PSHARED_DATA)pMemory;
     }
     // Setup window parameters for display
-    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
+    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_nexusClient;
     android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                  &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate,
@@ -6208,7 +6210,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData = (PSHARED_DATA)pMemory;
 
                                 // Setup window parameters for display and provide buffer status
-                                pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
+                                pSharedData->videoWindow.nexusClientContext = m_nexusClient;
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
