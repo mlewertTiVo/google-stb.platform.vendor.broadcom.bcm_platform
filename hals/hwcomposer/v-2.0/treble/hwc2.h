@@ -306,6 +306,8 @@ struct hwc2_dsp_t {
    struct hwc2_dsp_cfg_t   *aCfg;
    struct hwc2_dsp_cfg_t   *cfgs;
    pthread_mutex_t         mtx_cfg;
+   bool                    cfg_al;
+   bool                    cfg_up;
    struct hwc_position     op;
 
    BKNI_EventHandle        cmp_evt;
