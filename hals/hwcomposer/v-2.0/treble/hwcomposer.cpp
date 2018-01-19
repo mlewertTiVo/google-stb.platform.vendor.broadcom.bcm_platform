@@ -495,6 +495,17 @@ static void hwc2_cfg_collect(
       NEXUS_VideoFormat_eUnknown,
    };
 
+   if (dsp->cfg_al) {
+      ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
+               "[%s]:[cfgs]:%" PRIu64 ":current cfgs locked - delaying update\n",
+               (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+               (uint64_t)(intptr_t)dsp);
+      if (!dsp->cfg_up) {
+         dsp->cfg_up = true;
+      }
+      return;
+   }
+
    NxClient_GetDisplayStatus(&status);
    NEXUS_GetDisplayCapabilities(&caps);
 
@@ -1250,7 +1261,6 @@ static void hwc2_getCaps(
 static enum hwc2_cbs_e hwc2_want_comp_bypass(
    NxClient_DisplaySettings *settings) {
 
-   NxClient_GetDisplaySettings(settings);
    switch (settings->format) {
    case NEXUS_VideoFormat_e720p:
    case NEXUS_VideoFormat_e720p50hz:
@@ -1393,6 +1403,7 @@ static int32_t hwc2_regCb(
             NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
             if (hstatus.connected) {
                NxClient_DisplaySettings settings;
+               NxClient_GetDisplaySettings(&settings);
                hwc2_want_comp_bypass(&settings);
                hwc2_cfg_collect(hwc2->ext, &settings);
                hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
@@ -3043,6 +3054,19 @@ static int32_t hwc2_dspCfg(
 
    *outNumConfigs = 0;
    cfg = dsp->cfgs;
+
+   // refresh if needed.
+   if (cfg != NULL) {
+      if (dsp->cfg_up) {
+         NxClient_DisplaySettings settings;
+         dsp->cfg_al = false;
+         NxClient_GetDisplaySettings(&settings);
+         hwc2_cfg_collect(dsp, &settings);
+         dsp->cfg_up = false;
+      }
+      dsp->cfg_al = true;
+   }
+
    while (cfg != NULL) {
       if (outConfigs != NULL) {
          outConfigs[*outNumConfigs] = (hwc2_config_t)(intptr_t)cfg;
@@ -6418,6 +6442,7 @@ static void hwc2_setup_ext(
    /* always setup the default configuration to run hwc properly regardless
     * of the connected display.
     */
+   NxClient_GetDisplaySettings(&settings);
    enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
    hwc2_ext_fbs(hwc2, wcb);
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
@@ -6531,7 +6556,7 @@ static void hwc2_dc_ntfy(
    void *dev) {
    struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(dev);
    NxClient_DisplaySettings settings;
-
+   NxClient_GetDisplaySettings(&settings);
    enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
    if (wcb != hwc2->ext->u.ext.cb) {
       hwc2->ext->u.ext.cbs = true;
@@ -6546,6 +6571,7 @@ static void hwc2_hp_ntfy(
 
    struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(dev);
    NxClient_DisplaySettings settings;
+   NxClient_GetDisplaySettings(&settings);
 
    if (connected) {
       enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
