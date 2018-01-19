@@ -317,6 +317,7 @@ protected:
     OMX_TICKS m_lastTsUs;
 
     NxWrap                           *m_pNxWrap;
+    uint64_t                         m_nexusClient;
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
     NEXUS_SurfaceClientHandle        m_hSurfaceClient;
