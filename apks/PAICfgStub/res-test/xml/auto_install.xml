@@ -3,7 +3,7 @@
         className="com.test.headlesstestqa.MainActivity"
         packageName="com.test.headlesstestqa" 
         requiredPreload="false"
-        installByDefault="true"
+        installByDefault="false"
         groupId="2" />
 
     <!-- Group Index Mapping -->
