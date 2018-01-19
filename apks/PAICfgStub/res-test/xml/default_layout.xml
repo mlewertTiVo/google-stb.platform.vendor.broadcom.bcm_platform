@@ -17,7 +17,7 @@
             className="com.google.android.gms.games.ui.destination.main.MainActivity"
             packageName="com.google.android.play.games" 
 	    requiredPreload="false"
-            installByDefault="true"
+            installByDefault="false"
             groupId="0" />
     </folder>
 
