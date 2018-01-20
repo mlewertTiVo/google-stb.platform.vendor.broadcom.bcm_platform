@@ -287,9 +287,15 @@ static int nexus_bout_get_render_position(struct brcm_stream_out *bout, uint32_t
     NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
     NEXUS_SimpleAudioPlaybackStatus status;
     NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-    bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
-    bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-    *dsp_frames = (uint32_t)bout->framesPlayed;
+
+    if(status.started) {
+        bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
+        bout->nexus.primary.lastPlayedBytes = status.playedBytes;
+        *dsp_frames = (uint32_t)bout->framesPlayed;
+    }
+    else {
+        *dsp_frames = 0;
+    }
     return 0;
 }
 
@@ -300,9 +306,15 @@ static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, ui
     NEXUS_SimpleAudioPlaybackStatus status;
 
     NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-    bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
-    bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-    *frames = bout->framesPlayedTotal + bout->framesPlayed;
+
+    if(status.started) {
+        bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
+        bout->nexus.primary.lastPlayedBytes = status.playedBytes;
+        *frames = bout->framesPlayedTotal + bout->framesPlayed;
+    }
+    else {
+        *frames = 0;
+    }
     return 0;
 }
 
@@ -599,33 +611,34 @@ static int nexus_bout_close(struct brcm_stream_out *bout)
 
 static int nexus_bout_dump(struct brcm_stream_out *bout, int fd)
 {
-   (void)bout;
-   (void)fd;
+    (void)bout;
+    (void)fd;
 
-   return 0;
+    return 0;
 }
 
 static uint32_t nexus_bout_get_latency(struct brcm_stream_out *bout)
 {
-   (void)bout;
-   /* See SWANDROID-4627 for calculation */
-   return NEXUS_OUT_BUFFER_DURATION_MS;
+    (void)bout;
+    /* See SWANDROID-4627 for calculation */
+    return NEXUS_OUT_BUFFER_DURATION_MS;
 }
 
 static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int64_t *timestamp)
 {
-   NEXUS_SimpleAudioPlaybackStatus status;
-   NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
-   NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
+    NEXUS_SimpleAudioPlaybackStatus status;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
+    NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
 
-   if (!status.started) {
-       *timestamp = 0;
-   } else {
-       struct timespec ts;
-       clock_gettime(CLOCK_MONOTONIC, &ts);
-       *timestamp = (int64_t)ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
-   }
-   return 0;
+    if (status.started) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        *timestamp = (int64_t)ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
+    }
+    else {
+        *timestamp = 0;
+    }
+    return 0;
 }
 
 struct brcm_stream_out_ops nexus_bout_ops = {
