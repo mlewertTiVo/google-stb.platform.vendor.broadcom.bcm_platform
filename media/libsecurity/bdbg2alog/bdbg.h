@@ -151,6 +151,7 @@ const char *BDBG_P_Int64DecArg(int64_t x, char *buf, size_t buf_size);
 #define BDBG_OBJECT_ASSERT(ptr,name)
 #define BDBG_OBJECT_DESTROY(ptr,name)
 #define BDBG_OBJECT_SET(ptr,name)
+#define BDBG_OBJECT_UNSET(ptr,name)
 #define BDBG_OBJECT_ID(name)
 #define BDBG_OBJECT_ID_DECLARE(name)
 #define BDBG_SetModuleLevel(module, level)
