@@ -76,6 +76,7 @@ static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
 static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.pm.wol.mdns.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
+static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
@@ -91,6 +92,7 @@ static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU
 static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
 static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
 static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
+static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
@@ -803,11 +805,13 @@ static status_t power_set_state(nxwrap_pwr_state toState)
          */
         if (toState == ePowerState_S0) {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "0");
-            property_set(PROPERTY_NX_SCREEN_ON, "1");
         }
         else {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
-            property_set(PROPERTY_NX_SCREEN_ON, "0");
+        }
+        /* If we want to boot up in the same screen on/off state, store the new setting */
+        if (property_get_bool(PROPERTY_NX_KEEP_SCREEN_STATE, DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE) == true) {
+            property_set(PROPERTY_NX_SCREEN_ON, (toState == ePowerState_S0) ? "1" : "0");
         }
         gPowerState = toState;
     }
