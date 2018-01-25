@@ -80,6 +80,7 @@ static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
 static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.pm.wol.mdns.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
+static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
@@ -96,6 +97,7 @@ static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable An
 static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
 static const char * DEFAULT_PROPERTY_PM_WOL_OPTS          = "s";   // Enable WoL for MAGIC SECURE packet
 static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
+static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
 // SecureOn(TM) password file path.
 static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/sopass.key";
@@ -1019,11 +1021,13 @@ static status_t power_set_state(b_powerState toState)
          */
         if (toState == ePowerState_S0) {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "0");
-            property_set(PROPERTY_NX_SCREEN_ON, "1");
         }
         else {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
-            property_set(PROPERTY_NX_SCREEN_ON, "0");
+        }
+        /* If we want to boot up in the same screen on/off state, store the new setting */
+        if (property_get_bool(PROPERTY_NX_KEEP_SCREEN_STATE, DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE) == true) {
+            property_set(PROPERTY_NX_SCREEN_ON, (toState == ePowerState_S0) ? "1" : "0");
         }
         gPowerState = toState;
     }
