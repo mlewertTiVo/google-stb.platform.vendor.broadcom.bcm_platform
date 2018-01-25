@@ -1317,10 +1317,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        if (property_get_int32(B_PROPERTY_VDEV_MAIN_VIRT, 0))
        {
            m_virtual = true;
+           // reset because from there on the next decoders would also be virtualized if needed
+           // and in case the application is not well behaved we do not want to be locked in this
+           // state.
+           property_set(B_PROPERTY_VDEV_MAIN_VIRT, "0");
        }
        else if (g_mainDecoderVirtualSession > 0)
        {
-           // ... virtualized once, need to continue unless all decoders tear down.
+           // ... virtualized once, need to continue unless all virtualized instances are released.
            m_virtual = true;
        }
        if (m_virtual)
