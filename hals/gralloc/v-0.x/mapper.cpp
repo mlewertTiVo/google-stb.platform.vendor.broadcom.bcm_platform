@@ -443,7 +443,7 @@ int gralloc_lock(gralloc_module_t const* module,
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-         hnd->nxSurfaceAddress = (uint64_t)vaddr;
+         hnd->nxSurfaceAddress = (uint64_t)(*vaddr);
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
    } else {
@@ -470,7 +470,7 @@ int gralloc_lock(gralloc_module_t const* module,
             // redundant to match what would have happened if the block was created in alloc.
             NEXUS_MemoryBlock_Lock(block_handle, vaddr);
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            hnd->nxSurfaceAddress = (uint64_t)vaddr;
+            hnd->nxSurfaceAddress = (uint64_t)(*vaddr);
             hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
          }
       }
