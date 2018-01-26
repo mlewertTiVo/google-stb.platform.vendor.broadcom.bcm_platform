@@ -88,8 +88,7 @@
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
-#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min/max outstanding input buffers not decoded yet
-#define B_MAX_QUEUED_INPUT_BUFFERS (32)
+#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min outstanding input buffers not decoded yet
 #define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (32)
@@ -5124,18 +5123,17 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
     // Determine the maximum number of buffers to return as follows:
     // 1. When we haven't reached B_MIN_QUEUED_INPUT_BUFFERS, return as many buffers as possible
     // 2. Return buffers at a slower pace otherwise (maximum 1) if we haven't reached the minimum
-    //    pts delta criteria (B_MIN_PTS_DIFF) or if we haven't reached B_MAX_QUEUED_INPUT_BUFFERS
-    //    and the framework hasn't had any available buffer during a "B_INPUT_BUFFERS_SLOW_RATE" period
+    //    pts delta criteria (B_MIN_PTS_DIFF) or if the framework hasn't had any available buffer
+    //    during a "B_INPUT_BUFFERS_SLOW_RATE" period
     if ( mode != InputReturnMode_eAll )
     {
         bool minBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MIN_QUEUED_INPUT_BUFFERS;
-        bool maxBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MAX_QUEUED_INPUT_BUFFERS;
         bool minPtsDiffCond = ptsDiff >= B_MIN_QUEUED_PTS_DIFF;
         if ( !minBuffersCond )
           maxCount = B_MIN_QUEUED_INPUT_BUFFERS - (queuedInputBuffers + m_AvailInputBuffers);
         else if ( !minPtsDiffCond )
           maxCount = 1;
-        else if ( !maxBuffersCond && (m_AvailInputBuffers == 0) && (mode == InputReturnMode_eTimeout) )
+        else if ( m_AvailInputBuffers == 0 && mode == InputReturnMode_eTimeout )
           maxCount = 1;
     }
 
