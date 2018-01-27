@@ -6317,7 +6317,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 void BOMX_VideoDecoder::ReturnDecodedFrames()
 {
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
-    unsigned numFrames=0;
+    unsigned numFrames = 0, numRecycle = 0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
     NEXUS_VideoDecoderStatus status;
 
@@ -6417,7 +6417,11 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 else
                 {
-                    ALOGV("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
+                    ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber, pBuffer->state, pBuffer->display);
+                    if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned && !pBuffer->display )
+                    {
+                        ALOGW("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                    }
                 }
 
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
@@ -6443,7 +6447,12 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
-            BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
+
+            if ( returnSettings[numFrames].recycle )
+            {
+                numRecycle++;
+                BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
+            }
 
             numFrames++;
             pBuffer = pNext;
@@ -6452,28 +6461,43 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         if ( numFrames > 0 )
         {
             int currentPlayTime = 0;
-            if (m_startTime != -1) {
+            if ( m_startTime != -1 )
+            {
                 currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
             }
-            for (uint32_t j=0; j < numFrames; ++j) {
-                if (!returnSettings[j].display && returnSettings[j].recycle) {
-                    ++m_droppedFrames;
-                    if (m_startTime != -1) {
-                        if (currentPlayTime < m_earlyDropThresholdMs) {
-                            ++m_earlyDroppedFrames;
-                        } else {
-                            m_startTime = -1; // Stop tracking once past the mark
+
+            for ( uint32_t j=0; j < numFrames; ++j )
+            {
+                if ( returnSettings[j].recycle )
+                {
+                    if ( !returnSettings[j].display )
+                    {
+                        ++m_droppedFrames;
+                        if ( m_startTime != -1 )
+                        {
+                            if ( currentPlayTime < m_earlyDropThresholdMs )
+                            {
+                                ++m_earlyDroppedFrames;
+                            }
+                            else
+                            {
+                                m_startTime = -1; // Stop tracking once past the mark
+                            }
+                        }
+                        ++m_consecDroppedFrames;
+                        if ( m_consecDroppedFrames > m_maxConsecDroppedFrames )
+                        {
+                            m_maxConsecDroppedFrames = m_consecDroppedFrames;
                         }
                     }
-                    ++m_consecDroppedFrames;
-                    if (m_consecDroppedFrames > m_maxConsecDroppedFrames)
-                        m_maxConsecDroppedFrames = m_consecDroppedFrames;
-                } else {
-                    m_consecDroppedFrames = 0;
+                    else
+                    {
+                        m_consecDroppedFrames = 0;
+                    }
                 }
             }
 
-            ALOGV("Returning %u frames to nexus last=%u - %s", numFrames, pLast->frameStatus.serialNumber, returnSettings[numFrames-1].display?"display":"drop");
+            ALOGV("Returning %u frames (%u recycled) to nexus last=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber);
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {
