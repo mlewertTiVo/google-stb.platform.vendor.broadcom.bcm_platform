@@ -65,6 +65,7 @@ public:
 
    // connect to middleware, optionally instantiating a standby monitor process.
    int join();
+   int join_once();
    int join(StdbyMonCb cb, void *ctx);
    // disconnect from middleware.
    void leave();

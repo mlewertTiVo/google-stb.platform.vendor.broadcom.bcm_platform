@@ -88,8 +88,7 @@
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
-#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min/max outstanding input buffers not decoded yet
-#define B_MAX_QUEUED_INPUT_BUFFERS (32)
+#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min outstanding input buffers not decoded yet
 #define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (32)
@@ -1185,6 +1184,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_deltaUs(0),
     m_lastTsUs(B_TIMESTAMP_INVALID),
     m_pNxWrap(pNxWrap),
+    m_nexusClient(0),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSurfaceClient(NULL),
     m_hVideoClient(NULL),
@@ -1448,6 +1448,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             m_pNxWrap->join();
         }
     }
+    m_nexusClient = m_pNxWrap->client();
 
     if (property_get_int32(B_PROPERTY_DTU, 0))
     {
@@ -4040,7 +4041,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
        pInfo->typeInfo.native.pSharedData = (PSHARED_DATA)pMemory;
     }
     // Setup window parameters for display
-    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
+    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_nexusClient;
     android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                  &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate,
@@ -5122,18 +5123,17 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
     // Determine the maximum number of buffers to return as follows:
     // 1. When we haven't reached B_MIN_QUEUED_INPUT_BUFFERS, return as many buffers as possible
     // 2. Return buffers at a slower pace otherwise (maximum 1) if we haven't reached the minimum
-    //    pts delta criteria (B_MIN_PTS_DIFF) or if we haven't reached B_MAX_QUEUED_INPUT_BUFFERS
-    //    and the framework hasn't had any available buffer during a "B_INPUT_BUFFERS_SLOW_RATE" period
+    //    pts delta criteria (B_MIN_PTS_DIFF) or if the framework hasn't had any available buffer
+    //    during a "B_INPUT_BUFFERS_SLOW_RATE" period
     if ( mode != InputReturnMode_eAll )
     {
         bool minBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MIN_QUEUED_INPUT_BUFFERS;
-        bool maxBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MAX_QUEUED_INPUT_BUFFERS;
         bool minPtsDiffCond = ptsDiff >= B_MIN_QUEUED_PTS_DIFF;
         if ( !minBuffersCond )
           maxCount = B_MIN_QUEUED_INPUT_BUFFERS - (queuedInputBuffers + m_AvailInputBuffers);
         else if ( !minPtsDiffCond )
           maxCount = 1;
-        else if ( !maxBuffersCond && (m_AvailInputBuffers == 0) && (mode == InputReturnMode_eTimeout) )
+        else if ( m_AvailInputBuffers == 0 && mode == InputReturnMode_eTimeout )
           maxCount = 1;
     }
 
@@ -6208,7 +6208,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData = (PSHARED_DATA)pMemory;
 
                                 // Setup window parameters for display and provide buffer status
-                                pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
+                                pSharedData->videoWindow.nexusClientContext = m_nexusClient;
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
@@ -6317,7 +6317,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 void BOMX_VideoDecoder::ReturnDecodedFrames()
 {
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
-    unsigned numFrames=0;
+    unsigned numFrames = 0, numRecycle = 0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
     NEXUS_VideoDecoderStatus status;
 
@@ -6417,7 +6417,11 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 else
                 {
-                    ALOGV("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
+                    ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber, pBuffer->state, pBuffer->display);
+                    if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned && !pBuffer->display )
+                    {
+                        ALOGW("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                    }
                 }
 
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
@@ -6443,7 +6447,12 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
-            BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
+
+            if ( returnSettings[numFrames].recycle )
+            {
+                numRecycle++;
+                BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
+            }
 
             numFrames++;
             pBuffer = pNext;
@@ -6452,28 +6461,43 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         if ( numFrames > 0 )
         {
             int currentPlayTime = 0;
-            if (m_startTime != -1) {
+            if ( m_startTime != -1 )
+            {
                 currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
             }
-            for (uint32_t j=0; j < numFrames; ++j) {
-                if (!returnSettings[j].display && returnSettings[j].recycle) {
-                    ++m_droppedFrames;
-                    if (m_startTime != -1) {
-                        if (currentPlayTime < m_earlyDropThresholdMs) {
-                            ++m_earlyDroppedFrames;
-                        } else {
-                            m_startTime = -1; // Stop tracking once past the mark
+
+            for ( uint32_t j=0; j < numFrames; ++j )
+            {
+                if ( returnSettings[j].recycle )
+                {
+                    if ( !returnSettings[j].display )
+                    {
+                        ++m_droppedFrames;
+                        if ( m_startTime != -1 )
+                        {
+                            if ( currentPlayTime < m_earlyDropThresholdMs )
+                            {
+                                ++m_earlyDroppedFrames;
+                            }
+                            else
+                            {
+                                m_startTime = -1; // Stop tracking once past the mark
+                            }
+                        }
+                        ++m_consecDroppedFrames;
+                        if ( m_consecDroppedFrames > m_maxConsecDroppedFrames )
+                        {
+                            m_maxConsecDroppedFrames = m_consecDroppedFrames;
                         }
                     }
-                    ++m_consecDroppedFrames;
-                    if (m_consecDroppedFrames > m_maxConsecDroppedFrames)
-                        m_maxConsecDroppedFrames = m_consecDroppedFrames;
-                } else {
-                    m_consecDroppedFrames = 0;
+                    else
+                    {
+                        m_consecDroppedFrames = 0;
+                    }
                 }
             }
 
-            ALOGV("Returning %u frames to nexus last=%u - %s", numFrames, pLast->frameStatus.serialNumber, returnSettings[numFrames-1].display?"display":"drop");
+            ALOGV("Returning %u frames (%u recycled) to nexus last=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber);
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {

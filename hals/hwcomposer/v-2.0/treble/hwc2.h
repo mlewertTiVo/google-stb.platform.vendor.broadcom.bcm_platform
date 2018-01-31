@@ -104,6 +104,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_EXT_AFB_H  "ro.nx.hwc2.afb.h"
 #define HWC2_EXT_NFB_W  "ro.nx.hwc2.nfb.w"
 #define HWC2_EXT_NFB_H  "ro.nx.hwc2.nfb.h"
+#define HWC2_GFB_MAX_W  "ro.nx.hwc2.gfb.w"
+#define HWC2_GFB_MAX_H  "ro.nx.hwc2.gfb.h"
 
 /* dump frames content for each composition, requires:
  *
@@ -304,6 +306,8 @@ struct hwc2_dsp_t {
    struct hwc2_dsp_cfg_t   *aCfg;
    struct hwc2_dsp_cfg_t   *cfgs;
    pthread_mutex_t         mtx_cfg;
+   bool                    cfg_al;
+   bool                    cfg_up;
    struct hwc_position     op;
 
    BKNI_EventHandle        cmp_evt;
@@ -319,6 +323,9 @@ struct hwc2_dsp_t {
    bool                    sfb;
    uint64_t                tlm;
    enum hwc2_record_dump_e dmp;
+
+   uint32_t                gfbw;
+   uint32_t                gfbh;
 
    uint64_t                pres;
    uint64_t                post;
