@@ -37,10 +37,7 @@ include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
-include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
-include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
-include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 endif
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
@@ -54,6 +51,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/clipping/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/dtu/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/keymaster/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
@@ -64,7 +62,11 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplayready_svp/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxprdy30_svp/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxpsi/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd30/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxsmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxthumb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk

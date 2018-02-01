@@ -29,7 +29,7 @@
 #include <binder/Binder.h>
 #include "HwcSvc.h"
 
-#define HWC_BINDER_VIDEO_SURFACE_SIZE    (2)
+#define HWC_BINDER_VIDEO_SURFACE_SIZE    (5)
 #define HWC_BINDER_SIDEBAND_SURFACE_SIZE (4)
 
 using namespace android;
@@ -84,6 +84,8 @@ public:
                              struct hwc_position &position);
     virtual void getOverscanAdjust(const sp<IHwcListener>& listener,
                              struct hwc_position &position);
+
+    virtual void evalPlm(const sp<IHwcListener>& listener);
 
     virtual status_t onTransact(uint32_t code,
                                 const Parcel& data,

@@ -24,14 +24,14 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DNXCLIENT_SUPPORT
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1
 LOCAL_CFLAGS += -DDRM_INLINING_SUPPORTED=1 -DDRM_BUILD_PROFILE=900 -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=0
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/utility/src
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/utility/include
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/tl
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/utility/src
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/utility/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/tl
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/
 
 LOCAL_MODULE_TAGS := optional
 

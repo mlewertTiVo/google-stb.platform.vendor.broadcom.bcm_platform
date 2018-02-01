@@ -65,6 +65,7 @@ public:
 
    // connect to middleware, optionally instantiating a standby monitor process.
    int join();
+   int join_once();
    int join(StdbyMonCb cb, void *ctx);
    // disconnect from middleware.
    void leave();
@@ -81,6 +82,10 @@ public:
    void setPwr(struct pmlib_state_t *s);
    // get power state from middleware.
    void getPwr(struct pmlib_state_t *s);
+   // invoke rmlmk.
+   void rmlmk(uint64_t cid);
+   // setup wake-on-lan
+   int setWoL(const char *ifc);
 
    static Mutex mLck;
 

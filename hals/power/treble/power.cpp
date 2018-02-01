@@ -73,9 +73,10 @@ static const char * PROPERTY_PM_TP3_EN                    = "ro.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
 static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
-static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
 static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.pm.wol.mdns.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
+static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
+static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
@@ -90,10 +91,8 @@ static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DD
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
 static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
-static const char * DEFAULT_PROPERTY_PM_WOL_OPTS          = "s";   // Enable WoL for MAGIC SECURE packet
-
-// SecureOn(TM) password file path.
-static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/sopass.key";
+static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
+static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
@@ -307,18 +306,6 @@ static bool power_get_property_wol_mdns_en()
     return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
 }
 
-static int power_get_property_wol_opts(char *opts)
-{
-    int len;
-    char value[PROPERTY_VALUE_MAX];
-
-    len = property_get(PROPERTY_PM_WOL_OPTS, value, DEFAULT_PROPERTY_PM_WOL_OPTS);
-    if (len) {
-        strncpy(opts, value, PROPERTY_VALUE_MAX-1);
-    }
-    return len;
-}
-
 static nxwrap_pwr_state power_get_off_state()
 {
     nxwrap_pwr_state offState;
@@ -344,83 +331,6 @@ static void dozeTimerCallback(union sigval val __unused)
     // Ensure we release a wake-lock to allow the system to begin suspending.  We then
     // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
     releaseWakeLock();
-}
-
-static status_t power_parse_wolopts(char *optstr, uint32_t *data)
-{
-    status_t status = NO_ERROR;
-
-    *data = 0;
-
-    while (*optstr) {
-        switch (*optstr) {
-            case 'p':
-                *data |= WAKE_PHY;
-                break;
-            case 'u':
-                *data |= WAKE_UCAST;
-                break;
-            case 'm':
-                *data |= WAKE_MCAST;
-                break;
-            case 'b':
-                *data |= WAKE_BCAST;
-                break;
-            case 'a':
-                *data |= WAKE_ARP;
-                break;
-            case 'g':
-                *data |= WAKE_MAGIC;
-                break;
-            case 's':
-                *data |= WAKE_MAGICSECURE;
-                break;
-            case 'd':
-                *data = 0;
-                break;
-            default:
-                status = BAD_VALUE;
-                break;
-        }
-        optstr++;
-    }
-    return status;
-}
-
-static status_t power_parse_sopass(String8& src, uint8_t *dest)
-{
-    status_t status = NO_ERROR;
-    int count;
-    unsigned int buf[ETH_ALEN];
-
-    count = sscanf(src.string(), "%2x:%2x:%2x:%2x:%2x:%2x",
-        &buf[0], &buf[1], &buf[2], &buf[3], &buf[4], &buf[5]);
-
-    if (count != ETH_ALEN) {
-        status = BAD_VALUE;
-    }
-    else {
-        for (int i = 0; i < count; i++) {
-            dest[i] = buf[i];
-        }
-    }
-    return status;
-}
-
-String8 power_get_sopass_file_path()
-{
-    String8 path;
-
-    path.setTo(SOPASS_KEY_FILE_PATH);
-
-    if (!access(path.string(), R_OK)) {
-        ALOGV("%s: Found \"%s\".", __FUNCTION__, path.string());
-        return path;
-    }
-    else {
-        ALOGV("%s: Could not find \"%s\"!", __FUNCTION__, path.string());
-        return String8();
-    }
 }
 
 static int power_filter_dots(const struct dirent *d)
@@ -456,143 +366,23 @@ static bool power_is_iface_present(const char *ifname)
 static status_t power_set_enet_wol()
 {
     status_t status = NO_ERROR;
-    struct ifreq ifr;
     unsigned i;
-    int fd = -1;
+    int ret;
 
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
-        ALOGW("%s: Could not open socket for WoL control!", __FUNCTION__);
-        status = PERMISSION_DENIED;
-    }
-    else {
-        status = NAME_NOT_FOUND;
-
-        // Search for a valid Ethernet interface...
-        for (i=0; i<sizeof(powerNetInterfaces)/sizeof(powerNetInterfaces[0]); i++) {
-            if (power_is_iface_present(powerNetInterfaces[i])) {
-                memset(&ifr, 0, sizeof(ifr));
-                strcpy(ifr.ifr_name, powerNetInterfaces[i]);
-
-                status = ioctl(fd, SIOCGIFFLAGS, &ifr);
-                if (status < 0) {
-                    ALOGW("%s: Could not get socket flags for %s!", __FUNCTION__, ifr.ifr_name);
-                }
-                else if (!(ifr.ifr_flags & IFF_UP)) {
-                    ALOGW("%s: Interface %s is DOWN!", __FUNCTION__, ifr.ifr_name);
-                    status = -EAGAIN;
-                }
-                else {
-                    status = NO_ERROR;
-                    break;
-                }
-            }
+    status = NAME_NOT_FOUND;
+    for (i=0; i<sizeof(powerNetInterfaces)/sizeof(powerNetInterfaces[0]); i++) {
+        if (power_is_iface_present(powerNetInterfaces[i])) {
+           ret = gNxWrap->setWoL(powerNetInterfaces[i]);
+           if (!ret) {
+              ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, powerNetInterfaces[i]);
+              status = NO_ERROR;
+           } else {
+              ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, powerNetInterfaces[i]);
+              status = -EAGAIN;
+           }
         }
     }
 
-    // Enable wake on mDNS packet detection
-    if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
-        struct ethtool_rxnfc rxnfc;
-
-        memset(&rxnfc, 0, sizeof(rxnfc));
-
-        rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
-        rxnfc.fs.flow_type = IPV4_USER_FLOW;
-        rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
-        rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
-        rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
-
-        ifr.ifr_data = (void *)&rxnfc;
-        status = ioctl(fd, SIOCETHTOOL, &ifr);
-        if (status != NO_ERROR) {
-            ALOGD("%s: Error setting mDNS filter for %s, status=%d",
-                  __FUNCTION__, ifr.ifr_name, status);
-        }
-    }
-
-    if (status == NO_ERROR) {
-        struct ethtool_wolinfo wolinfo;
-        char wol_opts[PROPERTY_VALUE_MAX] = "";
-
-        memset(&wolinfo, 0, sizeof(wolinfo));
-
-        if (power_get_property_wol_opts(wol_opts) > 0) {
-            uint32_t data;
-
-            status = power_parse_wolopts(wol_opts, &data);
-            if (status == NO_ERROR) {
-                wolinfo.wolopts = data;
-                ALOGV("%s: WoL options=0x%02x", __FUNCTION__, data);
-
-                // SecureOn(TM) password is stored in a password file
-                if (data & WAKE_MAGICSECURE) {
-                    uint8_t sopass[SOPASS_MAX];
-                    String8 path;
-                    String8 value;
-                    PropertyMap* config;
-
-                    path = power_get_sopass_file_path();
-                    if (path.isEmpty()) {
-                        ALOGE("%s: Could not find SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
-                        status = NAME_NOT_FOUND;
-                    }
-                    else {
-                        status = PropertyMap::load(path, &config);
-                        if (status == NO_ERROR) {
-                            size_t numEntries = config->getProperties().size();
-                            if (numEntries != 1) {
-                                ALOGE("%s: Invalid number of entries %zu in SecureOn(TM) password file \"%s\"!", __FUNCTION__, numEntries, path.string());
-                                status = BAD_VALUE;
-                            }
-                            else if (config->tryGetProperty(String8("SOPASS"), value)) {
-                                status = power_parse_sopass(value, sopass);
-                                if (status == NO_ERROR) {
-                                    for (i = 0; i < SOPASS_MAX; i++) {
-                                        wolinfo.sopass[i] = sopass[i];
-                                    }
-                                    ALOGV("%s: WoL sopass=\"%s\"", __FUNCTION__, value.string());
-                                }
-                                else {
-                                    ALOGE("%s: Invalid \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
-                                }
-                            }
-                            else {
-                                ALOGE("%s: Could not find \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
-                                status = BAD_VALUE;
-                            }
-                        }
-                        else {
-                            ALOGE("%s: Could not load SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
-                        }
-                    }
-                }
-            }
-            else {
-                ALOGE("%s: Invalid WoL options \"%s\"!", __FUNCTION__, wol_opts);
-            }
-        }
-        else {
-            ALOGE("%s: No WoL arguments specified!", __FUNCTION__);
-            status = BAD_VALUE;
-        }
-
-        if (status == NO_ERROR) {
-            wolinfo.cmd = ETHTOOL_SWOL;
-            ifr.ifr_data = (void *)&wolinfo;
-            status = ioctl(fd, SIOCETHTOOL, &ifr);
-        }
-    }
-
-    if (status == NO_ERROR) {
-        ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, ifr.ifr_name);
-    }
-    else {
-        ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
-    }
-
-    if (fd >= 0) {
-        close(fd);
-    }
     return status;
 }
 
@@ -737,10 +527,12 @@ static void power_init(struct power_module *module __unused)
     }
 
     // If we have powered up only from an alarm timer, then it means we have woken up from S5 and
-    // we need to remain in a standby state (e.g. S0.5 or S2).  We do this by using the
+    // we need to remain in a standby state (e.g. S0.5 or S2).  Or, if the screen was off when
+    // powered down, remain in standby. We do this by using the
     // Android framework's ability to power-up in to standby if a lid switch is set (i.e. down).
-    if (gNexusPower->getPowerStatus(&power, &wake) == NO_ERROR && wake.timeout &&
-        !(wake.ir || wake.uhf || wake.keypad || wake.gpio || wake.cec || wake.transport)) {
+    if ((property_get_bool(PROPERTY_NX_SCREEN_ON, DEFAULT_PROPERTY_NX_SCREEN_ON) == false) ||
+        (gNexusPower->getPowerStatus(&power, &wake) == NO_ERROR && wake.timeout &&
+        !(wake.ir || wake.uhf || wake.keypad || wake.gpio || wake.cec || wake.transport))) {
 
         gPowerState = ePowerState_S05;
         power_set_sw_lid_state(SW_LID_STATE_DOWN);
@@ -1016,6 +808,10 @@ static status_t power_set_state(nxwrap_pwr_state toState)
         }
         else {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
+        }
+        /* If we want to boot up in the same screen on/off state, store the new setting */
+        if (property_get_bool(PROPERTY_NX_KEEP_SCREEN_STATE, DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE) == true) {
+            property_set(PROPERTY_NX_SCREEN_ON, (toState == ePowerState_S0) ? "1" : "0");
         }
         gPowerState = toState;
     }

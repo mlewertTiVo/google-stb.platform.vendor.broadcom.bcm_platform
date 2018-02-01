@@ -54,6 +54,7 @@ void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
 extern "C" void *nxwrap_create_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
+extern "C" void nxwrap_rmlmk(void *wrap);
 
 #if defined(V3D_VARIANT_v3d)
 static void *gl_dyn_lib;
@@ -73,6 +74,7 @@ static int gralloc_conv_time = 0;
 static int gralloc_boom_chk = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g2dLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
@@ -169,14 +171,24 @@ void gralloc_explicit_load(void)
    }
 }
 
+pthread_mutex_t *gralloc_g2d_lock(void)
+{
+   return &moduleLock;
+}
+
 void gralloc_g2d_hdl_end(void)
 {
-   if (hGraphics == NULL) {
+   pthread_mutex_t *pMutex = &g2dLock;
+   if (pMutex == NULL) {
       return;
-   } else {
+   }
+
+   if (hGraphics != NULL) {
       NEXUS_Graphics2D_Close(hGraphics);
       hGraphics = NULL;
    }
+
+   pthread_mutex_unlock(pMutex);
 }
 
 void gralloc_explicit_unload(void)
@@ -195,7 +207,9 @@ void gralloc_explicit_unload(void)
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
    }
-   gralloc_g2d_hdl_end();
+   if (hGraphics != NULL) {
+      gralloc_g2d_hdl_end();
+   }
 }
 
 int gralloc_log_mapper(void)
@@ -223,18 +237,21 @@ void * gralloc_v3d_get_nexus_client_context(void)
    return nexus_client;
 }
 
-pthread_mutex_t *gralloc_g2d_lock(void)
-{
-   return &moduleLock;
-}
-
 NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 {
    NEXUS_Error rc;
    NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
+   pthread_mutex_t *pMutex = &g2dLock;
+   if (pMutex == NULL) {
+      hGraphics = NULL;
+      return NULL;
+   }
+   pthread_mutex_lock(pMutex);
+
    if (hCheckpointEvent == NULL) {
       hGraphics = NULL;
+      pthread_mutex_unlock(pMutex);
       return NULL;
    }
    if (hGraphics != NULL) {
@@ -256,6 +273,9 @@ NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
          }
       }
    }
+   if (hGraphics == NULL) {
+      pthread_mutex_unlock(pMutex);
+   }
    return hGraphics;
 }
 
@@ -268,7 +288,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
-    pthread_mutex_t *pMutex = gralloc_g2d_lock();
     bool done=false;
     NEXUS_Addr physAddr;
     void *pMemory = NULL;
@@ -288,12 +307,11 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        goto out;
     }
 
-    if (gfx && event && pMutex) {
+    if (gfx && event) {
         NEXUS_Error errCode;
         size_t pktSize;
         void *pktBuffer, *next;
 
-        pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
@@ -349,7 +367,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
            }
            break;
         }
-        pthread_mutex_unlock(pMutex);
         if (!errCode) {
            done = true;
         }
@@ -359,7 +376,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        bzero(pMemory, pSharedData->container.size);
     }
 
-out_release:
     if (block_handle) {
        if (!lrco) NEXUS_MemoryBlock_UnlockOffset(block_handle);
        if (!lrc)  NEXUS_MemoryBlock_Unlock(block_handle);
@@ -753,12 +769,11 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       fmt_set |= GR_NONE;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
-      fmt_set |= GR_YV12;
+      fmt_set |= (GR_YV12|GR_YV12_SW);
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
-      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN)) {
-         // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-         // the content, eg decode->encode type of scenario yv12 data is produced during lock.
+      if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
+         // cpu will read content, need backing buffer; yv12 plane produced during lock.
          fmt_set |= (GR_YV12|GR_YV12_SW);
       } else if (usage & GRALLOC_USAGE_HW_TEXTURE) {
          fmt_set |= GR_YV12;
@@ -783,6 +798,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             } else {
                ashmem_alloc.size = pSharedData->container.allocSize;
             }
+         } else if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) &&
+                    (usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
+            // note that we do not allow pure sw planes larger than max data planes because
+            // we still want to prevent performance bottleneck on composition hw.
+            if (!skip_alloc) {
+               ashmem_alloc.size = pSharedData->container.allocSize;
+            }
          }
       } else {
          if (!((fmt_set & GR_BLOB) || (fmt_set & GR_FP))) {
@@ -796,6 +818,15 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          if (ret >= 0) {
             memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
             ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               /* give another try after attempting a round of rmlmk, if
+                * rmlmk fails (e.g. not enough memory could be freed up),
+                * that's game over.
+                */
+               nxwrap_rmlmk(nxwrap);
+               BKNI_Sleep(5); /* give settling time for rmlmk. */
+               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            }
             if (ret < 0) {
                err = -ENOMEM;
                goto alloc_failed;
@@ -845,7 +876,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (((hnd->fmt_set & GR_YV12) == GR_YV12) &&
           ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) &&
           !(hnd->fmt_set & GR_YV12_SW)) {
-         ALOGI("%s: dropping data plane in favor of hw-texture (%d,%d), size %d", __FUNCTION__, w, h, size);
+         ALOGI("%s: dropping data plane in favor of hw-texture (%dx%d:%x), size %d", __FUNCTION__,
+            w, h, hnd->fmt_set, size);
          if (!(w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT)) {
             pSharedData->container.size = 0;
             pSharedData->container.allocSize = 0;

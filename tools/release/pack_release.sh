@@ -177,24 +177,36 @@ mkdir -p $PLAYREADY_DIR
 # Check if the required prebuilt libraries tarballs are already provided by the user
 if [ -d $PREBUILT_BINS_DIR ]; then
   if [ -f $PREBUILT_BINS_DIR/release_prebuilts_user.tgz ]; then
-    tar -C $VENDOR_BRCM -zxvf  $PREBUILT_BINS_DIR/release_prebuilts_user.tgz;
+    tar -C $VENDOR_BRCM -zxvf $PREBUILT_BINS_DIR/release_prebuilts_user.tgz;
   else
-    echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_usr.tgz"\\n
+    echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_user.tgz"\\n
   fi
   if [ -f $PREBUILT_BINS_DIR/release_prebuilts_userdebug.tgz ]; then
-    tar -C $VENDOR_BRCM -zxvf  $PREBUILT_BINS_DIR/release_prebuilts_userdebug.tgz;
+    tar -C $VENDOR_BRCM -zxvf $PREBUILT_BINS_DIR/release_prebuilts_userdebug.tgz;
   else
     echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_usrdebug.tgz"\\n
+  fi
+  if [ -f $PREBUILT_BINS_DIR/release_prebuilts_user_treble.tgz ]; then
+    tar -C $VENDOR_BRCM -zxvf $PREBUILT_BINS_DIR/release_prebuilts_user_treble.tgz;
+  fi
+  if [ -f $PREBUILT_BINS_DIR/release_prebuilts_userdebug_treble.tgz ]; then
+    tar -C $VENDOR_BRCM -zxvf $PREBUILT_BINS_DIR/release_prebuilts_userdebug_treble.tgz;
   fi
   if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz ]; then
     tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz;
   else
-    echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usr.tgz"\\n
+    echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_user.tgz"\\n
   fi
   if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz ]; then
     tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz;
   else
     echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usrdebug.tgz"\\n
+  fi
+  if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_user_treble.tgz ]; then
+    tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_user_treble.tgz;
+  fi
+  if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_userdebug_treble.tgz ]; then
+    tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_userdebug_treble.tgz;
   fi
   tar -C $PLAYREADY_DIR -zcvf $ADDON_DIR/playready_prebuilts.tgz vendor;
 else

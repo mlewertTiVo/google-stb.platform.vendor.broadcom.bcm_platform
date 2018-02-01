@@ -103,6 +103,7 @@ typedef struct __SHARED_DATA_ {
       unsigned vBackingUpdated;
       unsigned vImageWidth;
       unsigned vImageHeight;
+      unsigned vColorSpace;
       NEXUS_MemoryBlockHandle vLumaBlock;
       NEXUS_MemoryBlockHandle vChromaBlock;
       uint64_t vLumaAddr __attribute__((aligned(8)));

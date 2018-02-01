@@ -54,6 +54,12 @@ struct output_hdr {
     uint32_t length;    // not including header
 };
 
+namespace android {
+
+extern AudioHardwareInput gAudioHardwareInput;
+
+}
+
 /*
  * Utility Functions
  */
@@ -98,10 +104,11 @@ static brcm_devices_out_t get_brcm_devices_out(audio_devices_t devices, bool tun
     switch (devices) {
     case AUDIO_DEVICE_OUT_SPEAKER:
     case AUDIO_DEVICE_OUT_AUX_DIGITAL:
+    case AUDIO_DEVICE_OUT_DEFAULT:
         if (tunneled) {
            return BRCM_DEVICE_OUT_NEXUS_TUNNEL;
         } else {
-            if (devices == AUDIO_DEVICE_OUT_SPEAKER) {
+            if (devices == AUDIO_DEVICE_OUT_SPEAKER || devices == AUDIO_DEVICE_OUT_DEFAULT) {
                 return BRCM_DEVICE_OUT_NEXUS;
             } else { // AUDIO_DEVICE_OUT_AUX_DIGITAL
                 return BRCM_DEVICE_OUT_NEXUS_DIRECT;
@@ -117,6 +124,9 @@ static brcm_devices_in_t get_brcm_devices_in(audio_devices_t devices)
     switch (devices) {
     case AUDIO_DEVICE_IN_BUILTIN_MIC:
         return BRCM_DEVICE_IN_BUILTIN;
+    case AUDIO_DEVICE_IN_WIRED_HEADSET:
+    case AUDIO_DEVICE_IN_DEFAULT:
+        return BRCM_DEVICE_IN_ATVR;
     default:
         return BRCM_DEVICE_IN_MAX;
     }
@@ -436,16 +446,20 @@ static int bout_get_render_position(const struct audio_stream_out *aout,
 static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
                                          int64_t *timestamp)
 {
-    UNUSED(aout);
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret = 0;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    *timestamp = ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
+    if (bout->ops.do_bout_get_next_write_timestamp) {
+        ret = bout->ops.do_bout_get_next_write_timestamp(bout, timestamp);
+    } else {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        *timestamp = (int64_t)ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
+    }
 
     ALOGV("%s: at %d, stream = %p, Next timestamp..(%" PRId64 ")",
-         __FUNCTION__, __LINE__, aout, *timestamp);
-
-    return 0;
+        __FUNCTION__, __LINE__, aout, *timestamp);
+    return ret;
 }
 
 static int bout_get_presentation_position(const struct audio_stream_out *aout,
@@ -1302,6 +1316,9 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
     case BRCM_DEVICE_IN_BUILTIN:
         bin->ops = builtin_bin_ops;
         break;
+    case BRCM_DEVICE_IN_ATVR:
+        bin->ops = atvr_bin_ops;
+        break;
     case BRCM_DEVICE_IN_USB:
     default:
         ALOGE("%s: at %d, invalid devices %d\n",
@@ -1503,6 +1520,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev->standbyThread = new StandbyMonitorThread();
 
+    bdev->input = &gAudioHardwareInput;
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;
 }

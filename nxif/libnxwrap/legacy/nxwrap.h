@@ -67,6 +67,7 @@ public:
 
    // connect to middleware, optionally instantiating a standby monitor process.
    int join();
+   int join_once();
    int join(StdbyMonCb cb, void *ctx);
    // disconnect from middleware.
    void leave();
@@ -79,6 +80,8 @@ public:
    // register|unregister from display event source.
    void regDspEvt(const sp<INxDspEvtSrc> &listener);
    void unregDspEvt(const sp<INxDspEvtSrc> &listener);
+   // rmlmk
+   void rmlmk(uint64_t client);
 
 protected:
    struct StdbyMon: public Thread {

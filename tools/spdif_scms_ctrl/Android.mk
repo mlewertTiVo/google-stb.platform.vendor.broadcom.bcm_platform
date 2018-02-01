@@ -19,7 +19,7 @@ LOCAL_MODULE := spdif_scms_ctrl
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1
-LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include
+LOCAL_CFLAGS += -I/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include
 
 LOCAL_MODULE_TAGS := optional
 

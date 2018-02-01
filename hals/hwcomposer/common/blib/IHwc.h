@@ -52,6 +52,8 @@ public:
                              struct hwc_position &position) = 0;
     virtual void getOverscanAdjust(const sp<IHwcListener>& listener,
                              struct hwc_position &position) = 0;
+
+    virtual void evalPlm(const sp<IHwcListener>& listener) = 0;
 };
 
 class BnHwc : public BnInterface<IHwc>

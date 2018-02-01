@@ -48,13 +48,13 @@ V3D_ANDROID_LD := ${V3D_ANDROID_LD_1ST_ARCH}
 export V3D_ANDROID_DEFINES V3D_ANDROID_LD
 
 include ${BSEAV_TOP}/lib/gpu/v3d/driver/Android.mk
-include ${BSEAV_TOP}/lib/gpu/v3d/tools/spyhook/Android.mk
+include ${BSEAV_TOP}/lib/gpu/tools/gpumon_hook/Android.mk
 
 # vc5 v3d.
 else
 
 include ${BSEAV_TOP}/lib/gpu/vc5/driver/Android.mk
-include ${BSEAV_TOP}/lib/gpu/vc5/tools/gpumon_hook/Android.mk
+include ${BSEAV_TOP}/lib/gpu/tools/gpumon_hook/Android.mk
 
 endif
 
