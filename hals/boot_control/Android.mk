@@ -21,29 +21,58 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_RELATIVE_PATH := hw
-LOCAL_SHARED_LIBRARIES := libcutils \
-                          liblog \
-                          libbase
+LOCAL_SHARED_LIBRARIES += libbinder
+LOCAL_SHARED_LIBRARIES += libbase
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += libdl
+LOCAL_SHARED_LIBRARIES += libhwcutils
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libnexus
+LOCAL_SHARED_LIBRARIES += libnxclient
+LOCAL_SHARED_LIBRARIES += libutils
+LOCAL_SHARED_LIBRARIES += libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+else
+LOCAL_SHARED_LIBRARIES += libnxbinder
+LOCAL_SHARED_LIBRARIES += libnxevtsrc
+endif
 LOCAL_STATIC_LIBRARIES := libfs_mgr
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
+                    $(NXCLIENT_INCLUDES)
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-bootc\"
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_SRC_FILES := boot_control.cpp
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
 
+# for use during recovery, therefore not full nxclient support.
 include $(CLEAR_VARS)
 LOCAL_MODULE := bootctrl.$(TARGET_BOARD_PLATFORM)
 LOCAL_PRELINK_MODULE := false
-LOCAL_SHARED_LIBRARIES := libcutils \
-                          liblog \
+LOCAL_SHARED_LIBRARIES := liblog \
                           libbase
 LOCAL_STATIC_LIBRARIES := libfs_mgr
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-bootc\"
+LOCAL_CFLAGS += -DNO_NXCLIENT_CHECK
 LOCAL_SRC_FILES := boot_control.cpp
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_STATIC_LIBRARY)

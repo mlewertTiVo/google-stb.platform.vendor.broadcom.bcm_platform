@@ -134,6 +134,18 @@ int NxWrap::join() {
    return rc;
 }
 
+int NxWrap::join_once() {
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NxClient_JoinSettings joinSettings;
+   NEXUS_PlatformStatus status;
+
+   Mutex::Autolock autoLock(mLck);
+   NxClient_GetDefaultJoinSettings(&joinSettings);
+   joinSettings.ignoreStandbyRequest = true;
+   rc = NxClient_Join(&joinSettings);
+   return rc;
+}
+
 int NxWrap::join(StdbyMonCb cb, void *ctx) {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;

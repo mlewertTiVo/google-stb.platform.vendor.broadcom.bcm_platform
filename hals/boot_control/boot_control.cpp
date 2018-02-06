@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <pthread.h>
 
 #include <cutils/properties.h>
 #include <cutils/log.h>
@@ -28,10 +29,60 @@
 #include <fs_mgr.h>
 #include "eio_boot.h"
 
+#if !defined(NO_NXCLIENT_CHECK)
+#include "nxclient.h"
+#include "nxwrap.h"
+#endif
+
+#define TIMEOUT_TRYING 120
+
 // local copy loaded on 'init', gets data from bootloader.
 static struct eio_boot bc_eio;
 static char suffix[EIO_BOOT_SUFFIX_LEN+1];
 static int verbose = 0;
+// "boot ok" slot marker thread for delayed setting.
+static pthread_t bctl_bootok;
+static bool bctl_bootok_run = true;
+static pthread_mutex_t bctl_bootok_lock;
+static pthread_cond_t bctl_bootok_cond;
+
+static int nexus_state(void) {
+   char nexus[PROPERTY_VALUE_MAX];
+   int it = 0, rc;
+   property_get("dyn.nx.state", nexus, "");
+   // something went wrong during nexus loading, or before middleware is fully
+   // up, the device|slot is not operational.
+   if (strncmp(nexus, "loaded", strlen("loaded"))) {
+      ALOGE("nexus in invalid state \"%s\"", nexus);
+      return -EINVAL;
+   }
+#if !defined(NO_NXCLIENT_CHECK)
+   // simple check for sanity by connecting a client, if this fails, then we
+   // know something went wrong subsequently to middleware boot up, such as a run
+   // time crash (before watchdog resets us).  we use direct nxclient rather than
+   // the nxwrap because we just need the low level connectivity check.
+   NxWrap *wrap = NULL;
+   wrap = new NxWrap("bootc");
+   if (wrap == NULL) {
+      return -EIO;
+   }
+   do {
+      rc = wrap->join_once();
+      if (rc != NEXUS_SUCCESS) {
+         if (++it > TIMEOUT_TRYING)
+            break;
+         sleep(1);
+       }
+   } while (rc != NEXUS_SUCCESS);
+   if (rc != NEXUS_SUCCESS) {
+      ALOGE("nexus is unreachable, assume BAD");
+      return -EIO;
+   }
+   wrap->leave();
+   delete wrap;
+#endif
+   return 0;
+}
 
 static void wait_for_device(const char* fn) {
    int tries = 0;
@@ -88,10 +139,68 @@ static int write_device(struct eio_boot *bc_eio) {
    return -EINVAL;
 }
 
+static void *boot_control_bootok(void *argv) {
+   int rc, it;
+   bool failed = false;
+
+   (void)argv;
+   do {
+      pthread_mutex_lock(&bctl_bootok_lock);
+      // do not care if we get interrupted...
+      pthread_cond_wait(&bctl_bootok_cond, &bctl_bootok_lock);
+      pthread_mutex_unlock(&bctl_bootok_lock);
+      it = 0;
+      failed = false;
+      do {
+         rc = nexus_state();
+         if (!rc)
+            // good.  can mark boot successful, comfirmed middleware sanity.
+            break;
+         else if (rc == -EIO) {
+            // middleware loaded, but unreachable, could have crashed after load or
+            // really badly broken, assume boot is BAD.
+            failed = true;
+            break;
+         } else if (rc == -EINVAL) {
+            // loop waiting for middleware load.  could be failure to load.  wait a bit
+            // to ensure things are not just slow.  attempt sufficient amount of time that
+            // is reasonnable to expect, possibly watchdog would take over anyways, but if
+            // not, boot is BAD.
+            if (++it > TIMEOUT_TRYING) {
+               failed = true;
+               break;
+            }
+            sleep(1);
+         }
+      } while (true);
+
+      if (!failed) {
+         bc_eio.slot[bc_eio.current].boot_ok     = 1;
+         bc_eio.slot[bc_eio.current].boot_fail   = 0;
+         bc_eio.slot[bc_eio.current].boot_try    = 0;
+         ALOGI("markBootSuccessful: delayed marking success slot-%d", bc_eio.current);
+      } else {
+         bc_eio.slot[bc_eio.current].boot_ok     = 0;
+         bc_eio.slot[bc_eio.current].boot_fail   = 1;
+         ALOGE("markBootSuccessful: FAILED middleware check, bad slot-%d", bc_eio.current);
+      }
+      bc_eio.slot[bc_eio.current].dmv_corrupt    = 0;
+      bc_eio.onboot                              = -1;
+      write_device(&bc_eio);
+   } while (bctl_bootok_run);
+
+   return NULL;
+}
+
 static void init(struct boot_control_module *module __unused) {
    memset(&bc_eio, 0, sizeof(bc_eio));
    char fstab_name[2*PROPERTY_VALUE_MAX];
    char hardware[PROPERTY_VALUE_MAX];
+
+   pthread_mutex_init(&bctl_bootok_lock, NULL);
+   pthread_cond_init(&bctl_bootok_cond, NULL);
+   pthread_create(&bctl_bootok, NULL, boot_control_bootok, NULL);
+
    property_get("ro.hardware", hardware, "");
    sprintf(fstab_name, "/fstab.%s", hardware);
    struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
@@ -155,13 +264,11 @@ static int markBootSuccessful(struct boot_control_module *module __unused) {
       ALOGE("markBootSuccessful: bad magic (%x), not setup?", bc_eio.magic);
       return 0;
    }
-   bc_eio.slot[bc_eio.current].boot_ok     = 1;
-   bc_eio.slot[bc_eio.current].boot_fail   = 0;
-   bc_eio.slot[bc_eio.current].boot_try    = 0;
-   bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
-   bc_eio.onboot                           = -1;
    ALOGI_IF(verbose, "markBootSuccessful(%d)", bc_eio.current);
-   return write_device(&bc_eio);
+   pthread_mutex_lock(&bctl_bootok_lock);
+   pthread_cond_signal(&bctl_bootok_cond);
+   pthread_mutex_unlock(&bctl_bootok_lock);
+   return 0;
 }
 
 static int setActiveBootSlot(struct boot_control_module *module __unused, unsigned slot) {

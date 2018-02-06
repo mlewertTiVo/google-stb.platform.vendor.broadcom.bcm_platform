@@ -173,6 +173,13 @@ private:
     size_t m_numNotRetBuffers;
 };
 
+struct BOMX_VideoSurfaceIndex
+{
+   bool used;
+   void *user;
+   int  hwc_cli;
+};
+
 class BOMX_VideoDecoder : public BOMX_Component
 {
 public:
@@ -417,6 +424,8 @@ protected:
     bool m_colorAspectsSet;
 
     bool m_redux;
+    int m_indexSurface;
+    bool m_virtual;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
