@@ -1,3 +1,0 @@
-out/target/product/$TARGET_PRODUCT/vendor/lib/liboemcrypto.so
-out/target/product/$TARGET_PRODUCT/vendor/lib/libwvhidl.so
-out/target/product/$TARGET_PRODUCT/vendor/lib/mediadrm/libwvdrmengine.so
