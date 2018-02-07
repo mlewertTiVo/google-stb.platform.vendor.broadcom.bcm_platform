@@ -46,44 +46,15 @@ include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
-# additional tools, not needed for default integration.
-ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/clipping/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/dtu/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/memcpy/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplayready_svp/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxprdy30_svp/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxpsi/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtest_prpd30/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxsmt/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxthumb/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk
+# additional tools, not needed for default integration.
+ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/raw2bmp/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/sagelog/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/secboot/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
-#include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/streamer/Android.mk
-#include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/trellis/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtunesat/Android.mk
 endif
+
+# private tools, not released.
+-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/priv/Android.mk
 
 endif
