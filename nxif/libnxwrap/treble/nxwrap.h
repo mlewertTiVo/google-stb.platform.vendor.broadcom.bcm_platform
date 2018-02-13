@@ -86,6 +86,10 @@ public:
    void rmlmk(uint64_t cid);
    // setup wake-on-lan
    int setWoL(const char *ifc);
+   // acquire wakelock on inexus
+   int acquireWL();
+   // release wakelock on inexus
+   int releaseWL();
 
    static Mutex mLck;
 
