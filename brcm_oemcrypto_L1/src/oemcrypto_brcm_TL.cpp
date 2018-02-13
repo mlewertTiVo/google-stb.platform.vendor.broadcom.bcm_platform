@@ -54,6 +54,8 @@
 #define KEY_SIZE  16
 #define MAC_KEY_SIZE  32
 
+#define OEMCRYPTO_API_VERSION 12
+
 typedef struct {
   uint8_t signature[MAC_KEY_SIZE];
   uint8_t context[MAC_KEY_SIZE];
@@ -108,6 +110,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
     ALOGV("%s entered", __FUNCTION__);
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
+    WvOemCryptoParamSettings.api_version = OEMCRYPTO_API_VERSION;
     DRM_WVOemCrypto_SetParamSettings(&WvOemCryptoParamSettings);
 
     if ((DRM_WVOemCrypto_Initialize(&WvOemCryptoParamSettings, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
@@ -313,7 +316,7 @@ OEMCryptoResult OEMCrypto_LoadKeys(OEMCrypto_SESSION session,
         }
     }
 
-    if (drm_WVOemCrypto_LoadKeys(session, message, message_length,
+    if (drm_WVOemCrypto_LoadKeys_V11_or_V12(session, message, message_length,
         signature, signature_length, enc_mac_key_iv, enc_mac_keys, num_keys,
         (void*)key_array, pst, pst_length, (int *)&wvRc) != Drm_Success)
     {
@@ -657,7 +660,7 @@ OEMCryptoResult OEMCrypto_DeriveKeysFromSessionKey(
 
 uint32_t OEMCrypto_APIVersion()
 {
-    return 12;
+    return OEMCRYPTO_API_VERSION;
 }
 
 const char* OEMCrypto_SecurityLevel()
@@ -893,7 +896,7 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t *pst, size_t pst_le
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
-    if (DRM_WVOemCrypto_DeactivateUsageEntry((uint8_t *)pst, pst_length, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_DeactivateUsageEntry_V12((uint8_t *)pst, pst_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("[%s(): call FAILED (%d)]", __FUNCTION__, wvRc);
     }
