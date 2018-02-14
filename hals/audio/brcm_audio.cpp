@@ -1053,31 +1053,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 
     pthread_mutex_init(&bout->lock, NULL);
 
-    bout->aout.common.get_sample_rate = bout_get_sample_rate;
-    bout->aout.common.set_sample_rate = bout_set_sample_rate;
-    bout->aout.common.get_buffer_size = bout_get_buffer_size;
-    bout->aout.common.get_channels = bout_get_channels;
-    bout->aout.common.get_format = bout_get_format;
-    bout->aout.common.set_format = bout_set_format;
-    bout->aout.common.standby = bout_standby;
-    bout->aout.common.dump = bout_dump;
-    bout->aout.common.set_parameters = bout_set_parameters;
-    bout->aout.common.get_parameters = bout_get_parameters;
-    bout->aout.common.add_audio_effect = bout_add_audio_effect;
-    bout->aout.common.remove_audio_effect = bout_remove_audio_effect;
-    bout->aout.get_latency = bout_get_latency;
-    bout->aout.set_volume = bout_set_volume;
-    bout->aout.write = bout_write;
-    bout->aout.get_render_position = bout_get_render_position;
-    bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
-    bout->aout.get_presentation_position = bout_get_presentation_position;
-    // following required for offload (tunnel) tracks.
-    bout->aout.pause = bout_pause;
-    bout->aout.resume = bout_resume;
-    bout->aout.drain = bout_drain;
-    bout->aout.flush = bout_flush;
-    bout->aout.set_callback = NULL; // not needed yet?
-
     bout->tunneled =
         ((flags & (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC)) == (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC));
 
@@ -1103,6 +1078,44 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 #if DUMMY_AUDIO_OUT
     bout->ops = dummy_bout_ops;
 #endif
+
+    bout->aout.common.get_sample_rate = bout_get_sample_rate;
+    bout->aout.common.set_sample_rate = bout_set_sample_rate;
+    bout->aout.common.get_buffer_size = bout_get_buffer_size;
+    bout->aout.common.get_channels = bout_get_channels;
+    bout->aout.common.get_format = bout_get_format;
+    bout->aout.common.set_format = bout_set_format;
+    bout->aout.common.standby = bout_standby;
+    bout->aout.common.dump = bout_dump;
+    bout->aout.common.set_parameters = bout_set_parameters;
+    bout->aout.common.get_parameters = bout_get_parameters;
+    bout->aout.common.add_audio_effect = bout_add_audio_effect;
+    bout->aout.common.remove_audio_effect = bout_remove_audio_effect;
+    bout->aout.get_latency = bout_get_latency;
+    bout->aout.set_volume = bout_set_volume;
+    bout->aout.write = bout_write;
+    bout->aout.get_render_position = bout_get_render_position;
+    bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
+    bout->aout.get_presentation_position = bout_get_presentation_position;
+    // following required for offload (tunnel) tracks.
+    bout->aout.pause = bout_pause;
+    bout->aout.resume = bout_resume;
+    bout->aout.drain = bout_drain;
+    bout->aout.flush = bout_flush;
+    bout->aout.set_callback = NULL; // not needed yet?
+
+    if (!bout->ops.do_bout_drain) {
+        bout->aout.drain = NULL;
+    }
+    if (!bout->ops.do_bout_resume) {
+        bout->aout.resume = NULL;
+    }
+    if (!bout->ops.do_bout_pause) {
+        bout->aout.pause = NULL;
+    }
+    if (!bout->ops.do_bout_flush) {
+        bout->aout.flush = NULL;
+    }
 
     bout->devices = devices;
     bout->flags = flags;
