@@ -82,6 +82,7 @@
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 #define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
+#define B_PROPERTY_SYS_DISPLAY_SIZE ("sys.display-size")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -127,6 +128,7 @@
 #define B_DEC_ACTIVE_STATE_ACTIVE_SECURE                    (2)
 
 #define B_YV12_ALIGNMENT (16)
+#define B_UHD_DISPLAY ("3840x2160")  // marker for having a uhd display connected.
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -1294,6 +1296,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     NEXUS_Error errCode;
     NEXUS_ClientConfiguration clientConfig;
     char value[PROPERTY_VALUE_MAX];
+    bool uhdDisplay = false;
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -1665,11 +1668,20 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
     m_enableHdrForNonVp9 = property_get_int32(B_PROPERTY_ENABLE_HDR_FOR_NON_VP9, 0);
 
+    memset(value, 0, sizeof(value));
+    property_get(B_PROPERTY_SYS_DISPLAY_SIZE, value, NULL);
+    if (!strncmp(value, B_UHD_DISPLAY, strlen(B_UHD_DISPLAY)))
+    {
+       uhdDisplay = true;
+    }
+
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
     NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &videoClientSettings);
-    videoClientSettings.composition.virtualDisplay.width = m_outputWidth;
-    videoClientSettings.composition.virtualDisplay.height = m_outputHeight;
+    videoClientSettings.composition.virtualDisplay.width =
+       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_HEIGHT_HIGHRES : m_outputWidth;
+    videoClientSettings.composition.virtualDisplay.height =
+       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_WIDTH_HIGHRES : m_outputHeight;
     videoClientSettings.composition.position.x = 0;
     videoClientSettings.composition.position.y = 0;
     videoClientSettings.composition.position.width = m_outputWidth;
