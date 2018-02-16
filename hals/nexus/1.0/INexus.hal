@@ -45,6 +45,18 @@ interface INexus {
      *
      */
     setWoL(string ifc) generates (NexusStatus s);
+
+    /**
+     * acquire a wake lock on behalf of nexus.
+     *
+     */
+    acquireWL() generates (NexusStatus s);
+
+    /**
+     * release a wake lock on behalf of nexus.
+     *
+     */
+    releaseWL() generates (NexusStatus s);
 };
 
 

@@ -28,7 +28,8 @@ ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0 \
                           libhidlbase \
                           libhidltransport \
-                          libhwbinder
+                          libhwbinder \
+                          libpower
 else
 LOCAL_SHARED_LIBRARIES += libbinder \
                           libnxbinder \

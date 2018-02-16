@@ -298,6 +298,22 @@ int NxWrap::setWoL(const char *ifc) {
    return -EAGAIN;
 }
 
+int NxWrap::acquireWL() {
+   if (nxi() != NULL) {
+      NexusStatus status = nxi()->acquireWL();
+      return status == NexusStatus::SUCCESS ? 0 : -EINVAL;
+   }
+   return -EAGAIN;
+}
+
+int NxWrap::releaseWL() {
+   if (nxi() != NULL) {
+      NexusStatus status = nxi()->releaseWL();
+      return status == NexusStatus::SUCCESS ? 0 : -EINVAL;
+   }
+   return -EAGAIN;
+}
+
 // helper functions for easy hook up.  creates the middleware client and returns a
 // reference to it, no standby activation in place since simple client.
 //
