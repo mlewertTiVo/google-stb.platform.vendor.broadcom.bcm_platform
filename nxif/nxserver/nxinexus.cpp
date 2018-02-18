@@ -41,6 +41,7 @@
 #include <inttypes.h>
 #include <cutils/log.h>
 #include "nxinexus.h"
+#include <hardware_legacy/power.h>
 
 #include "nxclient.h"
 #include "nexus_platform_common.h"
@@ -340,6 +341,22 @@ Return<void> NexusImpl::getPwr(getPwr_cb _hidl_cb) {
    memcpy(&p, &s, sizeof(struct pmlib_state_t));
    _hidl_cb(p);
    return Void();
+}
+
+Return<NexusStatus> NexusImpl::acquireWL() {
+   if (wl)
+      return NexusStatus::ALREADY_REGISTERED;
+   acquire_wake_lock(PARTIAL_WAKE_LOCK, "nexus-hidl");
+   wl = true;
+   return NexusStatus::SUCCESS;
+}
+
+Return<NexusStatus> NexusImpl::releaseWL() {
+   if (!wl)
+      return NexusStatus::BAD_VALUE;
+   release_wake_lock("nexus-hidl");
+   wl = false;
+   return NexusStatus::SUCCESS;
 }
 
 void NexusImpl::start_middleware() {
