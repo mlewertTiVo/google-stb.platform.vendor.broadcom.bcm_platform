@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include "wv_cdm_constants.h"
 #include "drm_wvoemcrypto_tl.h"
