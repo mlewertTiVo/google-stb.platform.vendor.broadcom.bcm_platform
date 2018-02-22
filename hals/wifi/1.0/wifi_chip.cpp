@@ -364,7 +364,8 @@ std::pair<WifiStatus, uint32_t> WifiChip::getCapabilitiesInternal() {
   std::tie(legacy_status, legacy_logger_feature_set) =
       legacy_hal_.lock()->getLoggerSupportedFeatureSet();
   if (legacy_status != legacy_hal::WIFI_SUCCESS) {
-    return {createWifiStatusFromLegacyError(legacy_status), 0};
+    // Assume basic capability
+    legacy_logger_feature_set = legacy_hal::WIFI_LOGGER_MEMORY_DUMP_SUPPORTED;
   }
   uint32_t hidl_caps;
   if (!hidl_struct_util::convertLegacyFeaturesToHidlChipCapabilities(
@@ -497,7 +498,6 @@ WifiChip::requestFirmwareDebugDumpInternal() {
   if (legacy_status != legacy_hal::WIFI_SUCCESS) {
     LOG(ERROR) << "Failed to get firmware debug dump: "
                << legacyErrorToString(legacy_status);
-    return {createWifiStatusFromLegacyError(legacy_status), {}};
   }
   return {createWifiStatus(WifiStatusCode::SUCCESS), firmware_dump};
 }

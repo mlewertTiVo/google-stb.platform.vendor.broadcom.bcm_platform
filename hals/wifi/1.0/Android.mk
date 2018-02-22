@@ -35,7 +35,7 @@ LOCAL_SRC_FILES := \
     ${WIFI_HAL_ROOT}/wifi_nan_iface.cpp \
     ${WIFI_HAL_ROOT}/wifi_p2p_iface.cpp \
     ${WIFI_HAL_ROOT}/wifi_rtt_controller.cpp \
-    ${WIFI_HAL_ROOT}/wifi_sta_iface.cpp \
+    wifi_sta_iface.cpp \
     ${WIFI_HAL_ROOT}/wifi_status_util.cpp
 LOCAL_C_INCLUDES := \
     ${LOCAL_PATH}/${WIFI_HAL_ROOT}
