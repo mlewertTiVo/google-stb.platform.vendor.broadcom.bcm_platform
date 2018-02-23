@@ -42,13 +42,13 @@ public class BcmCustomizerReceiver extends BcmCustomizerReceiverBase {
     private static final String TAG = "BcmCustomizerReceiver";
 
     private static final String ACTION_PARTNER_CUSTOMIZATION =
-            "com.google.android.leanbacklauncher.action.PARTNER_CUSTOMIZATION";
+            "com.google.android.tvlauncher.action.PARTNER_CUSTOMIZATION";
 
     private static final String EXTRA_ROW_WRAPPING_CUTOFF =
-            "com.google.android.leanbacklauncher.extra.ROW_WRAPPING_CUTOFF";
+            "com.google.android.tvlauncher.extra.ROW_WRAPPING_CUTOFF";
 
     private static final String PARTNER_GROUP = "partner_row_entry";
-    private static final String BLACKLIST_PACKAGE = "com.google.android.leanbacklauncher.replacespackage";
+    private static final String BLACKLIST_PACKAGE = "com.google.android.tvlauncher.replacespackage";
 
     private static final String BCM_ADJUST_SCREEN_OFFSET_PKG_NAME = "com.broadcom.BcmAdjustScreenOffset";
     private static final String BCM_OTA_UPDATER_PKG_NAME = "com.broadcom.BcmOtaUpdater";

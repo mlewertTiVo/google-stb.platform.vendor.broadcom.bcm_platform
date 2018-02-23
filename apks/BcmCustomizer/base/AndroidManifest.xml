@@ -17,7 +17,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
-                <action android:name="com.google.android.leanbacklauncher.action.PARTNER_CUSTOMIZATION" />
+                <action android:name="com.google.android.tvlauncher.action.PARTNER_CUSTOMIZATION" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
