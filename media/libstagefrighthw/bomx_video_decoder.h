@@ -489,6 +489,7 @@ protected:
 
     void CancelTimerId(B_SchedulerTimerId& timerId);
     OMX_ERRORTYPE VerifyInputPortBuffers();
+    OMX_ERRORTYPE UpdateInputDimensions();
 
     // These functions are used to pace the input buffers rate
     void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);
