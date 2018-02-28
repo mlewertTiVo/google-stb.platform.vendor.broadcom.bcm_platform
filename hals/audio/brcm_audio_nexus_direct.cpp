@@ -374,6 +374,19 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
                                 &codecSettings.codecSettings.ac3:
                                 &codecSettings.codecSettings.ac3Plus;
 
+            if (bout->dolbyMs) {
+                dolbySettings->enableAtmosProcessing = true;
+
+                if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
+                    property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST, false)) {
+                    dolbySettings->enableAtmosProcessing = false;
+                }
+
+                ALOGI("%s: %s Dolby ATMOS", __FUNCTION__,
+                    dolbySettings->enableAtmosProcessing?"Enabling":"Disabling");
+                changed = true;
+            }
+
             if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE, property, "")) {
                 value = get_property_value(property, drc_mode_map);
                 if (value != -1) {

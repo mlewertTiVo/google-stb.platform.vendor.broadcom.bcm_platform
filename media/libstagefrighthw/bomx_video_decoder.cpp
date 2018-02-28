@@ -1364,6 +1364,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     memset(&portDefs, 0, sizeof(portDefs));
     portDefs.eCompressionFormat = (OMX_VIDEO_CODINGTYPE)pRoles[0].omxCodec;
     portDefs.cMIMEType = m_inputMimeType;
+    portDefs.nFrameWidth = m_outputWidth;
+    portDefs.nFrameHeight = m_outputHeight;
     (void)BOMX_VideoDecoder_InitMimeType(portDefs.eCompressionFormat, m_inputMimeType);
     for ( i = 0; i < numRoles; i++ )
     {
@@ -2664,6 +2666,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 memset(&portDefs, 0, sizeof(portDefs));
                 portDefs.eCompressionFormat = pFormat->eCompressionFormat;
                 portDefs.cMIMEType = m_inputMimeType;
+                portDefs.nFrameWidth = m_outputWidth;
+                portDefs.nFrameHeight = m_outputHeight;
                 err = m_pVideoPorts[0]->SetPortFormat(pFormat, &portDefs);
                 if ( err )
                 {
@@ -2767,6 +2771,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             // Ensure crop reports buffer width/height
             m_outputWidth = portDef.format.video.nFrameWidth;
             m_outputHeight = portDef.format.video.nFrameHeight;
+            err = UpdateInputDimensions();
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
             // Ensure slice height and stride match frame width/height and update buffer size
             portDef.format.video.nSliceHeight = portDef.format.video.nFrameHeight;
             portDef.format.video.nStride = ComputeStride(portDef.format.video.eColorFormat, portDef.format.video.nFrameWidth);
@@ -2864,6 +2873,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         // Ensure crop reports buffer width/height
         m_outputWidth = pAdaptive->nMaxFrameWidth;
         m_outputHeight = pAdaptive->nMaxFrameHeight;
+        err = UpdateInputDimensions();
+        if ( err )
+        {
+            return BOMX_ERR_TRACE(err);
+        }
         // Ensure slice height and stride match frame width/height and update buffer size
         portDef.format.video.nFrameWidth = m_outputWidth;
         portDef.format.video.nFrameHeight = m_outputHeight;
@@ -5159,6 +5173,32 @@ OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
     return OMX_ErrorNone;
 }
 
+OMX_ERRORTYPE BOMX_VideoDecoder::UpdateInputDimensions()
+{
+    OMX_PARAM_PORTDEFINITIONTYPE portDef;
+    bool updatePortDef = false;
+    OMX_ERRORTYPE err = OMX_ErrorNone;
+
+    m_pVideoPorts[0]->GetDefinition(&portDef);
+    if ( portDef.format.video.nFrameWidth != m_outputWidth || portDef.format.video.nFrameHeight != m_outputHeight )
+    {
+        portDef.format.video.nFrameWidth = m_outputWidth;
+        portDef.format.video.nFrameHeight = m_outputHeight;
+        updatePortDef = true;
+    }
+
+    if ( updatePortDef )
+    {
+        err = m_pVideoPorts[0]->SetDefinition(&portDef);
+        if (err)
+        {
+            return err;
+        }
+    }
+
+    return OMX_ErrorNone;
+}
+
 void BOMX_VideoDecoder::ProcessFifoData(bool *pendingData)
 {
     NEXUS_PlaypumpStatus playpumpStatus;
@@ -5341,6 +5381,7 @@ void BOMX_VideoDecoder::SourceChangedEvent()
                 portDef.format.video.nFrameHeight = vdecStatus.display.height;
                 m_outputWidth = portDef.format.video.nFrameWidth;
                 m_outputHeight = portDef.format.video.nFrameHeight;
+                UpdateInputDimensions();
                 formatChanged=true;
             }
 
@@ -6186,6 +6227,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
                                 m_outputWidth = portDefs.format.video.nFrameWidth;
                                 m_outputHeight = portDefs.format.video.nFrameHeight;
+                                UpdateInputDimensions();
                                 PortFormatChanged(m_pVideoPorts[1]);
                                 m_formatChangeState = FCState_eWaitForPortReconfig;
                             }
@@ -6199,6 +6241,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // format, we update here, then they query new crop and fail erroneously.
                             m_outputWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
                             m_outputHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                            UpdateInputDimensions();
 
                             // Send crop update and continue without reset
                             OMX_CONFIG_RECTTYPE cropRect;
