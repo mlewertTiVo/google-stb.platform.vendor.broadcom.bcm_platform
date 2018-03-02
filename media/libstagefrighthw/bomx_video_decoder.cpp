@@ -91,9 +91,10 @@
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
 #define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min outstanding input buffers not decoded yet
-#define B_MIN_QUEUED_PTS_DIFF (22500)       // Nexus pts units (500 msec)
+#define B_MIN_QUEUED_PTS_DIFF (11250)       // Nexus pts units (250 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
-#define B_INPUT_BUFFERS_SLOW_RATE (32)
+#define B_INPUT_BUFFERS_SLOW_RATE (24)
+#define B_INPUT_BUFFERS_HIGH_WATERMARK (24)
 #define B_MIN_DECODER_WIDTH (128)           // Minimum dimension required by Nexus AVD
 #define B_MIN_DECODER_HEIGHT (64)
 #define B_STREAM_ID 0xe0
@@ -5288,17 +5289,16 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
     BOMX_Buffer *pNextBuffer = NULL, *pBuffer = m_pVideoPorts[0]->GetBuffer();
     unsigned queuedInputBuffers = m_inputDataTracker.GetNumEntries();
     unsigned ptsDiff = m_inputDataTracker.GetMaxDeltaPts();
-
-    CancelTimerId(m_inputBuffersTimerId);
+    unsigned returnRate = 0;
 
     // Determine the maximum number of buffers to return as follows:
     // 1. When we haven't reached B_MIN_QUEUED_INPUT_BUFFERS, return as many buffers as possible
     // 2. Return buffers at a slower pace otherwise (maximum 1) if we haven't reached the minimum
     //    pts delta criteria (B_MIN_PTS_DIFF) or if the framework hasn't had any available buffer
-    //    during a "B_INPUT_BUFFERS_SLOW_RATE" period
+    //    during a pre-determined period of time (see end of function for more info)
     if ( mode != InputReturnMode_eAll )
     {
-        bool minBuffersCond = (queuedInputBuffers + m_AvailInputBuffers) >= B_MIN_QUEUED_INPUT_BUFFERS;
+        bool minBuffersCond = queuedInputBuffers >= B_MIN_QUEUED_INPUT_BUFFERS;
         bool minPtsDiffCond = ptsDiff >= B_MIN_QUEUED_PTS_DIFF;
         if ( !minBuffersCond )
           maxCount = B_MIN_QUEUED_INPUT_BUFFERS - (queuedInputBuffers + m_AvailInputBuffers);
@@ -5308,14 +5308,16 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
           maxCount = 1;
     }
 
-    ProcessFifoData();
+    if ( (mode == InputReturnMode_eAll) || (maxCount > 0) )
+        ProcessFifoData();
     while ( pBuffer != NULL && (mode == InputReturnMode_eAll || count < maxCount) )
     {
         pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
         ALOG_ASSERT(NULL != pInfo);
         if ( !pInfo->complete )
         {
-            ALOGV("Buffer:%p (ts:%u) not completed yet", pBuffer, pInfo->pts);
+            ALOGV("Buffer:%p (ts:%u) not completed yet, numDesc:%u",
+                pBuffer, pInfo->pts, pInfo->numDescriptors);
             break;
         }
 
@@ -5325,19 +5327,37 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
         pBuffer = pNextBuffer;
     }
 
-    // Re-schedule itself at a fast/slow rate depending on the input buffers criteria
-    if ( ((queuedInputBuffers + m_AvailInputBuffers) < B_MIN_QUEUED_INPUT_BUFFERS)
-         || (ptsDiff < B_MIN_QUEUED_PTS_DIFF) )
+    if ( (m_inputBuffersTimerId != NULL) && (count > 0) )
+        CancelTimerId(m_inputBuffersTimerId);
+    // Re-schedule itself at a rate based on current conditions
+    if ( m_inputBuffersTimerId == NULL )
     {
-        m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_FAST_RATE,
-                                BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
-    } else if ( m_AvailInputBuffers == 0 ) {
-        m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_SLOW_RATE,
-                                BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
+        if ( ((queuedInputBuffers + m_AvailInputBuffers) < B_MIN_QUEUED_INPUT_BUFFERS)
+             || (ptsDiff < B_MIN_QUEUED_PTS_DIFF) )
+        {
+            // fast rate, try to reach the minimum queue count fast
+            m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_FAST_RATE,
+                                    BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
+        } else if ( ( m_AvailInputBuffers == 0 ) || ((m_AvailInputBuffers == 1) && (count == 1)) ){
+            // framework has no available buffers or only one as a result of the buffer
+            // just returned here.
+            unsigned fpsRate = (m_frameRate != NEXUS_VideoFrameRate_eUnknown) ?
+                                BOMX_VideoDecoder_GetFrameInterval(m_frameRate) : 0;
+            unsigned slowRate = (fpsRate > 0 && fpsRate < B_INPUT_BUFFERS_SLOW_RATE) ?
+                                 fpsRate : B_INPUT_BUFFERS_SLOW_RATE;
+            // use slower rate if a buffer was just returned
+            returnRate = (m_AvailInputBuffers > 0) ? slowRate : B_INPUT_BUFFERS_FAST_RATE;
+            // For video tunneling, avoid queueing too many buffers as the framework has a
+            // limitation on the number of OMX_EventOutputRendered events that may be sent
+            // without an 'EmptyBufferComplete' event.
+            returnRate = (m_tunnelMode && (queuedInputBuffers > B_INPUT_BUFFERS_HIGH_WATERMARK)) ?
+                         fpsRate : returnRate;
+            m_inputBuffersTimerId = StartTimer(returnRate,
+                                    BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
+        }
     }
-
-    ALOGV("%s: returned %u buffers, %u max, %u available, %u queued, ptsDiff %u, mode %u",
-        __FUNCTION__, count, maxCount, m_AvailInputBuffers, queuedInputBuffers, ptsDiff, mode);
+    ALOGV("%s: returned %u buffers, %u max, %u available, %u queued, ptsDiff %u, mode %u, returnRate:%u",
+        __FUNCTION__, count, maxCount, m_AvailInputBuffers, queuedInputBuffers, ptsDiff, mode, returnRate);
 }
 
 void BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
