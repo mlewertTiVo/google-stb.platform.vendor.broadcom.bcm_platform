@@ -36,6 +36,7 @@
 
 ifeq ($(SAGE_SUPPORT),y)
 
+# libbp3_host.so build rules
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
@@ -45,7 +46,6 @@ APP_TOP := $(REFSW_TOP)/BSEAV/lib/security/sage/bp3
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 include $(MAGNUM_TOP)/portinginterface/hsm/bhsm_defs.inc
 
-LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libsrai
@@ -63,18 +63,57 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
-LOCAL_CFLAGS += -DLINUX
-LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter -std=c11
+LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
+LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign
 LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
 
 SRCS = $(APP_TOP)/utils/sage_app_utils.c
 SRCS += $(APP_TOP)/app/bp3_platform_host.c
 SRCS += $(APP_TOP)/app/bp3_module_host.c
 SRCS += $(APP_TOP)/app/main.c
+SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3_host.c $(REFSW_TOP)/BSEAV/tools/bp3/quick_ssdp.c $(REFSW_TOP)/BSEAV/tools/bp3/civetweb.c
 
-SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c
+LOCAL_SRC_FILES := $(SRCS)
 
-LOCAL_SRC_FILES += $(SRCS)
+LOCAL_MODULE := libbp3_host
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_TAGS := optional
+include $(BUILD_SHARED_LIBRARY)
+
+# bp3 build rules
+include $(CLEAR_VARS)
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
+REFSW_TOP := ../../../refsw
+APP_TOP := $(REFSW_TOP)/BSEAV/lib/security/sage/bp3
+
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+include $(MAGNUM_TOP)/portinginterface/hsm/bhsm_defs.inc
+
+LOCAL_SHARED_LIBRARIES += libnexus
+LOCAL_SHARED_LIBRARIES += libnxclient
+LOCAL_SHARED_LIBRARIES += libsrai
+LOCAL_SHARED_LIBRARIES += libcurl
+LOCAL_SHARED_LIBRARIES += libssl
+LOCAL_SHARED_LIBRARIES += libz
+LOCAL_SHARED_LIBRARIES += libbp3_host
+
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/bp3/app \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/bp3/utils \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include
+
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
+LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign
+LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
+
+SRCS = $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c cJSON.c
+
+LOCAL_SRC_FILES := $(SRCS)
 
 LOCAL_MODULE := bp3
 LOCAL_PROPRIETARY_MODULE := true
@@ -82,3 +121,4 @@ LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
 
 endif
+
