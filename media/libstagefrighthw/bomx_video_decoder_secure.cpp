@@ -222,6 +222,19 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
 BOMX_VideoDecoder_Secure::~BOMX_VideoDecoder_Secure()
 {
     ALOGV("%s", __FUNCTION__);
+    Lock();
+    if ( m_pVideoPorts[0] )
+    {
+        // Force the cleanup of the input port only. Any non-deallocated input buffer needs to
+        // be de-allocated here, as the function 'FreeInputBuffer' is virtual and cannot be called
+        // from a base destructor
+        CleanupPortBuffers(0);
+    }
+    if ( m_pConfigBuffer )
+    {
+        FreeConfigBuffer(m_pConfigBuffer);
+    }
+    Unlock();
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, size_t length)

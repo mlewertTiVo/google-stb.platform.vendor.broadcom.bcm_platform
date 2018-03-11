@@ -1809,18 +1809,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     for ( i = 0; i < m_numVideoPorts; i++ )
     {
+        // Clean up the allocated OMX buffers if they have not been freed for some reason
         if ( m_pVideoPorts[i] )
         {
-            while ( !m_pVideoPorts[i]->IsEmpty() )
-            {
-                // Clean up the allocated OMX buffers if they have not been freed for some reason
-                BOMX_Buffer *pBuffer = m_pVideoPorts[i]->GetPortBuffer();
-                ALOG_ASSERT(NULL != pBuffer);
-
-                OMX_ERRORTYPE err = FreeBuffer((m_pVideoPorts[i]->GetDir() == OMX_DirInput) ? m_videoPortBase : m_videoPortBase+1,  pBuffer->GetHeader());
-                ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer at destructor %d", err);
-            }
-
+            CleanupPortBuffers(i);
             delete m_pVideoPorts[i];
         }
     }
@@ -4805,6 +4797,30 @@ OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
     }
 
     return OMX_ErrorNone;
+}
+
+void BOMX_VideoDecoder:: CleanupPortBuffers(OMX_U32 nPortIndex)
+{
+    BOMX_Port *pPort;
+
+    pPort = FindPortByIndex(nPortIndex);
+    ALOG_ASSERT (NULL != pPort);
+
+    // Make sure there are no buffers in the port queue before freeing them
+    BOMX_Buffer *pBuffer = pPort->GetBuffer();
+    while ( pBuffer != NULL )
+    {
+        BOMX_Buffer *pNextBuffer = pPort->GetNextBuffer(pBuffer);
+        pPort->BufferComplete(pBuffer);
+        pBuffer = pNextBuffer;
+    }
+    while ( !pPort->IsEmpty() )
+    {
+        BOMX_Buffer *pBuffer = pPort->GetPortBuffer();
+        ALOG_ASSERT(NULL != pBuffer);
+        OMX_ERRORTYPE err = FreeBuffer((pPort->GetDir() == OMX_DirInput) ? m_videoPortBase : m_videoPortBase+1,  pBuffer->GetHeader());
+        ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer %d", err);
+    }
 }
 
 unsigned BOMX_VideoDecoder::PlaypumpEvent(bool bTimeout /* = false */)
