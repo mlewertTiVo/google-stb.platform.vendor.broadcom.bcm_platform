@@ -5689,7 +5689,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
         }
     }
 
-    ALOGW("Extension %s is not supported", cParameterName);
+    ALOGI("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 
@@ -5765,7 +5765,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         // TODO: Look into implementing this request
         if (pColorAspects->bRequestingDataSpace || pColorAspects->bDataSpaceChanged)
         {
-            ALOGW("%s: requestingDataSpace:%u, dataSpaceChanged:%u",
+            ALOGI("%s: requestingDataSpace:%u, dataSpaceChanged:%u",
                     __FUNCTION__, pColorAspects->bRequestingDataSpace, pColorAspects->bDataSpaceChanged);
             return OMX_ErrorUnsupportedSetting;
         }

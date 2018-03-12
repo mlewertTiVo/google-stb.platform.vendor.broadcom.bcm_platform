@@ -2542,7 +2542,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetExtensionIndex(
         }
     }
 
-    ALOGW("Extension %s is not supported", cParameterName);
+    ALOGI("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 

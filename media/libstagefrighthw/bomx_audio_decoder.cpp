@@ -3448,7 +3448,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetExtensionIndex(
         }
     }
 
-    ALOGW("Extension %s is not supported", cParameterName);
+    ALOGI("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 
