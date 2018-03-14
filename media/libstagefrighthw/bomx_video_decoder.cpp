@@ -298,6 +298,36 @@ extern "C" void BOMX_VideoDecoder_FreeIndexSurface(int index)
    }
 }
 
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_VideoDecoder_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
+
 enum BOMX_VideoDecoderEventType
 {
     BOMX_VideoDecoderEventType_ePlaypump=0,
@@ -376,7 +406,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     else
     {
         // Check if the platform supports VP9
-        pNxWrap->join();
+        pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -1514,7 +1544,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         else
         {
-            m_pNxWrap->join();
+            m_pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
         }
     }
     m_nexusClient = m_pNxWrap->client();
@@ -2152,6 +2182,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         OMX_IN  OMX_INDEXTYPE nParamIndex,
         OMX_INOUT OMX_PTR pComponentParameterStructure)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     switch ( (int)nParamIndex )
     {
     case OMX_IndexParamVideoH263:
@@ -2609,6 +2641,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         OMX_IN  OMX_PTR pComponentParameterStructure)
 {
     OMX_ERRORTYPE err;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     switch ( (int)nIndex )
     {
@@ -4818,6 +4852,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     if (m_pPlaypumpDescList == NULL)
     {
        m_pPlaypumpDescList = new NEXUS_PlaypumpScatterGatherDescriptor[m_maxDescriptorsPerBuffer];
@@ -5043,6 +5080,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     if ( pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata )
     {
