@@ -265,6 +265,44 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
    }
 }
 
+void Hwc::freeVideoSurfaceId(const sp<IHwcListener>& listener, int index)
+{
+    Mutex::Autolock _l(mLock);
+
+    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1) {
+       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder(listener).get(), index);
+    } else {
+       mVideoSurface[index].listener = NULL;
+       ALOGD("%s: %p, index %d", __FUNCTION__,
+             listener->asBinder(listener).get(), index);
+
+       for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+           if (mVideoSurface[i].listener != NULL) {
+              return;
+           }
+       }
+       for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
+           if (mSidebandSurface[i].listener != NULL) {
+              return;
+           }
+       }
+       // notify back the hwc that there is no longer any active video
+       // client.
+       size_t N = mNotificationListeners.size();
+       for (size_t i = 0; i < N; i++) {
+           const hwc_listener_t& client = mNotificationListeners[i];
+           if (client.kind == HWC_BINDER_HWC) {
+              sp<IBinder> binder = client.binder;
+              sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+              struct hwc_notification_info ntfy;
+              memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+              client->notify(HWC_BINDER_NTFY_NO_VIDEO_CLIENT, ntfy);
+           }
+       }
+   }
+}
+
 void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
                       struct hwc_position &frame, struct hwc_position &clipped,
                       int zorder, int visible)
@@ -459,6 +497,44 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
               memset(&ntfy, 0, sizeof(struct hwc_notification_info));
               ntfy.surface_hdl = value;
               client->notify(HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED, ntfy);
+           }
+       }
+   }
+}
+
+void Hwc::freeSidebandSurfaceId(const sp<IHwcListener>& listener, int index)
+{
+    Mutex::Autolock _l(mLock);
+
+    if (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1) {
+       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder(listener).get(), index);
+    } else {
+       mSidebandSurface[index].listener = NULL;
+       ALOGD("%s: %p, index %d", __FUNCTION__,
+             listener->asBinder(listener).get(), index);
+
+       for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+           if (mVideoSurface[i].listener != NULL) {
+              return;
+           }
+       }
+       for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
+           if (mSidebandSurface[i].listener != NULL) {
+              return;
+           }
+       }
+       // notify back the hwc that there is no longer any active video
+       // client.
+       size_t N = mNotificationListeners.size();
+       for (size_t i = 0; i < N; i++) {
+           const hwc_listener_t& client = mNotificationListeners[i];
+           if (client.kind == HWC_BINDER_HWC) {
+              sp<IBinder> binder = client.binder;
+              sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+              struct hwc_notification_info ntfy;
+              memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+              client->notify(HWC_BINDER_NTFY_NO_VIDEO_CLIENT, ntfy);
            }
        }
    }

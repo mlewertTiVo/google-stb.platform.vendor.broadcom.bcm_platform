@@ -1938,6 +1938,14 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     BOMX_VideoDecoder_FreeIndexSurface(m_indexSurface);
     if (m_omxHwcBinder)
     {
+        if (m_indexSurface != -1)
+        {
+           m_omxHwcBinder->freevideo(m_indexSurface);
+        }
+        if (m_tunnelMode)
+        {
+           m_omxHwcBinder->freesideband(0);
+        }
         delete m_omxHwcBinder;
         m_omxHwcBinder = NULL;
     }
