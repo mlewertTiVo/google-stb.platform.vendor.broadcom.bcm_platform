@@ -860,7 +860,7 @@ static void hwc2_ext_fbs(
    }
    hwc2->ext->u.ext.bfb = true;
 
-   if (hwc2_enabled(hwc2_tweak_fb_compressed)) {
+   if (hwc2_enabled(hwc2_tweak_fb_compressed) && (hwc2->ext->u.ext.yvi.s == NULL)) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -871,7 +871,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.yvi.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.yvi.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
@@ -883,7 +882,7 @@ static void hwc2_ext_fbs(
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
-   {
+   if (hwc2->ext->u.ext.icb.s == NULL) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -894,7 +893,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.icb.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.icb.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
