@@ -457,6 +457,7 @@ protected:
 
     void CancelTimerId(B_SchedulerTimerId& timerId);
     OMX_ERRORTYPE VerifyInputPortBuffers();
+    void CleanupPortBuffers(OMX_U32 nPortIndex);
 
     // These functions are used to pace the input buffers rate
     void InputBufferNew();

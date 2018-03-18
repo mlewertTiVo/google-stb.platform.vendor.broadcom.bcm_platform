@@ -268,6 +268,15 @@ BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
 BOMX_AudioDecoder_Secure::~BOMX_AudioDecoder_Secure()
 {
     ALOGV("%s", __FUNCTION__);
+    Lock();
+    if ( m_pAudioPorts[0] )
+    {
+        // Force the cleanup of the input port only. Any non-deallocated input buffer needs to
+        // be de-allocated here, as the function 'FreeInputBuffer' is virtual and cannot be called
+        // from a base destructor
+        CleanupPortBuffers(0);
+    }
+    Unlock();
 }
 
 NEXUS_Error BOMX_AudioDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*& pBuffer)
