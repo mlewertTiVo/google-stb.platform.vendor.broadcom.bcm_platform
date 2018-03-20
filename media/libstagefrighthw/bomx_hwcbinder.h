@@ -88,9 +88,21 @@ public:
        }
     };
 
+    inline void freevideo(int index) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->freeVideoSurfaceId(this, index);
+       }
+    };
+
     inline void getsideband(int index, int &value) {
        if (get_hwc(false) != NULL) {
            get_hwc(false)->getSidebandSurfaceId(this, index, value);
+       }
+    };
+
+    inline void freesideband(int index) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->freeSidebandSurfaceId(this, index);
        }
     };
 
@@ -134,8 +146,16 @@ public:
       ihwc.get()->getvideo(index, value);
    }
 
+   void freevideo(int index) {
+      ihwc.get()->freevideo(index);
+   }
+
    void getsideband(int index, int &value) {
       ihwc.get()->getsideband(index, value);
+   }
+
+   void freesideband(int index) {
+      ihwc.get()->freesideband(index);
    }
 
    void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,

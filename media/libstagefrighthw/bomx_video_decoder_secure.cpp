@@ -52,6 +52,36 @@
 #include "OMX_VideoExt.h"
 #include "sage_srai.h"
 
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_VideoDecoderSecure_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
+
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
@@ -124,7 +154,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     else
     {
         // Check if the platform supports VP9
-        pNxWrap->join();
+        pNxWrap->join(BOMX_VideoDecoderSecure_StandbyMon, NULL);
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -394,6 +424,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
     native_handle_t *nativeBuffHandle;
     OMX_ERRORTYPE omx_err;
     NEXUS_Error err;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     if (( NULL == pBufferHeader || pBufferHeader->pBuffer == NULL))
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);

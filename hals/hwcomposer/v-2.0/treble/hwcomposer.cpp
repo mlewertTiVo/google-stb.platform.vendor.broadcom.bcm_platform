@@ -332,13 +332,15 @@ static void hwc2_dump_content(
 }
 
 static void hwc2_eotf(
-   struct hwc2_dsp_t *dsp) {
+   struct hwc2_dsp_t *dsp,
+   int32_t forced) {
 
    NEXUS_HdmiOutputExtraSettings s;
    NEXUS_PlatformConfiguration p;
    NEXUS_Error e;
    NEXUS_HdmiOutputHandle hdmi;
-   int32_t eotf = hwc2_setting(hwc2_tweak_eotf);
+   int32_t eotf =
+      (forced != HWC2_INVALID) ? forced : hwc2_setting(hwc2_tweak_eotf);
 
    if (!eotf) {
       return;
@@ -354,20 +356,25 @@ static void hwc2_eotf(
    if (pthread_mutex_lock(&dsp->mtx_cfg)) {
       return;
    }
-   if (dsp->aCfg->hdr10) {
+   if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
       NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
       switch (eotf) {
-         case 1:
+         case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
             s.overrideDynamicRangeMasteringInfoFrame = true;
             s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
          break;
-         case 2:
+         case HWC2_EOTF_HLG:
+            ALOGI("[eotf]: hlg.");
+            s.overrideDynamicRangeMasteringInfoFrame = true;
+            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
+         break;
+         case HWC2_EOTF_SDR:
             ALOGI("[eotf]: sdr.");
             s.overrideDynamicRangeMasteringInfoFrame = true;
             s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
-         case 3:
+         case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
             s.overrideDynamicRangeMasteringInfoFrame = false;
@@ -853,7 +860,7 @@ static void hwc2_ext_fbs(
    }
    hwc2->ext->u.ext.bfb = true;
 
-   if (hwc2_enabled(hwc2_tweak_fb_compressed)) {
+   if (hwc2_enabled(hwc2_tweak_fb_compressed) && (hwc2->ext->u.ext.yvi.s == NULL)) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -864,7 +871,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.yvi.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.yvi.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
@@ -876,7 +882,7 @@ static void hwc2_ext_fbs(
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
-   {
+   if (hwc2->ext->u.ext.icb.s == NULL) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -887,7 +893,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.icb.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.icb.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
@@ -1407,7 +1412,7 @@ static int32_t hwc2_regCb(
                hwc2_want_comp_bypass(&settings);
                hwc2_cfg_collect(hwc2->ext, &settings);
                hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-               hwc2_eotf(hwc2->ext);
+               hwc2_eotf(hwc2->ext, HWC2_INVALID);
             }
             NEXUS_HdmiOutput_Close(hdmi);
          }
@@ -6450,7 +6455,7 @@ static void hwc2_setup_ext(
       if (hstatus.connected) {
          hwc2_cfg_collect(hwc2->ext, &settings);
          hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-         hwc2_eotf(hwc2->ext);
+         hwc2_eotf(hwc2->ext, HWC2_INVALID);
       }
       NEXUS_HdmiOutput_Close(hdmi);
    }
@@ -6545,6 +6550,10 @@ static void hwc2_hb_ntfy(
    case HWC_BINDER_NTFY_OVERSCAN:
       hwc2_op(hwc2->ext, &ntfy);
    break;
+   case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
+      ALOGV("[ext]: no more active video client.");
+      hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+   break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
    break;
@@ -6601,7 +6610,7 @@ static void hwc2_hp_ntfy(
       if (hdmi) {
          hwc2_cfg_collect(hwc2->ext, &settings);
          hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-         hwc2_eotf(hwc2->ext);
+         hwc2_eotf(hwc2->ext, HWC2_INVALID);
          NEXUS_HdmiOutput_Close(hdmi);
       }
    } else /* disconnected */ {

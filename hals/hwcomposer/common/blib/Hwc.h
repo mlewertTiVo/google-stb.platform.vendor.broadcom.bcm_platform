@@ -67,11 +67,13 @@ public:
 
     virtual void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h);
     virtual void getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &value);
+    virtual void freeVideoSurfaceId(const sp<IHwcListener>& listener, int index);
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame);
 
     virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h);
     virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value);
+    virtual void freeSidebandSurfaceId(const sp<IHwcListener>& listener, int index);
 
     virtual void setGeometry(const sp<IHwcListener>& listener, int type, int index,
                              struct hwc_position &frame, struct hwc_position &clipped,

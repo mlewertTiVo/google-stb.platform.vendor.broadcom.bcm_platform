@@ -50,6 +50,37 @@
 #include "bomx_secure_buff.h"
 #include "OMX_IndexExt.h"
 
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_AudioDecoderSecure_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
+
+
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
@@ -67,7 +98,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoderSecure_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
@@ -129,7 +160,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoderSecure_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -191,7 +222,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoderSecure_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -307,6 +338,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
     native_handle_t *nativeBuffHandle;
     OMX_ERRORTYPE omx_err;
     NEXUS_Error err;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     if (( NULL == pBufferHeader || pBufferHeader->pBuffer == NULL))
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);

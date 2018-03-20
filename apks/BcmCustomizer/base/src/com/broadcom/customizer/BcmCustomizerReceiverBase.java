@@ -64,6 +64,7 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
     private static final String BRCM_SPLASH_EXTRA_BC_DELAY = "broadcast_delay";
     private static final long BRCM_SPLASH_BC_DELAY_MS = 7000;
 
+    private static final String NETFLIX_PACKAGE = "com.netflix.ninja";
     private static final String ACTION_NETFLIX_KEY = "com.netflix.ninja.intent.action.NETFLIX_KEY";
     private static final String NETFLIX_KEY_PERMISSION = "com.netflix.ninja.permission.NETFLIX_KEY";
     private static final String NETFLIX_KEY_POWER_MODE = "power_on";
@@ -157,6 +158,7 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
             // Netflix key press resulted in device power on (via WAKEUP input event)
             res.putExtra(NETFLIX_KEY_POWER_MODE, true);
         }
+        res.setPackage(NETFLIX_PACKAGE); // Makes the intent explicit
         res.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
 
         return res;

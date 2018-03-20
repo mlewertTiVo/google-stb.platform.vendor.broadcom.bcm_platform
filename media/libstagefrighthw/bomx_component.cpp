@@ -677,8 +677,8 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
         return OMX_ErrorNone;
     }
     default:
-        ALOGW("Unsupported parameter index %u (%#x)", nParamIndex, nParamIndex);
-        return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+        ALOGI("Unsupported get-parameter index %u (%#x)", nParamIndex, nParamIndex);
+        return OMX_ErrorUnsupportedIndex;
     }
 }
 
@@ -731,8 +731,8 @@ OMX_ERRORTYPE BOMX_Component::SetParameter(
     case OMX_IndexParamOtherPortFormat:
     #endif
     default:
-        ALOGW("Unsupported parameter index %u (%#x)", nIndex, nIndex);
-        return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+        ALOGI("Unsupported set-parameter index %u (%#x)", nIndex, nIndex);
+        return OMX_ErrorUnsupportedIndex;
     }
 }
 
