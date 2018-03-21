@@ -343,6 +343,7 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
 #if ANDROID_ENABLE_HDMI_HDCP
         /* enable hdcp authentication if hdmi connected and powered */
         NxClient_HdcpLevel hdcp = settings.hdmiPreferences.hdcp;
+        NxClient_HdcpVersion version = settings.hdmiPreferences.version;
 
         if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
             settings.hdmiPreferences.hdcp =
@@ -350,11 +351,12 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
             if (getForcedHdcp() == 0) {
                ALOGW("%s: HDCP disabled by run-time, some features may not work.", __PRETTY_FUNCTION__);
             }
+            settings.hdmiPreferences.version = NxClient_HdcpVersion_eFollow;
         }
         else {
             settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;
         }
-        if (hdcp != settings.hdmiPreferences.hdcp) {
+        if ((hdcp != settings.hdmiPreferences.hdcp) || (version != settings.hdmiPreferences.version)) {
             update = true;
         }
 #endif
