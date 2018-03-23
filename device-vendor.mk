@@ -28,8 +28,8 @@ endif
 ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so),)
 
 PRODUCT_COPY_FILES += \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvdrmengine.so:vendor/lib/mediadrm/libwvdrmengine.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvhidl.so:vendor/lib/libwvhidl.so:widevine
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvdrmengine.so:$(TARGET_COPY_OUT_VENDOR)/lib/mediadrm/libwvdrmengine.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvhidl.so:$(TARGET_COPY_OUT_VENDOR)/lib/libwvhidl.so:widevine
 
 # no prebuilt binaries included, build from source if we have it
 #

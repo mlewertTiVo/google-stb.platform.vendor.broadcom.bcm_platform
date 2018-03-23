@@ -335,11 +335,6 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE;
         ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
 
-        if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-        }
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
 
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
@@ -1136,6 +1131,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+
+        NEXUS_SimpleAudioDecoderSettings settings;
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));

@@ -260,52 +260,55 @@ static int bout_set_parameters(struct audio_stream *stream,
     struct str_parms *parms;
     int ret = 0;
 
-    pthread_mutex_lock(&bout->lock);
+    ALOGV("%s: at %d, stream = %p, kvpairs=\"%s\"", __FUNCTION__, __LINE__, stream, kvpairs);
 
-    ALOGV("%s: at %d, stream = %p, kvpairs=\"%s\"\n",
-         __FUNCTION__, __LINE__, stream, kvpairs);
-
+    // To avoid unncessary mutex contention, check that the parameters to set in question
+    // are actually ones that we care.
     parms = str_parms_create_str(kvpairs);
+    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE) ||
+        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+        pthread_mutex_lock(&bout->lock);
 
-    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
-        char value[8];
-        ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
-        if (ret > 0) {
-            if (strcmp(value, "off") == 0) {
-                ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
-                ret = bout_standby_l(stream);
-                bout->suspended = true;
-            }
-            else if (strcmp(value, "on") == 0) {
-                ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
-                bout->suspended = false;
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
+            char value[8];
+            ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
+            if (ret > 0) {
+                if (strcmp(value, "off") == 0) {
+                    ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
+                    ret = bout_standby_l(stream);
+                    bout->suspended = true;
+                }
+                else if (strcmp(value, "on") == 0) {
+                    ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
+                    bout->suspended = false;
+                }
             }
         }
-    }
 
-    if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
-        int hw_sync_id = 0;
-        if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-           ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
-           ret = 0;
-        } else {
-           ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
-           if (!ret) {
-              if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
-                 ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
-                       __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
-                 ret = -EINVAL;
-              } else if (!bout->tunneled) {
-                 ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
-                       __FUNCTION__, hw_sync_id);
-                 ret = -ENOENT;
-              }
-           }
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+            int hw_sync_id = 0;
+            if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+                ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
+                ret = 0;
+            } else {
+                ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
+                if (!ret) {
+                    if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
+                        ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
+                              __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
+                        ret = -EINVAL;
+                    } else if (!bout->tunneled) {
+                        ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
+                              __FUNCTION__, hw_sync_id);
+                        ret = -ENOENT;
+                    }
+                }
+            }
         }
-    }
 
+        pthread_mutex_unlock(&bout->lock);
+    }
     str_parms_destroy(parms);
-    pthread_mutex_unlock(&bout->lock);
     return ret;
 }
 
