@@ -129,6 +129,10 @@ using namespace android;
 
 static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
 
+// Handling of persistent nxclient
+static volatile bool g_persistNxClientOn = false;
+Mutex g_persistNxClientLock("bomx_decoder_persist_nxClient");
+
 #if defined(HW_HVD_REVISION_S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
@@ -1331,6 +1335,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
+
     if (!m_nexusClient)
     {
         m_nexusClient = m_pIpcClient->createClientContext();
@@ -1341,6 +1346,27 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             return;
         }
     }
+
+    // create a persistent nxclient connection on the process this component runs,
+    // in order to help speeding up subsequent initialization of other components running
+    // in this same process.
+    g_persistNxClientLock.lock();
+    if ( !g_persistNxClientOn )
+    {
+        NEXUS_Error rc = NEXUS_SUCCESS;
+        NxClient_JoinSettings joinSettings;
+
+        NxClient_GetDefaultJoinSettings(&joinSettings);
+        joinSettings.ignoreStandbyRequest = true;
+        do {
+            rc = NxClient_Join(&joinSettings);
+            if (rc != NEXUS_SUCCESS) {
+                usleep(1 * 1000);
+            }
+        } while (rc != NEXUS_SUCCESS);
+        g_persistNxClientOn = true;
+    }
+    g_persistNxClientLock.unlock();
 
     if (property_get_int32(B_PROPERTY_DTU, 0))
     {
@@ -1384,7 +1410,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
-
 
     NEXUS_VideoFormatInfo videoInfo;
     NEXUS_VideoDecoderCapabilities caps;
