@@ -1,0 +1,15 @@
+package bcm.hardware.dspsvcext@1.0;
+
+enum DspSvcExtStatus : uint32_t {
+    SUCCESS,
+    BAD_VALUE,
+    UNKNOWN,
+};
+
+struct DspSvcExtOvs {
+    int32_t ovs_x;
+    int32_t ovs_y;
+    int32_t ovs_w;
+    int32_t ovs_h;
+};
+

@@ -1,0 +1,23 @@
+package bcm.hardware.dspsvcext@1.0;
+
+interface IDspSvcExt {
+    /**
+     * setup the interface to the hwc-binder for display service extensions.
+     *
+     */
+    start() generates (DspSvcExtStatus s);
+ 
+    /**
+     * get overscan adjustement position from hwc.
+     *
+     */
+    getOvs() generates (DspSvcExtOvs o);
+
+    /**
+     * set overscan adjustement position to hwc.
+     *
+     */
+    setOvs(DspSvcExtOvs o) generates (DspSvcExtStatus s);
+};
+
+
