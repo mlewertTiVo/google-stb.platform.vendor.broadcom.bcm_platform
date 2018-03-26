@@ -15,7 +15,7 @@
  */
 
 #ifdef ANDROID
-#include <cutils/log.h>
+#include <log/log.h>
 #include <usb.h>
 #else
 #include <stdio.h>

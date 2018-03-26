@@ -8,6 +8,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include
+LOCAL_C_INCLUDES += $(TOP)/libnativehelper/include_jni
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativebase/include
@@ -19,7 +21,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
-
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!

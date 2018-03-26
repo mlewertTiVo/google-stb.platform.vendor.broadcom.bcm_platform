@@ -18,7 +18,9 @@ include $(CLEAR_VARS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+LOCAL_HEADER_LIBRARIES := liblog_headers
+LOCAL_SHARED_LIBRARIES := liblog libutils
 
 LOCAL_SRC_FILES := wifi-lights.cpp
 LOCAL_MODULE := lights.$(TARGET_BOARD_PLATFORM)

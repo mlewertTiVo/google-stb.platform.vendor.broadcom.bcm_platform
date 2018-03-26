@@ -20,7 +20,7 @@
 
 #define LOG_TAG "hdmi_tv_input"
 //#define LOG_NDEBUG 0
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/native_handle.h>
 #include <cutils/properties.h>
 

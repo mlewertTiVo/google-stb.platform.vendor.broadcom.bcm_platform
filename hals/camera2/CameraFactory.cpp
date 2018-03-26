@@ -24,7 +24,7 @@
 #define CONFIG_FILE "/etc/camera.cfg"
 #define LOG_TAG "Camera_Factory"
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include "CameraFactory.h"
 

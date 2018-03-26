@@ -49,7 +49,6 @@
 #include "nexus_display.h"
 #include <fcntl.h>
 #include <cutils/properties.h>
-#include <private/android_filesystem_config.h>
 #include <utils/Vector.h>
 #include "treble/PmLibService.h"
 
@@ -80,6 +79,8 @@ public:
    Return<void> getPwr(getPwr_cb _hidl_cb);
    Return<NexusStatus> rmlmk(uint64_t cId);
    Return<NexusStatus> setWoL(const hidl_string& ifc);
+   Return<NexusStatus> acquireWL();
+   Return<NexusStatus> releaseWL();
 
    void start_middleware();
    void stop_middleware();
@@ -96,6 +97,7 @@ private:
    Vector<struct DspCb> mDspCb;
    PmLibService mPmLib;
    ::rmlmk mRmlmkCb;
+   bool wl;
 
    void init_hdmi_out();
    void deinit_hdmi_out();

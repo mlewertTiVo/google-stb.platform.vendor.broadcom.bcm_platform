@@ -43,7 +43,7 @@
 #include "bomx_aac_parser.h"
 #include "biobits.h"
 #include "bioatom.h"
-#include <cutils/log.h>
+#include <log/log.h>
 
 // Below utilities borrowed from bmedia_util.c
 

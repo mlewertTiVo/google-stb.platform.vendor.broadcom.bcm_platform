@@ -40,7 +40,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include "cutils/properties.h"
 #include "gk.h"
 

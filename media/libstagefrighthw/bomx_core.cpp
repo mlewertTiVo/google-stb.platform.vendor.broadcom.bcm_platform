@@ -15,7 +15,7 @@
 #undef LOG_TAG
 //#define LOG_NDEBUG 0
 #define LOG_TAG "bomx_core"
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include "OMX_Core.h"
 #include "OMX_Component.h"

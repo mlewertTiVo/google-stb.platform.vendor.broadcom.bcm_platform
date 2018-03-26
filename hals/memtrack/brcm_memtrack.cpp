@@ -39,7 +39,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include "cutils/properties.h"
 #include "brcm_memtrack.h"
 #include "nx_ashmem.h"

@@ -31,7 +31,7 @@ LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/mpeg2_ts_parse
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
-
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DB_REFSW_ANDROID
 LOCAL_CFLAGS += -DNXCLIENT_SUPPORT
@@ -48,8 +48,6 @@ LOCAL_SRC_FILES := \
     bcmsidebandplayer.cpp \
     bcmsidebandfileplayer.cpp \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/media_player.c \
-    $(PATH_TO_NEXUS)/nxclient/apps/utils/media_player_bip.c \
-    $(PATH_TO_NEXUS)/nxclient/apps/utils/media_player_ip.c \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/media_probe.c \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bfile_crypto.c \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/dvr_crypto.c \

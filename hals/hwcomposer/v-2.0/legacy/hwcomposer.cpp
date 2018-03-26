@@ -21,7 +21,7 @@
 #include <inttypes.h>
 #include <fcntl.h>
 #include <math.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include <errno.h>
 #include <pthread.h>
@@ -46,7 +46,7 @@
 #include "INxDspEvtSrc.h"
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
-#include "nexus_display_dynrng.h"
+#include "nexus_display_dynrng_private.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
@@ -335,13 +335,15 @@ static void hwc2_dump_content(
 }
 
 static void hwc2_eotf(
-   struct hwc2_dsp_t *dsp) {
+   struct hwc2_dsp_t *dsp,
+   int32_t forced) {
 
    NEXUS_HdmiOutputExtraSettings s;
    NEXUS_PlatformConfiguration p;
    NEXUS_Error e;
    NEXUS_HdmiOutputHandle hdmi;
-   int32_t eotf = hwc2_setting(hwc2_tweak_eotf);
+   int32_t eotf =
+      (forced != HWC2_INVALID) ? forced : hwc2_setting(hwc2_tweak_eotf);
 
    if (!eotf) {
       return;
@@ -361,17 +363,22 @@ static void hwc2_eotf(
    if (dsp->aCfg->hdr10) {
       NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
       switch (eotf) {
-         case 1:
+         case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
             s.overrideDynamicRangeMasteringInfoFrame = true;
             s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
          break;
-         case 2:
+         case HWC2_EOTF_HLG:
+            ALOGI("[eotf]: hlg.");
+            s.overrideDynamicRangeMasteringInfoFrame = true;
+            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
+         break;
+         case HWC2_EOTF_SDR:
             ALOGI("[eotf]: sdr.");
             s.overrideDynamicRangeMasteringInfoFrame = true;
             s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
-         case 3:
+         case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
             s.overrideDynamicRangeMasteringInfoFrame = false;
@@ -396,30 +403,30 @@ static void hwc2_eval_plm(
       }
       if (noplm != dsp->aCfg->plm) {
          dsp->aCfg->plm = noplm;
-         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
+         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(0, &d);
          d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
-         NEXUS_Display_SetGraphicsDynamicRangeProcessingSettings(&d);
-         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(0, &d);
+         NEXUS_Display_SetGraphicsDynamicRangeProcessingSettings(0, &d);
+         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(0, 0, &d);
          d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
-         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(0, &d);
-         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(1, &d);
+         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(0, 0, &d);
+         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(0, 1, &d);
          d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
          d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
             noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
-         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(1, &d);
+         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(0, 1, &d);
       }
       pthread_mutex_unlock(&dsp->mtx_cfg);
    }
@@ -863,7 +870,7 @@ static void hwc2_ext_fbs(
    }
    hwc2->ext->u.ext.bfb = true;
 
-   if (hwc2_enabled(hwc2_tweak_fb_compressed)) {
+   if (hwc2_enabled(hwc2_tweak_fb_compressed) && (hwc2->ext->u.ext.yvi.s == NULL)) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -874,7 +881,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.yvi.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.yvi.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
@@ -886,7 +892,7 @@ static void hwc2_ext_fbs(
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
-   {
+   if (hwc2->ext->u.ext.icb.s == NULL) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
@@ -897,7 +903,6 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
 
-      hwc2->ext->u.ext.icb.s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.icb.fd);
       if (bh != NULL) {
          scs.pixelMemory = bh;
@@ -1419,7 +1424,7 @@ static int32_t hwc2_regCb(
                hwc2_want_comp_bypass(&settings);
                hwc2_cfg_collect(hwc2->ext, &settings);
                hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-               hwc2_eotf(hwc2->ext);
+               hwc2_eotf(hwc2->ext, HWC2_INVALID);
             }
             NEXUS_HdmiOutput_Close(hdmi);
          }
@@ -2218,7 +2223,7 @@ static size_t hwc2_dump_gen(
             dsp->aCfg->xdp, dsp->aCfg->ydp,
             hwc2->ext->op.x, hwc2->ext->op.y, hwc2->ext->op.w, hwc2->ext->op.h,
             dsp->pres, dsp->post);
-         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
+         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(0, &d);
          current += snprintf(&hwc2->dump[current], max-current,
             "\t[ext]:hdr-%c,hlg-%c::[dyn]:plm-%c,dbv-%c,tch-%c\n",
             dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x',
@@ -6447,7 +6452,7 @@ static void hwc2_setup_ext(
       if (hstatus.connected) {
          hwc2_cfg_collect(hwc2->ext, &settings);
          hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-         hwc2_eotf(hwc2->ext);
+         hwc2_eotf(hwc2->ext, HWC2_INVALID);
       }
       NEXUS_HdmiOutput_Close(hdmi);
    }
@@ -6542,6 +6547,10 @@ static void hwc2_hb_ntfy(
    case HWC_BINDER_NTFY_OVERSCAN:
       hwc2_op(hwc2->ext, &ntfy);
    break;
+   case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
+      ALOGV("[ext]: no more active video client.");
+      hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+   break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
    break;
@@ -6597,7 +6606,7 @@ static void hwc2_hp_ntfy(
       if (hdmi) {
          hwc2_cfg_collect(hwc2->ext, &settings);
          hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-         hwc2_eotf(hwc2->ext);
+         hwc2_eotf(hwc2->ext, HWC2_INVALID);
          NEXUS_HdmiOutput_Close(hdmi);
       }
    } else /* disconnected */ {

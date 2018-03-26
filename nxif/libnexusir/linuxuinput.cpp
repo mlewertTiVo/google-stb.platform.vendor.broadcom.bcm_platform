@@ -39,6 +39,7 @@
 
 #include "linuxuinput.h"
 
+#include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -48,7 +49,7 @@
 //#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "NexusIR"
-#include <cutils/log.h>
+#include <log/log.h>
 
 LinuxUInput::LinuxUInput() :
         m_fd(-1)

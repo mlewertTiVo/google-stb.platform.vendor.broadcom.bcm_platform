@@ -177,7 +177,7 @@ static void acquireWakeLock()
 
     if (wakeLockAcquired == false) {
         ALOGV("%s: Acquiring \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+        gNxWrap->acquireWL();
         wakeLockAcquired = true;
     }
 }
@@ -188,7 +188,7 @@ static void releaseWakeLock()
 
     if (wakeLockAcquired == true && shutdownStarted == false) {
         ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-        release_wake_lock(WAKE_LOCK_ID);
+        gNxWrap->releaseWL();
         wakeLockAcquired = false;
     }
 }

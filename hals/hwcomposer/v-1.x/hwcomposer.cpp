@@ -24,7 +24,7 @@
 #include <utils/threads.h>
 #include <cutils/sched_policy.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/atomic.h>
 #include <utils/List.h>
 #include <utils/Timers.h>

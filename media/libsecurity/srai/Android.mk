@@ -30,6 +30,7 @@ LOCAL_SRC_FILES := \
     magnum/syslib/sagelib/src/bsagelib_tools.c
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \

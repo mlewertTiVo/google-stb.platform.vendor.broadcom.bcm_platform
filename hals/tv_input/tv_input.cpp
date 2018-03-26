@@ -18,7 +18,7 @@
 #include <errno.h>
 
 #define LOG_TAG "tv_input"
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/native_handle.h>
 #include <android/native_window.h>
 

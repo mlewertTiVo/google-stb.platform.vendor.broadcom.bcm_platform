@@ -42,6 +42,28 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_STRIP_MODULE := false
+#LOCAL_PROPRIETARY_MODULE := true
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+ifeq ($(BCM_DIST_KNLIMG_BINS),y)
+LOCAL_SRC_FILES_arm := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
+else
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+endif
+endif
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libnxserver_vendor
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_SUFFIX := .a
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+LOCAL_STRIP_MODULE := false
 LOCAL_PROPRIETARY_MODULE := true
 ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
@@ -64,7 +86,7 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_STRIP_MODULE := false
-LOCAL_PROPRIETARY_MODULE := true
+#LOCAL_PROPRIETARY_MODULE := true
 ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
@@ -136,3 +158,4 @@ ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc/Android.mk
 endif
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxssd/Android.mk

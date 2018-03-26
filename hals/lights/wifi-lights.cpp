@@ -38,7 +38,7 @@
  *****************************************************************************/
 
 #define LOG_TAG "bcm_light"
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include <cstdlib>
 #include <stdint.h>

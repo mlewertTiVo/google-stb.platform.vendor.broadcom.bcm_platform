@@ -59,7 +59,7 @@
 #error magnum bdbg.h has already been included
 #endif
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 #ifdef __cplusplus
 extern "C" {

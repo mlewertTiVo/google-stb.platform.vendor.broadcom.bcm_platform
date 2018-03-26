@@ -41,7 +41,7 @@
 #define LOG_TAG "bomx_video_encoder"
 
 #include <fcntl.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <math.h>
 #include <cmath>
 #include <cutils/properties.h>
@@ -120,6 +120,36 @@ enum BOMX_VideoEncoderEventType
     BOMX_VideoEncoderEventType_eMax
 };
 
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_VideoEncoder_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
+
 extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
@@ -139,7 +169,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_VideoEncoder_StandbyMon, NULL);
         /* check if encoder is supported by Nexus */
         NEXUS_GetVideoEncoderCapabilities(&caps);
         for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
@@ -552,7 +582,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         }
         else
         {
-            m_pNxWrap->join();
+            m_pNxWrap->join(BOMX_VideoEncoder_StandbyMon, NULL);
         }
     }
 
@@ -723,6 +753,8 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
     OMX_IN  OMX_INDEXTYPE nParamIndex,
     OMX_INOUT OMX_PTR pComponentParameterStructure)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     switch ( (int)nParamIndex )
     {
     case OMX_IndexParamVideoAvc:
@@ -935,6 +967,8 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
     OMX_IN  OMX_PTR pComponentParameterStructure)
 {
     OMX_ERRORTYPE err;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     switch ( (int)nIndex )
     {
@@ -2234,6 +2268,8 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     ALOGV("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if(pBufferHeader->nFlags & ( OMX_BUFFERFLAG_DATACORRUPT | OMX_BUFFERFLAG_EXTRADATA | OMX_BUFFERFLAG_CODECCONFIG ))
@@ -2284,6 +2320,8 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FillThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     pBuffer->Reset();
     err = m_pVideoPorts[1]->QueueBuffer(pBufferHeader);
@@ -2542,7 +2580,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetExtensionIndex(
         }
     }
 
-    ALOGW("Extension %s is not supported", cParameterName);
+    ALOGI("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 

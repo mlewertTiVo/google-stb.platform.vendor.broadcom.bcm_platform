@@ -23,7 +23,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <cutils/properties.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <inttypes.h>
 
 #include <hardware/gralloc1.h>

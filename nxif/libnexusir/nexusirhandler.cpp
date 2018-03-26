@@ -46,7 +46,7 @@
 #include "nexusirmap.h"
 
 #include <cutils/properties.h>
-#include <cutils/log.h>
+#include <log/log.h>
 
 #define MS_TO_NS(t) (nsecs_t(t) * 1000 * 1000)
 #define NS_TO_MS(t) (nsecs_t(t) / (1000 * 1000))

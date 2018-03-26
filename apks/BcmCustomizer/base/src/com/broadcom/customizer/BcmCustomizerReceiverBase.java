@@ -37,7 +37,7 @@ import android.view.KeyEvent;
 public class BcmCustomizerReceiverBase extends BroadcastReceiver {
     private static final String TAG = "BcmCustomizerReceiverBase";
     private static final String ACTION_PARTNER_CUSTOMIZATION =
-            "com.google.android.leanbacklauncher.action.PARTNER_CUSTOMIZATION";
+            "com.google.android.tvlauncher.action.PARTNER_CUSTOMIZATION";
 
     private static final String ACTION_GLOBAL_BUTTON = "android.intent.action.GLOBAL_BUTTON";
     private static final String ACTION_CONNECT_INPUT = "com.google.android.intent.action.CONNECT_INPUT";

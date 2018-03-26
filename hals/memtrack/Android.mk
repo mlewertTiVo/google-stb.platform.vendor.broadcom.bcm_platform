@@ -17,8 +17,9 @@ LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include \
                     $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
+LOCAL_HEADER_LIBRARIES := liblog_headers
+
 LOCAL_SHARED_LIBRARIES += libbinder
-LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient

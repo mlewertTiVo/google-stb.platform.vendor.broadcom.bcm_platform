@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-V3D_ANDROID_DEFINES := -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+V3D_ANDROID_DEFINES := -I$(ANDROID_TOP)/system/core/libsystem/include
+V3D_ANDROID_DEFINES += -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+V3D_ANDROID_DEFINES += -I$(ANDROID_TOP)/hardware/libhardware/include
 V3D_ANDROID_DEFINES += -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION}
 V3D_ANDROID_DEFINES += $(NEXUS_APP_CFLAGS)
 include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc

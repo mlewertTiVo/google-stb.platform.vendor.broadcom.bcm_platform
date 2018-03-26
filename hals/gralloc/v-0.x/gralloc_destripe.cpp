@@ -39,7 +39,7 @@
 //#define LOG_NDEBUG 0
 #include <cutils/atomic.h>
 #include "gralloc_destripe.h"
-#include <cutils/log.h>
+#include <log/log.h>
 
 static NEXUS_SurfaceHandle to_nx_surface(int width, int height, int stride, NEXUS_PixelFormat format,
                                          NEXUS_MemoryBlockHandle handle, unsigned offset)

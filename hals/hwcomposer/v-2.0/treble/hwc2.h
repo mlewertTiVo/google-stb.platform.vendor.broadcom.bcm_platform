@@ -107,6 +107,11 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_GFB_MAX_W  "ro.nx.hwc2.gfb.w"
 #define HWC2_GFB_MAX_H  "ro.nx.hwc2.gfb.h"
 
+#define HWC2_EOTF_HDR10 1
+#define HWC2_EOTF_HLG   2
+#define HWC2_EOTF_SDR   3
+#define HWC2_EOTF_NS    4
+
 /* dump frames content for each composition, requires:
  *
  *   # mkdir -p /data/nxmedia/hwc2

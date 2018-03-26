@@ -27,9 +27,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 
-#include <dlfcn.h>
-
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
@@ -56,15 +54,6 @@ extern "C" void *nxwrap_create_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
 extern "C" void nxwrap_rmlmk(void *wrap);
 
-#if defined(V3D_VARIANT_v3d)
-static void *gl_dyn_lib;
-static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfoEXT *, BEGL_BufferSettings *);
-#endif
-#define LOAD_FN(lib, name) \
-if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
-   ALOGV("failed resolving '%s'", #name); \
-else \
-   ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 static void *nxwrap = NULL;
 static void *nexus_client = NULL;
 static int gralloc_mgmt_mode = -1;
@@ -106,21 +95,6 @@ static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
 
-#if defined(V3D_VARIANT_v3d)
-   snprintf(value, PROPERTY_VALUE_MAX, "%slibGLES_nexus.so", V3D_DLOPEN_PATH);
-   gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
-   if (!gl_dyn_lib) {
-      // last resort legacy path.
-      snprintf(value, PROPERTY_VALUE_MAX, "/vendor/lib/egl/libGLES_nexus.so");
-      gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
-      if (!gl_dyn_lib) {
-         ALOGE("failed loading essential GLES library '%s': <%s>!", value, dlerror());
-      }
-   }
-   // load wanted functions from the library now.
-   LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
-#endif
-
    nexus_client = nxwrap_create_client(&nxwrap);
    if (nexus_client == NULL) {
       ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
@@ -149,8 +123,6 @@ static void gralloc_load_lib(void)
       gralloc_boom_chk = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 }
-
-#undef LOAD_FN
 
 static void gralloc_checkpoint_callback(void *pParam, int param)
 {
@@ -198,10 +170,6 @@ void gralloc_explicit_unload(void)
       nexus_client = NULL;
       nxwrap = NULL;
    }
-
-#if defined(V3D_VARIANT_v3d)
-   dlclose(gl_dyn_lib);
-#endif
 
    if (hCheckpointEvent) {
       BKNI_DestroyEvent(hCheckpointEvent);
@@ -543,12 +511,45 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
    return pf;
 }
 
+#if defined(V3D_VARIANT_v3d)
+static inline uint32_t round_up(uint32_t value, uint32_t multiple)
+{
+   value += multiple - 1;
+   value -= value % multiple;
+   return value;
+}
+
+static inline void buffer_requirements(uint32_t width, uint32_t height,
+      uint32_t pixel_bytes, uint32_t *align, uint32_t *pitch, uint32_t *size)
+{
+   /* The VC4 requirements are:
+    * 1. 3 pixel formats
+    * 2. memory allocation must have 4096 byte start alignment
+    * 3. stride (aka pitch) is multiple of 16 bytes
+    * 4. memory allocation must be padded at the end so that the last line
+    *    can be read in 64 pixel blocks
+    * 5. memory allocation must have 512 bytes end alignment
+    */
+   static const uint32_t start_alignment = 4096;
+   static const uint32_t pitch_alignment = 16;
+   static const uint32_t block_pixels = 64;
+   static const uint32_t end_alignment = 512;
+
+   *align = start_alignment;
+
+   uint32_t line_bytes = width * pixel_bytes;
+   *pitch = round_up(line_bytes, pitch_alignment);
+
+   uint32_t last_line_pixels = round_up(width, block_pixels);
+   uint32_t last_line_bytes = last_line_pixels * pixel_bytes;
+   uint32_t padded_size = height ? *pitch * (height - 1) + last_line_bytes : 0;
+   *size = round_up(padded_size, end_alignment);
+}
+#endif
+
 static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pSharedData)
 {
    BEGL_PixmapInfoEXT bufferRequirements;
-#if defined(V3D_VARIANT_v3d)
-   BEGL_BufferSettings bufferConstrainedRequirements;
-#endif
    int rc = -EINVAL;
 
    memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfoEXT));
@@ -600,13 +601,17 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
       break;
       default:
 #if defined(V3D_VARIANT_v3d)
+      {
          if (gralloc_v3d_get_nexus_client_context() == NULL) {
             ALOGE("%s: no valid client context...", __FUNCTION__);
          }
-         dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
-         hnd->oglStride = bufferConstrainedRequirements.pitchBytes;
-         hnd->oglFormat = bufferConstrainedRequirements.format;
-         hnd->oglSize   = bufferConstrainedRequirements.totalByteSize;
+         uint32_t align, pitch, size;
+         buffer_requirements(bufferRequirements.width, bufferRequirements.height,
+               pSharedData->container.bpp, &align, &pitch, &size);
+         hnd->oglStride = pitch;
+         hnd->oglFormat = bufferRequirements.format;
+         hnd->oglSize   = size;
+      }
 #else
          hnd->oglStride = pSharedData->container.width * pSharedData->container.bpp;
          hnd->oglFormat = bufferRequirements.format;
@@ -798,7 +803,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             } else {
                ashmem_alloc.size = pSharedData->container.allocSize;
             }
-         } else if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) &&
+         } else if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) ||
                     (usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
             // note that we do not allow pure sw planes larger than max data planes because
             // we still want to prevent performance bottleneck on composition hw.

@@ -21,7 +21,7 @@
 #include <pthread.h>
 
 #include <cutils/properties.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <hardware/hardware.h>
 #include <hardware/boot_control.h>
 #include <inttypes.h>

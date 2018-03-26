@@ -25,7 +25,7 @@
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <utils/Vector.h>
 
 #if HAVE_ANDROID_OS

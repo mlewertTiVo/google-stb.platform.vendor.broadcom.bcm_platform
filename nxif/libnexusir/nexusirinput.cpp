@@ -42,7 +42,7 @@
 //#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "NexusIR"
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include <errno.h>
 #include <stdio.h>

@@ -51,7 +51,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include <errno.h>
 #include <sys/time.h>
@@ -98,7 +98,7 @@
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
 #define OOM_SCORE_IGNORE               (-16)
-#define OOM_CONSUME_MAX                (80)
+#define OOM_CONSUME_MAX                (110)
 #define OOM_THRESHOLD_AGRESSIVE        (16)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)

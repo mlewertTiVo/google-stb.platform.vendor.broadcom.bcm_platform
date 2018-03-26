@@ -353,12 +353,6 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &settings);
     ALOGV("Primary fifoThreshold %u->%u", settings.primary.fifoThreshold, threshold);
     settings.primary.fifoThreshold = threshold;
-
-    if (bout->dolbyMs) {
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-    }
     NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &settings);
 
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
@@ -367,7 +361,46 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
 
     if (bout->dolbyMs) {
         start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
+
+        if ((start_settings.primary.codec == NEXUS_AudioCodec_eAc3) ||
+            (start_settings.primary.codec == NEXUS_AudioCodec_eAc3Plus)) {
+            NEXUS_AudioDecoderCodecSettings codecSettings;
+            NEXUS_AudioDecoderDolbySettings *dolbySettings;
+
+            // Get default settings
+            NEXUS_SimpleAudioDecoder_GetCodecSettings(audio_decoder,
+                    NEXUS_SimpleAudioDecoderSelector_ePrimary, start_settings.primary.codec, &codecSettings);
+            if (codecSettings.codec != start_settings.primary.codec) {
+                ALOGE("%s: Codec mismatch %d != %d", __FUNCTION__,
+                        codecSettings.codec, start_settings.primary.codec);
+                NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
+                return -ENOSYS;
+            }
+
+            dolbySettings = (codecSettings.codec == NEXUS_AudioCodec_eAc3)?
+                                &codecSettings.codecSettings.ac3:
+                                &codecSettings.codecSettings.ac3Plus;
+
+            dolbySettings->enableAtmosProcessing = true;
+            if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
+                property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST, false)) {
+                dolbySettings->enableAtmosProcessing = false;
+            }
+
+            ALOGI("%s: %s Dolby ATMOS", __FUNCTION__,
+                dolbySettings->enableAtmosProcessing?"Enabling":"Disabling");
+
+            ret = NEXUS_SimpleAudioDecoder_SetCodecSettings(audio_decoder,
+                    NEXUS_SimpleAudioDecoderSelector_ePrimary, &codecSettings);
+            if (ret) {
+                ALOGE("%s: Unable to set codec %d settings, ret = %d", __FUNCTION__,
+                        start_settings.primary.codec, ret);
+                NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
+                return -ENOSYS;
+            }
+        }
     }
+
     ret = NEXUS_SimpleAudioDecoder_Start(audio_decoder, &start_settings);
     if (ret != NEXUS_SUCCESS) {
         ALOGE("%s: Start audio decoder failed, ret = %d", __FUNCTION__, ret);
@@ -1086,6 +1119,13 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     if (bout->dolbyMs) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+
+        NEXUS_SimpleAudioDecoderSettings settings;
+        NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &settings);
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &settings);
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));

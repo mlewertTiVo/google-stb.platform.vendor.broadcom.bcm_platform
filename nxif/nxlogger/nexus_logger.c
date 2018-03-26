@@ -53,7 +53,7 @@
 #include "nexus_driver_ioctl.h"
 
 #define LOG_TAG "NEXUS"
-#include <cutils/log.h>
+#include <log/log.h>
 #include <ctype.h>
 #include <sched.h>
 #include <cutils/properties.h>

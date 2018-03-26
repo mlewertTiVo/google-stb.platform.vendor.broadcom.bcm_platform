@@ -70,6 +70,8 @@ LOCAL_SRC_FILES := \
 
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libutils/include \
+    $(TOP)/system/core/libcutils/include \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
     $(TOP)/vendor/widevine/brcm_oemcrypto_L1/include \

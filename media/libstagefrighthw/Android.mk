@@ -44,7 +44,8 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := $(TOP)/frameworks/native/include/media/openmax
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/utils
-
+LOCAL_C_INCLUDES += $(TOP)/system/core/libcutils/include
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
@@ -76,7 +77,9 @@ endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES += $(TOP)/system/core/libcutils/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
@@ -135,9 +138,11 @@ endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
+LOCAL_C_INCLUDES += $(TOP)/system/core/libcutils/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!

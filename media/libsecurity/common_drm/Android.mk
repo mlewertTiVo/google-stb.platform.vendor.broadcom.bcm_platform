@@ -16,28 +16,44 @@ LOCAL_PATH := $(call my-dir)
 #-------------
 # libcmndrm.so
 #-------------
+ifeq ($(SAGE_SUPPORT), y)
 include $(CLEAR_VARS)
-LOCAL_MODULE := libcmndrm
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .so
-LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-LOCAL_PROPRIETARY_MODULE := true
-LOCAL_STRIP_MODULE := true
-ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
+include $(LOCAL_PATH)/drm/common/common.inc
+LOCAL_SRC_FILES := ${COMMON_SOURCES}
+
+LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/priv \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
+    $(TOP)/external/boringssl/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs
+
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += ${COMMON_DEFINES}
+ifeq ($(SAGE_VERSION),2x)
+LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
+endif
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
+ifneq ($(TARGET_BUILD_TYPE),debug)
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
+endif
+LOCAL_SHARED_LIBRARIES := liblog libdrmrootfs libsrai libnexus libbcrypt
+
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
-LOCAL_MODULE_TARGET_ARCH := arm arm64
-LOCAL_SRC_FILES_arm64 := lib/arm64/libcmndrm.so
-LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
-else
-LOCAL_MODULE_TARGET_ARCH := arm
-ifeq ($(SAGE_VERSION),2x)
-LOCAL_SRC_FILES_arm := lib/arm/s2x/libcmndrm.so
-else
-LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
+LOCAL_MODULE := libcmndrm
+LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+include $(BUILD_SHARED_LIBRARY)
 endif
-endif
-include $(BUILD_PREBUILT)
 
 ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 #-------------
@@ -83,6 +99,7 @@ include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
@@ -185,6 +202,7 @@ endif
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
@@ -216,7 +234,7 @@ endif
 # Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
 LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 
-LOCAL_SHARED_LIBRARIES := libnexus libcmndrm libdrmrootfs libsrai liblog
+LOCAL_SHARED_LIBRARIES := libnexus libdrmrootfs libsrai liblog libcmndrm
 
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both

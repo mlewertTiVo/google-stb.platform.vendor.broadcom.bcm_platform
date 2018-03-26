@@ -25,6 +25,7 @@ LOCAL_SHARED_LIBRARIES := \
 	liblog \
 	libnexus
 
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror

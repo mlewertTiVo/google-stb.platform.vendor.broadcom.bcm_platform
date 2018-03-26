@@ -335,11 +335,6 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE;
         ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
 
-        if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
-            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-        }
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
 
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
@@ -373,6 +368,19 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
             dolbySettings = (codecSettings.codec == NEXUS_AudioCodec_eAc3)?
                                 &codecSettings.codecSettings.ac3:
                                 &codecSettings.codecSettings.ac3Plus;
+
+            if (bout->dolbyMs) {
+                dolbySettings->enableAtmosProcessing = true;
+
+                if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
+                    property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST, false)) {
+                    dolbySettings->enableAtmosProcessing = false;
+                }
+
+                ALOGI("%s: %s Dolby ATMOS", __FUNCTION__,
+                    dolbySettings->enableAtmosProcessing?"Enabling":"Disabling");
+                changed = true;
+            }
 
             if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE, property, "")) {
                 value = get_property_value(property, drc_mode_map);
@@ -1123,6 +1131,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+
+        NEXUS_SimpleAudioDecoderSettings settings;
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));

@@ -49,6 +49,9 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/gpu/$(V3D_VARI
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION}
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"

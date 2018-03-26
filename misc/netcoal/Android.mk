@@ -20,7 +20,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libutils
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_SRC_FILES := ethcoal.c
 LOCAL_MODULE := netcoal
 LOCAL_MODULE_TAGS := optional

@@ -13,6 +13,8 @@ LOCAL_C_INCLUDES := \
    external/jpeg \
    system/media/camera/include
 
+LOCAL_HEADER_LIBRARIES := liblog_headers
+
 LOCAL_SRC_FILES := \
 	CameraFactory.cpp \
 	CameraHal.cpp \

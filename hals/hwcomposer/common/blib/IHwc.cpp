@@ -35,6 +35,8 @@ enum {
     SET_OVERSCAN_ADJUST,
     GET_OVERSCAN_ADJUST,
     EVAL_PLM,
+    FREE_VIDEO_SURF_CLIENT_ID,
+    FREE_SIDEBAND_SURF_CLIENT_ID,
 };
 
 class BpHwc : public BpInterface<IHwc>
@@ -79,6 +81,14 @@ public:
         value = reply.readInt32();
     }
 
+    void freeVideoSurfaceId(const sp<IHwcListener>& listener, int index) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder(listener));
+        data.writeInt32(index);
+        remote()->transact(FREE_VIDEO_SURF_CLIENT_ID, data, &reply);
+    }
+
     void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
@@ -106,6 +116,14 @@ public:
         data.writeInt32(index);
         remote()->transact(GET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
         value = reply.readInt32();
+    }
+
+    void freeSidebandSurfaceId(const sp<IHwcListener>& listener, int index) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder(listener));
+        data.writeInt32(index);
+        remote()->transact(FREE_SIDEBAND_SURF_CLIENT_ID, data, &reply);
     }
 
     void setGeometry(const sp<IHwcListener>& listener, int type, int index,
@@ -232,6 +250,16 @@ status_t BnHwc::onTransact(
       }
       break;
 
+      case FREE_VIDEO_SURF_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         freeVideoSurfaceId(listener, index);
+         return NO_ERROR;
+      }
+      break;
+
       case SET_DISPLAY_FRAME_ID:
       {
          CHECK_INTERFACE(IHwc, data, reply);
@@ -264,6 +292,16 @@ status_t BnHwc::onTransact(
          int index = data.readInt32();
          getSidebandSurfaceId(listener, index, value);
          reply->writeInt32(value);
+         return NO_ERROR;
+      }
+      break;
+
+      case FREE_SIDEBAND_SURF_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         freeSidebandSurfaceId(listener, index);
          return NO_ERROR;
       }
       break;

@@ -43,6 +43,7 @@ LOCAL_SRC_FILES := \
     bcrypt_x509_sw.c
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/boringssl/include

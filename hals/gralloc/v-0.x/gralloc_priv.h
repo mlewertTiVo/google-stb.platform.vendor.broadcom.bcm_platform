@@ -44,7 +44,7 @@ extern "C" {
 #include <linux/time.h>
 #include <assert.h>
 #include "nx_ashmem.h"
-#include <cutils/log.h>
+#include <log/log.h>
 
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2

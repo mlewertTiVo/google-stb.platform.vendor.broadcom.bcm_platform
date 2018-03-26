@@ -26,6 +26,7 @@ LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
                     system/core/base/include
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_SRC_FILES := togplm.cpp
 LOCAL_INIT_RC := togplm.rc
 LOCAL_MODULE := togplm

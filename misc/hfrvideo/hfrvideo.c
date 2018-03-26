@@ -41,7 +41,8 @@
 //#define LOG_NDEBUG 0
 
 #include <ctype.h>
-#include <cutils/log.h>
+#include <unistd.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include <dirent.h>
 #include <errno.h>

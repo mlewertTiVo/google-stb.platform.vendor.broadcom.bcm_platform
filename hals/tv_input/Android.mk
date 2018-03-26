@@ -21,7 +21,11 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libbcmsideb
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativebase/include
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+LOCAL_C_INCLUDES += $(TOP)/system/media/audio/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)

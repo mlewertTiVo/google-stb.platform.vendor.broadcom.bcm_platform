@@ -39,7 +39,7 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "BcmSidbandPlayer"
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include "nxclient.h"
 

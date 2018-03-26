@@ -41,7 +41,7 @@
 #define LOG_TAG "bomx_audio_decoder"
 
 #include <fcntl.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/properties.h>
 #include <cutils/atomic.h>
 
@@ -120,6 +120,36 @@ enum BOMX_AudioDecoderEventType
 static int32_t g_instanceNum;
 static int32_t g_activeInstancesNum;
 
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_AudioDecoder_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
+
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
@@ -137,7 +167,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -200,7 +230,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -263,7 +293,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMp3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMpeg].decode )
@@ -326,7 +356,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
     }
     else
     {
-        pNxWrap->join();
+        pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
@@ -673,7 +703,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         }
         else
         {
-            m_pNxWrap->join();
+            m_pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
         }
     }
 
@@ -983,16 +1013,7 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     {
         if ( m_pAudioPorts[i] )
         {
-            while ( !m_pAudioPorts[i]->IsEmpty() )
-            {
-                // Clean up the allocated OMX buffers if they have not been freed for some reason
-                BOMX_Buffer *pBuffer = m_pAudioPorts[i]->GetPortBuffer();
-                ALOG_ASSERT(NULL != pBuffer);
-
-                OMX_ERRORTYPE err = FreeBuffer((m_pAudioPorts[i]->GetDir() == OMX_DirInput) ? m_audioPortBase : m_audioPortBase+1,  pBuffer->GetHeader());
-                ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer at destructor %d", err);
-            }
-
+            CleanupPortBuffers(i);
             delete m_pAudioPorts[i];
         }
     }
@@ -1035,6 +1056,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
         OMX_IN  OMX_INDEXTYPE nParamIndex,
         OMX_INOUT OMX_PTR pComponentParameterStructure)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     switch ( (int)nParamIndex )
     {
     case OMX_IndexParamAudioProfileQuerySupported:
@@ -1315,6 +1338,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
 {
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     switch ( (int)nIndex )
     {
@@ -2959,6 +2984,9 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
@@ -3166,6 +3194,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     ALOGV("Fill Buffer, comp:%s %d ts %u us pInfo %p HDR %p", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     pBuffer->Reset();
@@ -3211,6 +3241,30 @@ void BOMX_AudioDecoder::CancelTimerId(B_SchedulerTimerId& timerId)
     {
         CancelTimer(timerId);
         timerId = NULL;
+    }
+}
+
+void BOMX_AudioDecoder:: CleanupPortBuffers(OMX_U32 nPortIndex)
+{
+    BOMX_Port *pPort;
+
+    pPort = FindPortByIndex(nPortIndex);
+    ALOG_ASSERT (NULL != pPort);
+
+    // Make sure there are no buffers in the port queue before freeing them
+    BOMX_Buffer *pBuffer = pPort->GetBuffer();
+    while ( pBuffer != NULL )
+    {
+        BOMX_Buffer *pNextBuffer = pPort->GetNextBuffer(pBuffer);
+        pPort->BufferComplete(pBuffer);
+        pBuffer = pNextBuffer;
+    }
+    while ( !pPort->IsEmpty() )
+    {
+        BOMX_Buffer *pBuffer = pPort->GetPortBuffer();
+        ALOG_ASSERT(NULL != pBuffer);
+        OMX_ERRORTYPE err = FreeBuffer((pPort->GetDir() == OMX_DirInput) ? m_videoPortBase : m_videoPortBase+1,  pBuffer->GetHeader());
+        ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer %d", err);
     }
 }
 
@@ -3433,7 +3487,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetExtensionIndex(
         }
     }
 
-    ALOGW("Extension %s is not supported", cParameterName);
+    ALOGI("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 

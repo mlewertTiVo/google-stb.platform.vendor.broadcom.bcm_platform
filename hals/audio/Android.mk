@@ -31,7 +31,6 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libutils \
     libcutils \
-    libmedia \
     libnexus \
     libnxclient \
     libbomx_util \
@@ -70,7 +69,10 @@ ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 endif
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+LOCAL_C_INCLUDES += $(TOP)/frameworks/av/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -86,9 +88,7 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libcutils \
     liblog \
-    libutils \
-    libmedia \
-    libaudiopolicymanagerdefault
+    libutils
 
 ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
@@ -100,7 +100,10 @@ LOCAL_C_INCLUDES := \
     frameworks/av/services/audiopolicy \
     frameworks/av/services/audiopolicy/engine/interface \
     frameworks/av/services/audiopolicy/common/managerdefinitions/include \
-    frameworks/av/services/audiopolicy/common/include/
+    frameworks/av/services/audiopolicy/common/include/ \
+    frameworks/av/include
+
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
@@ -125,14 +128,18 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
     external/tinyalsa/include \
-    $(call include-path-for, audio-utils)
+    $(call include-path-for, audio-utils) \
+    $(call include-path-for, audio) \
+    $(call include-path-for, libhardware) \
+    frameworks/av/include
+
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 LOCAL_SHARED_LIBRARIES := \
     libmedia_helper \
     liblog \
     libcutils \
     libutils \
-    libmedia \
     libtinyalsa \
     libaudioutils
 

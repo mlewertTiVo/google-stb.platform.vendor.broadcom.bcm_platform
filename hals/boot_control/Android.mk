@@ -37,7 +37,7 @@ else
 LOCAL_SHARED_LIBRARIES += libnxbinder
 LOCAL_SHARED_LIBRARIES += libnxevtsrc
 endif
-LOCAL_STATIC_LIBRARIES := libfs_mgr
+LOCAL_STATIC_LIBRARIES := libfstab
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
@@ -49,7 +49,10 @@ else
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+LOCAL_C_INCLUDES += $(TOP)/system/core/fs_mgr/include_fstab
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+LOCAL_HEADER_LIBRARIES := liblog_headers
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
@@ -67,9 +70,10 @@ LOCAL_MODULE := bootctrl.$(TARGET_BOARD_PLATFORM)
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog \
                           libbase
-LOCAL_STATIC_LIBRARIES := libfs_mgr
 LOCAL_WHOLE_STATIC_LIBRARIES := libcutils
+LOCAL_STATIC_LIBRARIES := libfstab
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
+LOCAL_HEADER_LIBRARIES := liblog_headers
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-bootc\"
@@ -79,4 +83,3 @@ LOCAL_MODULE_TAGS := optional
 include $(BUILD_STATIC_LIBRARY)
 
 endif
-

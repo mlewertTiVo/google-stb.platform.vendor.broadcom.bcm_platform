@@ -16,7 +16,7 @@
 
 #define LOG_TAG "bcm-hwc-utils"
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <fcntl.h>
 #include <string.h>
 

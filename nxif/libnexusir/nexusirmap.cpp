@@ -45,7 +45,7 @@
 #include <linux/input.h>
 #include <stdlib.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 static __u16 key(const char * name)
 {

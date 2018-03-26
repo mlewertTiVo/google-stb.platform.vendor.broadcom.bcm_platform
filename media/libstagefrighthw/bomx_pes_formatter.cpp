@@ -42,7 +42,7 @@
 #include "bomx_pes_formatter.h"
 #include "biobits.h"
 #include "nexus_platform.h"
-#include <cutils/log.h>
+#include <log/log.h>
 
 BOMX_PesFormatter::BOMX_PesFormatter(uint16_t streamId) :
     m_streamId(streamId)

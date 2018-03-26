@@ -39,7 +39,7 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "BcmSidebandFilePlayer"
-#include <cutils/log.h>
+#include <log/log.h>
 #define ARRAY_SIZE(x) ((int) (sizeof(x) / sizeof((x)[0])))
 
 /* Please keep in sync with nxclient/apps/play.c */

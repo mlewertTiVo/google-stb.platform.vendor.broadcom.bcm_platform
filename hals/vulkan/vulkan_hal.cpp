@@ -49,7 +49,7 @@
 #include <string.h>
 #include <dlfcn.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 static void *vk_icd_dyn_lib;
 

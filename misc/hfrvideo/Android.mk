@@ -21,7 +21,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_SRC_FILES := hfrvideo.c
 LOCAL_MODULE := hfrvideo
 LOCAL_MODULE_TAGS := optional

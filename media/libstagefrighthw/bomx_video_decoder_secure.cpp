@@ -40,7 +40,7 @@
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder_secure"
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/native_handle.h>
 
 #include "bomx_video_decoder_secure.h"
@@ -51,6 +51,36 @@
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
 #include "sage_srai.h"
+
+static bool g_nxStandBy = false;
+static Mutex g_mutexStandBy;
+
+#define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy)                                          \
+         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+   }
+
+extern "C" bool BOMX_VideoDecoderSecure_StandbyMon(void *ctx)
+{
+   nxwrap_pwr_state state;
+   bool fetch = false;
+
+   (void)ctx;
+
+   Mutex::Autolock autoLock(g_mutexStandBy);
+   fetch = nxwrap_get_pwr_info(&state, NULL);
+
+   if (fetch && (state >= ePowerState_S3)) {
+      g_nxStandBy = true;
+   } else {
+      g_nxStandBy = false;
+   }
+
+   // always ack'ed okay.
+   return true;
+}
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
@@ -124,7 +154,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     else
     {
         // Check if the platform supports VP9
-        pNxWrap->join();
+        pNxWrap->join(BOMX_VideoDecoderSecure_StandbyMon, NULL);
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -215,6 +245,19 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
 BOMX_VideoDecoder_Secure::~BOMX_VideoDecoder_Secure()
 {
     ALOGV("%s", __FUNCTION__);
+    Lock();
+    if ( m_pVideoPorts[0] )
+    {
+        // Force the cleanup of the input port only. Any non-deallocated input buffer needs to
+        // be de-allocated here, as the function 'FreeInputBuffer' is virtual and cannot be called
+        // from a base destructor
+        CleanupPortBuffers(0);
+    }
+    if ( m_pConfigBuffer )
+    {
+        FreeConfigBuffer(m_pConfigBuffer);
+    }
+    Unlock();
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, size_t length)
@@ -381,6 +424,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
     native_handle_t *nativeBuffHandle;
     OMX_ERRORTYPE omx_err;
     NEXUS_Error err;
+
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
     if (( NULL == pBufferHeader || pBufferHeader->pBuffer == NULL))
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);

@@ -15,6 +15,8 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifneq ($(ANDROID_DEVICE_SUPPORTS_BP3),y)
+
 $(PRODUCT_OUT_FROM_TOP)/hwcfg:
 	mkdir -p $(PRODUCT_OUT_FROM_TOP)/hwcfg
 
@@ -82,3 +84,5 @@ _hwcfg_dhd_nvram_file :=
 _hwcfg_drm_file :=
 _hwcfg_drm_hdcp1x_file :=
 _hwcfg.img :=
+
+endif

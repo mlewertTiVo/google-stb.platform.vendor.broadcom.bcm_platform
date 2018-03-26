@@ -17,7 +17,7 @@ include $(CLEAR_VARS)
 
 ifeq ($(HW_GPU_VULKAN_SUPPORT),y)
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
+LOCAL_SHARED_LIBRARIES := liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
@@ -36,7 +36,10 @@ else
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
+LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+
+LOCAL_HEADER_LIBRARIES := liblog_headers
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror

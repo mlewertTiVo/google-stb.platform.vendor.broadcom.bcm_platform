@@ -260,52 +260,55 @@ static int bout_set_parameters(struct audio_stream *stream,
     struct str_parms *parms;
     int ret = 0;
 
-    pthread_mutex_lock(&bout->lock);
+    ALOGV("%s: at %d, stream = %p, kvpairs=\"%s\"", __FUNCTION__, __LINE__, stream, kvpairs);
 
-    ALOGV("%s: at %d, stream = %p, kvpairs=\"%s\"\n",
-         __FUNCTION__, __LINE__, stream, kvpairs);
-
+    // To avoid unncessary mutex contention, check that the parameters to set in question
+    // are actually ones that we care.
     parms = str_parms_create_str(kvpairs);
+    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE) ||
+        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+        pthread_mutex_lock(&bout->lock);
 
-    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
-        char value[8];
-        ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
-        if (ret > 0) {
-            if (strcmp(value, "off") == 0) {
-                ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
-                ret = bout_standby_l(stream);
-                bout->suspended = true;
-            }
-            else if (strcmp(value, "on") == 0) {
-                ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
-                bout->suspended = false;
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
+            char value[8];
+            ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
+            if (ret > 0) {
+                if (strcmp(value, "off") == 0) {
+                    ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
+                    ret = bout_standby_l(stream);
+                    bout->suspended = true;
+                }
+                else if (strcmp(value, "on") == 0) {
+                    ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
+                    bout->suspended = false;
+                }
             }
         }
-    }
 
-    if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
-        int hw_sync_id = 0;
-        if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-           ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
-           ret = 0;
-        } else {
-           ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
-           if (!ret) {
-              if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
-                 ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
-                       __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
-                 ret = -EINVAL;
-              } else if (!bout->tunneled) {
-                 ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
-                       __FUNCTION__, hw_sync_id);
-                 ret = -ENOENT;
-              }
-           }
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+            int hw_sync_id = 0;
+            if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+                ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
+                ret = 0;
+            } else {
+                ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
+                if (!ret) {
+                    if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
+                        ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
+                              __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
+                        ret = -EINVAL;
+                    } else if (!bout->tunneled) {
+                        ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
+                              __FUNCTION__, hw_sync_id);
+                        ret = -ENOENT;
+                    }
+                }
+            }
         }
-    }
 
+        pthread_mutex_unlock(&bout->lock);
+    }
     str_parms_destroy(parms);
-    pthread_mutex_unlock(&bout->lock);
     return ret;
 }
 
@@ -1053,31 +1056,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 
     pthread_mutex_init(&bout->lock, NULL);
 
-    bout->aout.common.get_sample_rate = bout_get_sample_rate;
-    bout->aout.common.set_sample_rate = bout_set_sample_rate;
-    bout->aout.common.get_buffer_size = bout_get_buffer_size;
-    bout->aout.common.get_channels = bout_get_channels;
-    bout->aout.common.get_format = bout_get_format;
-    bout->aout.common.set_format = bout_set_format;
-    bout->aout.common.standby = bout_standby;
-    bout->aout.common.dump = bout_dump;
-    bout->aout.common.set_parameters = bout_set_parameters;
-    bout->aout.common.get_parameters = bout_get_parameters;
-    bout->aout.common.add_audio_effect = bout_add_audio_effect;
-    bout->aout.common.remove_audio_effect = bout_remove_audio_effect;
-    bout->aout.get_latency = bout_get_latency;
-    bout->aout.set_volume = bout_set_volume;
-    bout->aout.write = bout_write;
-    bout->aout.get_render_position = bout_get_render_position;
-    bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
-    bout->aout.get_presentation_position = bout_get_presentation_position;
-    // following required for offload (tunnel) tracks.
-    bout->aout.pause = bout_pause;
-    bout->aout.resume = bout_resume;
-    bout->aout.drain = bout_drain;
-    bout->aout.flush = bout_flush;
-    bout->aout.set_callback = NULL; // not needed yet?
-
     bout->tunneled =
         ((flags & (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC)) == (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC));
 
@@ -1103,6 +1081,44 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 #if DUMMY_AUDIO_OUT
     bout->ops = dummy_bout_ops;
 #endif
+
+    bout->aout.common.get_sample_rate = bout_get_sample_rate;
+    bout->aout.common.set_sample_rate = bout_set_sample_rate;
+    bout->aout.common.get_buffer_size = bout_get_buffer_size;
+    bout->aout.common.get_channels = bout_get_channels;
+    bout->aout.common.get_format = bout_get_format;
+    bout->aout.common.set_format = bout_set_format;
+    bout->aout.common.standby = bout_standby;
+    bout->aout.common.dump = bout_dump;
+    bout->aout.common.set_parameters = bout_set_parameters;
+    bout->aout.common.get_parameters = bout_get_parameters;
+    bout->aout.common.add_audio_effect = bout_add_audio_effect;
+    bout->aout.common.remove_audio_effect = bout_remove_audio_effect;
+    bout->aout.get_latency = bout_get_latency;
+    bout->aout.set_volume = bout_set_volume;
+    bout->aout.write = bout_write;
+    bout->aout.get_render_position = bout_get_render_position;
+    bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
+    bout->aout.get_presentation_position = bout_get_presentation_position;
+    // following required for offload (tunnel) tracks.
+    bout->aout.pause = bout_pause;
+    bout->aout.resume = bout_resume;
+    bout->aout.drain = bout_drain;
+    bout->aout.flush = bout_flush;
+    bout->aout.set_callback = NULL; // not needed yet?
+
+    if (!bout->ops.do_bout_drain) {
+        bout->aout.drain = NULL;
+    }
+    if (!bout->ops.do_bout_resume) {
+        bout->aout.resume = NULL;
+    }
+    if (!bout->ops.do_bout_pause) {
+        bout->aout.pause = NULL;
+    }
+    if (!bout->ops.do_bout_flush) {
+        bout->aout.flush = NULL;
+    }
 
     bout->devices = devices;
     bout->flags = flags;

@@ -38,7 +38,7 @@
 #ifndef BCMSIDEBAND_HWCBINDER_H__
 #define BCMSIDEBAND_HWCBINDER_H__
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>

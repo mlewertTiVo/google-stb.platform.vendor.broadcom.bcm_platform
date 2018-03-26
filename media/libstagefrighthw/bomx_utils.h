@@ -57,7 +57,7 @@
 #include "biobits.h"
 #include "nexus_video_types.h"
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 extern "C" {
 

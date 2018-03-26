@@ -52,7 +52,7 @@
 #include <assert.h>
 #include "bkni.h"
 #include "bkni_multi.h"
-#include <cutils/log.h>
+#include <log/log.h>
 #include "nxclient.h"
 #include <fcntl.h>
 #include <cutils/properties.h>

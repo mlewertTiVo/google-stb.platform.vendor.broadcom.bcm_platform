@@ -43,7 +43,7 @@
 #include "nexus_platform.h"
 #include "nxclient.h"
 #include "bomx_secure_buff.h"
-#include "cutils/log.h"
+#include "log/log.h"
 #include "sage_srai.h"
 
 #undef LOG_TAG

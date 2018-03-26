@@ -41,7 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nexus_platform_priv.h"
-#include <cutils/log.h>
+#include <log/log.h>
 #include <sched.h>
 #include <sys/resource.h>
 #include <cutils/sched_policy.h>

@@ -28,14 +28,15 @@ ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0 \
                           libhidlbase \
                           libhidltransport \
-                          libhwbinder
+                          libhwbinder \
+                          libpower
 else
 LOCAL_SHARED_LIBRARIES += libbinder \
                           libnxbinder \
                           libnxevtsrc
 endif
 
-LOCAL_STATIC_LIBRARIES := libnxserver
+LOCAL_STATIC_LIBRARIES := libnxserver_vendor
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
@@ -54,7 +55,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder 
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
-
+LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror

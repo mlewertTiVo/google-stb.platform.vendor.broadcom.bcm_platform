@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <utils/Timers.h>
 
 #include <hardware/hardware.h>
