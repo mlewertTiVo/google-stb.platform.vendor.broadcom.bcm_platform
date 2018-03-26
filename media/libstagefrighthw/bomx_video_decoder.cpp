@@ -147,6 +147,11 @@ using namespace android;
 
 static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
 
+// Handling of persistent nxclient
+static volatile bool g_persistNxClientOn = false;
+NxWrap g_persistNxWrap("bomx_decoder_persist");
+Mutex g_persistNxWrapLock("bomx_decoder_persist_nxwrap");
+
 #if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
@@ -397,6 +402,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
     NxWrap *pNxWrap = NULL;
+
+    g_persistNxWrapLock.lock();
+    if ( !g_persistNxClientOn )
+    {
+        ALOGV("Creating persistent nxclient connection");
+        g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxClientOn = true;
+    }
+    g_persistNxWrapLock.unlock();
 
     pNxWrap = new NxWrap(pName);
     if (pNxWrap == NULL)
@@ -1532,6 +1546,18 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
+
+    // create a persistent nxclient connection on the process this component runs,
+    // in order to help speeding up subsequent initialization of other components running
+    // in this same process.
+    g_persistNxWrapLock.lock();
+    if ( !g_persistNxClientOn )
+    {
+        ALOGV("Creating persistent nxclient connection");
+        g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxClientOn = true;
+    }
+    g_persistNxWrapLock.unlock();
 
     if ( NULL == m_pNxWrap )
     {
