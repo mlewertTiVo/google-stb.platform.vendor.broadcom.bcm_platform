@@ -68,9 +68,24 @@ $(_hwcfg_drm_hdcp1x_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(ANDROID_TOP)/hwcfg/dr
 	@echo "Found drm_hdcp1x.bin, included in hwcfg.img"
 endif
 
+ifneq ($(ANDROID_DEVICE_SUPPORTS_BP3),y)
+
 _hwcfg.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg.img
 $(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file) $(_hwcfg_drm_hdcp1x_file)
 	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
+
+else
+
+_hwcfg.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg.img
+$(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file) $(_hwcfg_drm_hdcp1x_file)
+	dd if=/dev/zero of=$(PRODUCT_OUT_FROM_TOP)/hwcfg.img bs=1024 count=1024
+	mkfs.vfat $@
+	if [ -e $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt ]; then \
+		mcopy -i $@ $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt ::nvm.txt; \
+	fi;
+	mdir -i $@ ::
+
+endif
 
 LOCAL_MODULE := makehwcfg
 LOCAL_MODULE_TAGS := optional
