@@ -83,6 +83,7 @@
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 #define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
 #define B_PROPERTY_SYS_DISPLAY_SIZE ("sys.display-size")
+#define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.hwtex.reset_port")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -1335,7 +1336,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_colorAspectsSet(false),
     m_redux(false),
     m_indexSurface(-1),
-    m_virtual(false)
+    m_virtual(false),
+    m_forcePortResetOnHwTex(true)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1353,6 +1355,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
+
+    m_forcePortResetOnHwTex = property_get_bool(B_PROPERTY_PORT_RESET_ON_HWTEX, 1);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -6298,6 +6302,26 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // For metadata output, treat port width/height as max values.  Crop can never be > port values.
                             portReset = (pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
                                          pBuffer->frameStatus.surfaceCreateSettings.imageHeight > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight);
+
+                            // ... if the buffer is meant to be used for texturing, force a port reset to ensure
+                            // accurate information is passed throughout the gralloc buffer path.
+                            if ( !portReset && m_forcePortResetOnHwTex )
+                            {
+                                if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
+                                {
+                                    pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                                }
+                                if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
+                                     ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
+                                      ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX)))
+                                {
+                                    ALOGI("Hw Texture - force port reset %ux%u -> %lux%lu",
+                                          m_outputWidth, m_outputHeight,
+                                          pBuffer->frameStatus.surfaceCreateSettings.imageWidth,
+                                          pBuffer->frameStatus.surfaceCreateSettings.imageHeight);
+                                    portReset = true;
+                                }
+                            }
                         }
                         else
                         {
@@ -6703,7 +6727,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber, pBuffer->state, pBuffer->display);
                     if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned && !pBuffer->display )
                     {
-                        ALOGW("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                        ALOGD("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
                     }
                 }
 
