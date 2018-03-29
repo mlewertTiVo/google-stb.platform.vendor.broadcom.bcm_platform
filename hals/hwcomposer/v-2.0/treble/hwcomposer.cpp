@@ -473,6 +473,7 @@ static void hwc2_cfg_collect(
 
    NEXUS_DisplayCapabilities caps;
    NxClient_DisplayStatus status;
+   NEXUS_SurfaceComposition c;
    NEXUS_VideoFormatInfo vi;
    struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL, *cfg_s = NULL;
    int i, j;
@@ -607,6 +608,25 @@ static void hwc2_cfg_collect(
    }
 
    pthread_mutex_unlock(&dsp->mtx_cfg);
+
+   /* always align the virtual display to full screen.  this may lead to poor ui density however
+    * since we cannot control the density to framework any more in this situation (single shot
+    * read-only property used by SF on boot).
+    */
+   if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL && dsp->aCfg) {
+      NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+      if (c.virtualDisplay.width > dsp->aCfg->w || c.virtualDisplay.height > dsp->aCfg->h) {
+         NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         c.virtualDisplay.width  = dsp->aCfg->w;
+         c.virtualDisplay.height = dsp->aCfg->h;
+         c.position.x            = 0;
+         c.position.y            = 0;
+         c.position.width        = dsp->aCfg->w;
+         c.position.height       = dsp->aCfg->h;
+         NxClient_SetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         dsp->sfb = true;
+      }
+   }
 }
 
 static void hwc2_hdmi_collect(
