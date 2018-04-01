@@ -6125,10 +6125,17 @@ static void hwc2_ext_cmp_frame(
             if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
                if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                    (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  pah = {(int16_t)lyr->fr.left,
-                         (int16_t)lyr->fr.top,
-                         (uint16_t)(lyr->fr.right - lyr->fr.left),
-                         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  NEXUS_Rect c, p;
+                  c = {(int16_t)lyr->crp.left,
+                       (int16_t)lyr->crp.top,
+                       (uint16_t)(lyr->crp.right - lyr->crp.left),
+                       (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+                  p = {(int16_t)lyr->fr.left,
+                       (int16_t)lyr->fr.top,
+                       (uint16_t)(lyr->fr.right - lyr->fr.left),
+                       (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  hwc2_lyr_adj(dsp, &c, &p, NULL);
+                  pah = p;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                            "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                            dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
@@ -6173,10 +6180,17 @@ static void hwc2_ext_cmp_frame(
          if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
             if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                 (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-               pah = {(int16_t)lyr->fr.left,
-                      (int16_t)lyr->fr.top,
-                      (uint16_t)(lyr->fr.right - lyr->fr.left),
-                      (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               NEXUS_Rect c, p;
+               c = {(int16_t)lyr->crp.left,
+                    (int16_t)lyr->crp.top,
+                    (uint16_t)(lyr->crp.right - lyr->crp.left),
+                    (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               p = {(int16_t)lyr->fr.left,
+                    (int16_t)lyr->fr.top,
+                    (uint16_t)(lyr->fr.right - lyr->fr.left),
+                    (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               hwc2_lyr_adj(dsp, &c, &p, NULL);
+               pah = p;
                ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                         "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                         dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
