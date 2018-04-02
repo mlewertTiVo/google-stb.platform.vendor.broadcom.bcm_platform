@@ -1020,6 +1020,7 @@ static nxserver_t init_nxserver(void)
     SVP_MODE_T svp;
     bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
     int32_t dolby = 0;
+    bool inv_hdcp1x = false, inv_hdcp2x = false;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -1223,15 +1224,32 @@ static nxserver_t init_nxserver(void)
     memset(key_hdcp1x, 0, sizeof(key_hdcp1x));
     property_get(NX_HDCP1X_KEY, key_hdcp1x, NULL);
     if (strlen(key_hdcp1x)) {
-       strncpy(settings.hdcp.hdcp1xBinFile, key_hdcp1x, strlen(key_hdcp1x));
+       struct stat sbuf;
+       if (stat(key_hdcp1x, &sbuf) == -1) {
+          ALOGW("WARNING: HDCP1.x configured (%s), but not present!", key_hdcp1x);
+          inv_hdcp1x = true;
+       } else {
+          strncpy(settings.hdcp.hdcp1xBinFile, key_hdcp1x, strlen(key_hdcp1x));
+       }
     }
     /* -hdcp2x_keys some-key-file */
     memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
     property_get(NX_HDCP2X_KEY, key_hdcp2x, NULL);
     if (strlen(key_hdcp2x)) {
-       strncpy(settings.hdcp.hdcp2xBinFile, key_hdcp2x, strlen(key_hdcp2x));
+       struct stat sbuf;
+       if (stat(key_hdcp2x, &sbuf) == -1) {
+          ALOGW("WARNING: HDCP2.x configured (%s), but not present!", key_hdcp2x);
+          inv_hdcp2x = true;
+       } else {
+          strncpy(settings.hdcp.hdcp2xBinFile, key_hdcp2x, strlen(key_hdcp2x));
+       }
     }
     settings.hdcp.versionSelect = (NxClient_HdcpVersion)property_get_int32(NX_HDCP_MODE, 0);
+    if (inv_hdcp1x && inv_hdcp2x) {
+       memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
+       sprintf(key_hdcp2x, "dyn.nx.hdcp.force");
+       property_set(key_hdcp2x, "0");
+    }
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
 
