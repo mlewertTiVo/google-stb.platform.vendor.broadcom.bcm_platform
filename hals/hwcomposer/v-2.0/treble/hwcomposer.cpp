@@ -243,6 +243,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_scale_gles:
       r = (bool)property_get_bool("dyn.nx.hwc2.tweak.sgles", 0);
    break;
+   case hwc2_tweak_forced_eotf:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
+   break;
    default:
    break;
    }
@@ -333,23 +336,25 @@ static void hwc2_dump_content(
 
 static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
-   int32_t forced) {
+   int32_t wanted) {
 
-   NEXUS_HdmiOutputExtraSettings s;
-   NEXUS_PlatformConfiguration p;
-   NEXUS_Error e;
-   NEXUS_HdmiOutputHandle hdmi;
-   int32_t eotf =
-      (forced != HWC2_INVALID) ? forced : hwc2_setting(hwc2_tweak_eotf);
+   NxClient_DisplaySettings s;
+   int32_t eotf = HWC2_INVALID;
 
-   if (!eotf) {
-      return;
+   if (hwc2_enabled(hwc2_tweak_forced_eotf)) {
+      if (dsp->aCfg->hdr10) {
+         eotf = HWC2_EOTF_HDR10;
+      } else if (dsp->aCfg->hlg) {
+         eotf = HWC2_EOTF_HLG;
+      } else {
+         eotf = HWC2_INVALID;
+      }
+   } else {
+      eotf =
+         (wanted != HWC2_INVALID) ? wanted : hwc2_setting(hwc2_tweak_eotf);
    }
 
-   NEXUS_Platform_GetConfiguration(&p);
-   hdmi = p.outputs.hdmi[0];
-   if (!hdmi) {
-      ALOGE("[eotf]: invalid hdmi output.");
+   if (eotf == HWC2_INVALID) {
       return;
    }
 
@@ -357,31 +362,27 @@ static void hwc2_eotf(
       return;
    }
    if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      NxClient_GetDisplaySettings(&s);
       switch (eotf) {
          case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
          break;
          case HWC2_EOTF_HLG:
             ALOGI("[eotf]: hlg.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
          break;
          case HWC2_EOTF_SDR:
             ALOGI("[eotf]: sdr.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
          case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
-            s.overrideDynamicRangeMasteringInfoFrame = false;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
          break;
       }
-      e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+      NxClient_SetDisplaySettings(&s);
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
@@ -6586,7 +6587,9 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
       ALOGV("[ext]: no more active video client.");
-      hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
