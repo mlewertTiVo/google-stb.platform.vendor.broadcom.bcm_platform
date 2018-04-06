@@ -409,6 +409,7 @@ protected:
     size_t m_earlyDroppedFrames;
     int m_earlyDropThresholdMs;
     nsecs_t m_startTime;
+    size_t m_texturedFrames;
 
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannelSync;
@@ -426,6 +427,7 @@ protected:
     bool m_redux;
     int m_indexSurface;
     bool m_virtual;
+    bool m_forcePortResetOnHwTex;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
@@ -491,6 +493,7 @@ protected:
     OMX_ERRORTYPE VerifyInputPortBuffers();
     OMX_ERRORTYPE UpdateInputDimensions();
     void CleanupPortBuffers(OMX_U32 nPortIndex);
+    BOMX_Buffer *AssociateOutVdec2Omx(BOMX_VideoDecoderFrameBuffer *pVdecBuffer, bool &shouldResetPort);
 
     // These functions are used to pace the input buffers rate
     void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);

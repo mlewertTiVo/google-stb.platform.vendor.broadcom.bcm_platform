@@ -347,6 +347,7 @@ BOMX_Port::BOMX_Port(
     m_definition.bBuffersContiguous = contiguous ? OMX_TRUE : OMX_FALSE;
     m_definition.nBufferAlignment = alignment;
     m_supplier = OMX_BufferSupplyUnspecified;
+    m_hwTex = BOMX_PortBufferHwTexUsage_eUnknown;
 }
 
 BOMX_Port::~BOMX_Port()

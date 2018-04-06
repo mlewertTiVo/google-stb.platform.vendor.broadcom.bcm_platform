@@ -38,6 +38,7 @@
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 #define LOG_SAND_TO_HWTEX 0
+#define LOG_VDEV_TO_GR    0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -83,6 +84,7 @@
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 #define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
 #define B_PROPERTY_SYS_DISPLAY_SIZE ("sys.display-size")
+#define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.hwtex.reset_port")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -146,6 +148,11 @@
 using namespace android;
 
 static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
+
+// Handling of persistent nxclient
+static volatile bool g_persistNxClientOn = false;
+NxWrap g_persistNxWrap("bomx_decoder_persist");
+Mutex g_persistNxWrapLock("bomx_decoder_persist_nxwrap");
 
 #if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
@@ -397,6 +404,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
     NxWrap *pNxWrap = NULL;
+
+    g_persistNxWrapLock.lock();
+    if ( !g_persistNxClientOn )
+    {
+        ALOGV("Creating persistent nxclient connection");
+        g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxClientOn = true;
+    }
+    g_persistNxWrapLock.unlock();
 
     pNxWrap = new NxWrap(pName);
     if (pNxWrap == NULL)
@@ -1312,6 +1328,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDroppedFrames(0),
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
+    m_texturedFrames(0),
     m_tunnelStcChannel(NULL),
     m_tunnelStcChannelSync(NULL),
     m_inputFlushing(false),
@@ -1321,7 +1338,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_colorAspectsSet(false),
     m_redux(false),
     m_indexSurface(-1),
-    m_virtual(false)
+    m_virtual(false),
+    m_forcePortResetOnHwTex(true)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1339,6 +1357,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
+
+    m_forcePortResetOnHwTex = property_get_bool(B_PROPERTY_PORT_RESET_ON_HWTEX, 1);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -1532,6 +1552,18 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
+
+    // create a persistent nxclient connection on the process this component runs,
+    // in order to help speeding up subsequent initialization of other components running
+    // in this same process.
+    g_persistNxWrapLock.lock();
+    if ( !g_persistNxClientOn )
+    {
+        ALOGV("Creating persistent nxclient connection");
+        g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxClientOn = true;
+    }
+    g_persistNxWrapLock.unlock();
 
     if ( NULL == m_pNxWrap )
     {
@@ -2924,6 +2956,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             return BOMX_ERR_TRACE(err);
         }
+        m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eUnknown);
         PortFormatChanged(m_pVideoPorts[1]);
         return OMX_ErrorNone;
     }
@@ -3059,8 +3092,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             else
             {
                 // Exclude early frame drops from total tally
-                ALOGD("stats df:%zu edf:%zu mcdf:%zu",
-                   m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
+                ALOGD("stats df:%zu edf:%zu mcdf:%zu tf:%zu",
+                   m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames, m_texturedFrames);
                 m_inputDataTracker.PrintStats();
             }
 
@@ -3090,6 +3123,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
+            m_texturedFrames = 0;
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
             CancelTimerId(m_inputBuffersTimerId);
@@ -5123,7 +5157,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
             // Any state other than delivered and we've done something horribly wrong.
             ALOG_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
             pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
-            pFrameBuffer->pBufferInfo = NULL;
+            if (m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata)
+            {
+                pFrameBuffer->pBufferInfo = NULL;
+            }
             pFrameBuffer->pPrivateHandle = NULL;
         }
     }
@@ -5997,6 +6034,139 @@ void BOMX_VideoDecoder::EstimateFrameRate(OMX_TICKS tsUs)
     }
 }
 
+bool BOMX_BufferCompareFunction_Vdec2GrallocMapping(BOMX_Buffer *pOmxBuffer, void *pVdecBuffer)
+{
+   bool match = false;
+   BOMX_VideoDecoderFrameBuffer *pBuffer = (BOMX_VideoDecoderFrameBuffer *)pVdecBuffer;
+   BOMX_VideoDecoderOutputBufferInfo *pInfo;
+   void *pMemory;
+   private_handle_t *pPriv;
+   PSHARED_DATA pSharedData;
+   NEXUS_StripedSurfaceHandle ss;
+   NEXUS_StripedSurfaceCreateSettings cs;
+   NEXUS_Addr csAddr, lsAddr;
+
+   if (pOmxBuffer == NULL || pVdecBuffer == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: null input, ignoring.");
+      goto out;
+   }
+
+   pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pOmxBuffer->GetComponentPrivate();
+   if (pInfo == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p - no gralloc association.",
+         pOmxBuffer);
+      goto out;
+   }
+   if (pInfo->typeInfo.metadata.pMetadata == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p - no valid metadata.",
+         pOmxBuffer);
+      goto out;
+   }
+   pPriv = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+   if (pPriv == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p - no valid gralloc handle.",
+         pOmxBuffer);
+      goto out;
+   }
+   if ((pPriv->fmt_set & GR_HWTEX) != GR_HWTEX)
+      // not an error per say, not intended for hw-tex usage.
+      goto out;
+
+   BOMX_VideoDecoder_MemLock(pPriv, &pMemory);
+   if (pMemory == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p::gr:%p - failed to lock gralloc memory.",
+         pOmxBuffer, pPriv);
+      goto out;
+   }
+   pSharedData = (PSHARED_DATA)pMemory;
+   if (!pSharedData->container.vLumaAddr &&
+       !pSharedData->container.vLumaOffset &&
+       !pSharedData->container.vChromaAddr &&
+       !pSharedData->container.vChromaOffset) {
+      // not an error per say, never associated.
+      goto out_clean;
+   }
+
+   ss = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+   if (ss == NULL) {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p::gr:%p::vdev:%p - failed surface creation.",
+         pOmxBuffer, pPriv, pBuffer);
+      goto out_clean;
+   }
+
+   NEXUS_StripedSurface_GetCreateSettings(ss, &cs);
+   NEXUS_MemoryBlock_LockOffset(cs.lumaBuffer, &lsAddr);
+   NEXUS_MemoryBlock_UnlockOffset(cs.lumaBuffer);
+   NEXUS_MemoryBlock_LockOffset(cs.chromaBuffer, &csAddr);
+   NEXUS_MemoryBlock_UnlockOffset(cs.chromaBuffer);
+   if (pSharedData->container.vLumaAddr == lsAddr &&
+       pSharedData->container.vLumaOffset == cs.lumaBufferOffset &&
+       pSharedData->container.vChromaAddr == csAddr &&
+       pSharedData->container.vChromaOffset == cs.chromaBufferOffset)
+   {
+      ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: omx:%p::gr:%p::vdev:%p - ASSOCIATED.",
+         pOmxBuffer, pPriv, pBuffer);
+      match = true;
+   }
+   NEXUS_StripedSurface_Destroy(ss);
+
+out_clean:
+   BOMX_VideoDecoder_MemUnlock(pPriv);
+out:
+   return match;
+}
+
+BOMX_Buffer *BOMX_VideoDecoder::AssociateOutVdec2Omx(
+   BOMX_VideoDecoderFrameBuffer *pVdecBuffer, bool &shouldResetPort)
+{
+   BOMX_Buffer *pOmxBuffer = NULL;
+   shouldResetPort = false;
+
+   if (m_secureDecoder || m_secureRuntimeHeaps)
+   {
+      goto out_early;
+   }
+
+   pOmxBuffer = m_pVideoPorts[1]->FindBuffer(BOMX_BufferCompareFunction_Vdec2GrallocMapping, (void *)pVdecBuffer);
+   if (pOmxBuffer)
+   {
+      if (!m_pVideoPorts[1]->IsBufferQueued(pOmxBuffer))
+      {
+         ALOGE("error: vdec(%p) <-> omx(%p): buffer not returned!?",
+            pVdecBuffer, pOmxBuffer);
+         // what to do...  for now, suggest that the port should reset, but we may
+         // really need some fence support.
+         shouldResetPort = true;
+      }
+      else
+      {
+         // found a match, exit.
+         ALOGI_IF(LOG_VDEV_TO_GR, "assoc: vdec(%p) <-> omx(%p)", pVdecBuffer, pOmxBuffer);
+      }
+      goto out;
+   }
+
+out_early:
+   pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
+   if (pOmxBuffer == NULL)
+   {
+      // no more available buffers on port?
+      ALOGE("vdec(%p) cannot be associated to any free omx buffer.", pVdecBuffer);
+   }
+   else
+   {
+      // this should give us the initial association.
+      ALOGI_IF(LOG_VDEV_TO_GR, "first: vdec(%p) <-> omx(%p)", pVdecBuffer, pOmxBuffer);
+   }
+out:
+   if (pOmxBuffer == NULL)
+   {
+      ALOGV("vdec(%p) cannot be associated - suggesting port reset.", pVdecBuffer);
+      shouldResetPort = true;
+   }
+   return pOmxBuffer;
+}
+
 void BOMX_VideoDecoder::PollDecodedFrames()
 {
     NEXUS_VideoDecoderFrameStatus frameStatus[B_MAX_DECODED_FRAMES], *pFrameStatus;
@@ -6191,7 +6361,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 (m_formatChangeState == FCState_eNone || m_formatChangeState == FCState_eProcessCallback) )
         {
             BOMX_Buffer *pOmxBuffer;
-            pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
+            bool shouldResetPort = false;
+
+            if (m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata)
+            {
+               pOmxBuffer = AssociateOutVdec2Omx(pBuffer, shouldResetPort);
+            }
+            else
+            {
+               pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
+            }
+
             if ( NULL != pOmxBuffer )
             {
                 BOMX_VideoDecoderOutputBufferInfo *pInfo;
@@ -6272,6 +6452,34 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // For metadata output, treat port width/height as max values.  Crop can never be > port values.
                             portReset = (pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
                                          pBuffer->frameStatus.surfaceCreateSettings.imageHeight > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight);
+
+                            // ... if the buffer is part of a port which has been marked as used by texturing,
+                            // force a port reset to ensure accurate information is passed throughout the gralloc buffer path.
+                            if ( !portReset &&
+                                 shouldResetPort )
+                            {
+                               ALOGI("Buffer association suggesting port reset.");
+                            }
+
+                            if ( !portReset &&
+                                 m_forcePortResetOnHwTex &&
+                                 (m_pVideoPorts[1]->GetBufferHwTexUsed() < BOMX_PortBufferHwTexUsage_eMax))
+                            {
+                                if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
+                                {
+                                    pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                                }
+                                if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
+                                     ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
+                                      ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX)))
+                                {
+                                    ALOGI("Hw Texture - force port reset %ux%u -> %lux%lu",
+                                          m_outputWidth, m_outputHeight,
+                                          pBuffer->frameStatus.surfaceCreateSettings.imageWidth,
+                                          pBuffer->frameStatus.surfaceCreateSettings.imageHeight);
+                                    portReset = true;
+                                }
+                            }
                         }
                         else
                         {
@@ -6311,6 +6519,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 m_outputWidth = portDefs.format.video.nFrameWidth;
                                 m_outputHeight = portDefs.format.video.nFrameHeight;
                                 UpdateInputDimensions();
+                                m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eUnknown);
                                 PortFormatChanged(m_pVideoPorts[1]);
                                 m_formatChangeState = FCState_eWaitForPortReconfig;
                             }
@@ -6503,6 +6712,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
                                     pSharedData->container.vColorSpace    = NEXUS_MatrixCoefficients_eXvYCC_601; // TODO: cs.matrixCoefficients;
 
+                                    pSharedData->container.vHwTex         = 0;
+
                                     ALOGI_IF(LOG_SAND_TO_HWTEX,
                                        "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit::%d",
                                        pBuffer->frameStatus.serialNumber,
@@ -6664,9 +6875,58 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             {
                 PSHARED_DATA pSharedData = NULL;
                 void *pMemory;
+                bool hwTex = false;
 
                 returnSettings[numFrames].display = pBuffer->display;
                 returnSettings[numFrames].recycle = true;
+
+                if (m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pBufferInfo)
+                {
+                    pBuffer->pPrivateHandle = (private_handle_t *)pBuffer->pBufferInfo->typeInfo.metadata.pMetadata->pHandle;
+                }
+                if ( pBuffer->pPrivateHandle )
+                {
+                    BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                    if ( pMemory )
+                    {
+                        pSharedData = (PSHARED_DATA)pMemory;
+                    }
+                    if ( pSharedData )
+                    {
+                        if (pSharedData->container.vHwTex)
+                        {
+                            hwTex = true;
+                            ++m_texturedFrames;
+                            // at least one frame on this port used for hw-texturing, assume
+                            // this is a video texturing session, there is no reason not to.
+                            if (m_pVideoPorts[1]->GetBufferHwTexUsed() != BOMX_PortBufferHwTexUsage_eConfirmed)
+                               m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eConfirmed);
+                        }
+                        else if (m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eUnknown)
+                        {
+                            // some data back on the port but we do not see it was used for hw-texturing,
+                            // it could have been dropped, or this is not a hw-tex session, if it is, we will
+                            // mark it on the next buffer seen anyways.
+                            m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eMax);
+                        }
+                        pSharedData->container.vHwTex = 0;
+                        if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata &&
+                             pSharedData->container.stripedSurface )
+                        {
+                            NEXUS_StripedSurfaceHandle hStripedSurface;
+                            int rc;
+
+                            hStripedSurface = pSharedData->container.stripedSurface;
+                            pSharedData->container.stripedSurface = NULL;
+                        }
+                        BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
+                    }
+                }
+                pBuffer->pPrivateHandle = NULL;
+                pBuffer->pBufferInfo = NULL;
+                BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
+                BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
+                BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
 
                 if ( m_outputFlushing )
                 {
@@ -6674,35 +6934,28 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 else
                 {
-                    ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber, pBuffer->state, pBuffer->display);
-                    if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned && !pBuffer->display )
+                    ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber,
+                          pBuffer->state, pBuffer->display);
+                    if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned )
                     {
-                        ALOGW("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                        if ( !pBuffer->display && !hwTex )
+                        {
+                            if (m_pVideoPorts[1]->GetBufferHwTexUsed() != BOMX_PortBufferHwTexUsage_eConfirmed)
+                            {
+                               ALOGD("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                            }
+                            else
+                            {
+                               ALOGV("Hw-texture skips outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                            }
+                        }
+                        else if ( hwTex )
+                        {
+                            ALOGV("Returned hw-texture frame %u", pBuffer->frameStatus.serialNumber);
+                        }
                     }
                 }
 
-                if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
-                {
-                    BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
-                    if ( pMemory )
-                    {
-                        pSharedData = (PSHARED_DATA)pMemory;
-                    }
-                    if ( pSharedData && pSharedData->container.stripedSurface )
-                    {
-                        NEXUS_StripedSurfaceHandle hStripedSurface;
-                        int rc;
-
-                        hStripedSurface = pSharedData->container.stripedSurface;
-                        pSharedData->container.stripedSurface = NULL;
-                    }
-                    BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
-                }
-                pBuffer->pPrivateHandle = NULL;
-                pBuffer->pBufferInfo = NULL;
-                BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
-                BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
-                BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
 
             if ( returnSettings[numFrames].recycle )

@@ -345,6 +345,7 @@ int main(void)
 
     memset(&g_app, 0, sizeof(g_app));
 
+    setenv("nexus_logger", "disabled", 1);
     nx_srv = init_nxserver();
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");

@@ -55,4 +55,4 @@ char bp3_bin_file_name[] ="bp3.bin";
 **   This configuration variable holds the path where the BP3 bin file is on the filesystem.
 **   Customers can change the value of this variable to meet their needs.
 ******************************************************************************/
-char bp3_bin_file_path[] ="/hwcfg";
+char bp3_bin_file_path[] ="/dev/hwcfg";

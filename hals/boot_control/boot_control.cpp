@@ -106,11 +106,16 @@ static int write_device(struct eio_boot *bc_eio) {
    char fstab_name[2*PROPERTY_VALUE_MAX];
    char hardware[PROPERTY_VALUE_MAX];
    property_get("ro.hardware", hardware, "");
-   sprintf(fstab_name, "/fstab.%s", hardware);
+   sprintf(fstab_name, "/vendor/etc/fstab.%s", hardware);
    struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
    if (fstab == nullptr) {
-      ALOGE("failed to read fstab (%s)", fstab_name);
-      return -EINVAL;
+      ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
+      sprintf(fstab_name, "/fstab.%s", hardware);
+      struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      if (fstab == nullptr) {
+         ALOGE("failed to read fstab (%s), giving up.", fstab_name);
+         return -EINVAL;
+      }
    }
    struct fstab_rec *v = fs_mgr_get_entry_for_mount_point(fstab, "/eio");
    if (v == nullptr) {
@@ -202,11 +207,16 @@ static void init(struct boot_control_module *module __unused) {
    pthread_create(&bctl_bootok, NULL, boot_control_bootok, NULL);
 
    property_get("ro.hardware", hardware, "");
-   sprintf(fstab_name, "/fstab.%s", hardware);
+   sprintf(fstab_name, "/vendor/etc/fstab.%s", hardware);
    struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
    if (fstab == nullptr) {
-      ALOGE("failed to read fstab (%s)", fstab_name);
-      return;
+      ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
+      sprintf(fstab_name, "/fstab.%s", hardware);
+      struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      if (fstab == nullptr) {
+         ALOGE("failed to read fstab (%s), giving up.", fstab_name);
+         return;
+      }
    }
    struct fstab_rec *v = fs_mgr_get_entry_for_mount_point(fstab, "/eio");
    if (v == nullptr) {

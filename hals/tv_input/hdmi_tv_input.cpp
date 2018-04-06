@@ -148,7 +148,7 @@ static NEXUS_Error initializeHdmiInputHdcpSettings(tv_input_private_t* priv)
         ALOGI("NEXUS_HdmiInput_HdcpSetKeyset succeeded");
 
 
-    fileFd = open("/hwcfg/drm.bin", O_RDONLY);
+    fileFd = open("/dev/hwcfg/drm.bin", O_RDONLY);
     if (fileFd < 0) {
         ALOGE("Open error %d for HDCP 2.x Rx Key file", fileFd);
         return NEXUS_UNKNOWN;

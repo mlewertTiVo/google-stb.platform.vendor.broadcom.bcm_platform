@@ -475,6 +475,7 @@ static void hwc2_cfg_collect(
 
    NEXUS_DisplayCapabilities caps;
    NxClient_DisplayStatus status;
+   NEXUS_SurfaceComposition c;
    NEXUS_VideoFormatInfo vi;
    struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL, *cfg_s = NULL;
    int i, j;
@@ -609,6 +610,25 @@ static void hwc2_cfg_collect(
    }
 
    pthread_mutex_unlock(&dsp->mtx_cfg);
+
+   /* always align the virtual display to full screen.  this may lead to poor ui density however
+    * since we cannot control the density to framework any more in this situation (single shot
+    * read-only property used by SF on boot).
+    */
+   if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL && dsp->aCfg) {
+      NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+      if (c.virtualDisplay.width > dsp->aCfg->w || c.virtualDisplay.height > dsp->aCfg->h) {
+         NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         c.virtualDisplay.width  = dsp->aCfg->w;
+         c.virtualDisplay.height = dsp->aCfg->h;
+         c.position.x            = 0;
+         c.position.y            = 0;
+         c.position.width        = dsp->aCfg->w;
+         c.position.height       = dsp->aCfg->h;
+         NxClient_SetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         dsp->sfb = true;
+      }
+   }
 }
 
 static void hwc2_hdmi_collect(
@@ -6106,10 +6126,17 @@ static void hwc2_ext_cmp_frame(
             if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
                if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                    (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  pah = {(int16_t)lyr->fr.left,
-                         (int16_t)lyr->fr.top,
-                         (uint16_t)(lyr->fr.right - lyr->fr.left),
-                         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  NEXUS_Rect c, p;
+                  c = {(int16_t)lyr->crp.left,
+                       (int16_t)lyr->crp.top,
+                       (uint16_t)(lyr->crp.right - lyr->crp.left),
+                       (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+                  p = {(int16_t)lyr->fr.left,
+                       (int16_t)lyr->fr.top,
+                       (uint16_t)(lyr->fr.right - lyr->fr.left),
+                       (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  hwc2_lyr_adj(dsp, &c, &p, NULL);
+                  pah = p;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                            "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                            dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
@@ -6154,10 +6181,17 @@ static void hwc2_ext_cmp_frame(
          if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
             if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                 (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-               pah = {(int16_t)lyr->fr.left,
-                      (int16_t)lyr->fr.top,
-                      (uint16_t)(lyr->fr.right - lyr->fr.left),
-                      (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               NEXUS_Rect c, p;
+               c = {(int16_t)lyr->crp.left,
+                    (int16_t)lyr->crp.top,
+                    (uint16_t)(lyr->crp.right - lyr->crp.left),
+                    (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               p = {(int16_t)lyr->fr.left,
+                    (int16_t)lyr->fr.top,
+                    (uint16_t)(lyr->fr.right - lyr->fr.left),
+                    (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               hwc2_lyr_adj(dsp, &c, &p, NULL);
+               pah = p;
                ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                         "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                         dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);

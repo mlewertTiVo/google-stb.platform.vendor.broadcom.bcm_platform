@@ -110,6 +110,8 @@ typedef struct __SHARED_DATA_ {
       uint64_t vChromaAddr __attribute__((aligned(8)));
       uint32_t vLumaOffset __attribute__((aligned(4)));
       uint32_t vChromaOffset __attribute__((aligned(4)));
+
+      unsigned vHwTex;
   } container;
 
 } SHARED_DATA, *PSHARED_DATA;

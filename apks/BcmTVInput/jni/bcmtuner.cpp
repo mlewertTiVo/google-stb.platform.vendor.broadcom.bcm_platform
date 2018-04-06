@@ -700,9 +700,7 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_initializeTuner(JNIEnv *env, jobject
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "%s", TAG);
-    ALOGV("%s: calling NxClient_Join", __FUNCTION__);
-    rc = NxClient_Join(&joinSettings);
-    if (rc) return -1;
+    ALOGV("%s: faking NxClient_Join", __FUNCTION__);
 
     //init frontend
     ALOGV("%s: calling NEXUS_Platform_InitFrontend", __FUNCTION__);
@@ -1057,7 +1055,6 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_uninitializeTuner(JNIEnv *env, jobje
 
     NxClient_Free(&allocResults);
     binput_close(input);
-    NxClient_Uninit();
 
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

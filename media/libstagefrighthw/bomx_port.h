@@ -62,6 +62,13 @@ struct BOMX_BufferNode
     BOMX_Buffer *pBuffer;
 };
 
+enum BOMX_PortBufferHwTexUsage
+{
+    BOMX_PortBufferHwTexUsage_eUnknown,
+    BOMX_PortBufferHwTexUsage_eConfirmed,
+    BOMX_PortBufferHwTexUsage_eMax,
+};
+
 class BOMX_Component;
 
 // Prototype for a buffer comparison function.  Returns true
@@ -124,9 +131,13 @@ public:
     BOMX_Component *GetTunnelComponent() { return m_pTunnelComponent; }
 
     bool IsTunneled() { return m_pTunnelPort != NULL ? true : false; }
+    bool IsBufferQueued(BOMX_Buffer *pBuffer);
 
     OMX_DIRTYPE GetDir() { return m_definition.eDir; }
     OMX_U32 GetIndex() { return m_definition.nPortIndex; }
+
+    BOMX_PortBufferHwTexUsage GetBufferHwTexUsed() { return m_hwTex; }
+    void SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage hwTex) { m_hwTex = hwTex; }
 
 protected:
     OMX_PARAM_PORTDEFINITIONTYPE m_definition;
@@ -142,10 +153,11 @@ protected:
     unsigned m_numPortFormats;
 
     BOMX_BufferNode *FindBufferNode(BOMX_Buffer *pBuffer);
-    bool IsBufferQueued(BOMX_Buffer *pBuffer);
 
     BOMX_Component *m_pTunnelComponent;
     BOMX_Port *m_pTunnelPort;
+
+    BOMX_PortBufferHwTexUsage m_hwTex;
 
 private:
 };

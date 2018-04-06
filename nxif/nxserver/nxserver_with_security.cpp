@@ -132,7 +132,11 @@ void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
             if (pFile == NULL) {
                 ALOGE("couldn't open %s", secdma_param_file);
             } else {
-                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(NEXUS_MEMC0_MAIN_HEAP, secdmaMemSize, 0x1000, NULL);
+                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(
+                   NULL, /* use default (main) heap */
+                   secdmaMemSize,
+                   0x1000,
+                   NULL);
                 if (*hMemoryBlock == NULL) {
                     ALOGE("NEXUS_MemoryBlock_Allocate failed");
                     fclose(pFile);
