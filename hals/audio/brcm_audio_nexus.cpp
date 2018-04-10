@@ -291,7 +291,15 @@ static int nexus_bout_get_render_position(struct brcm_stream_out *bout, uint32_t
     if(status.started) {
         bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
         bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-        *dsp_frames = (uint32_t)bout->framesPlayed;
+
+        if (bout->latencyPad) {
+            if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                bout->latencyPad = 0;
+        }
+        if (bout->latencyPad)
+            *dsp_frames = 0;
+        else
+            *dsp_frames = (uint32_t)bout->framesPlayed - bout->latencyEstimate;
     }
     else {
         *dsp_frames = 0;
@@ -310,7 +318,15 @@ static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, ui
     if(status.started) {
         bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
         bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-        *frames = bout->framesPlayedTotal + bout->framesPlayed;
+
+        if (bout->latencyPad) {
+            if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                bout->latencyPad = 0;
+        }
+        if (bout->latencyPad)
+            *frames = 0;
+        else
+            *frames = bout->framesPlayedTotal + bout->framesPlayed - bout->latencyEstimate;
     }
     else {
         *frames = 0;
@@ -507,6 +523,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     NxClient_ConnectSettings connectSettings;
     BKNI_EventHandle event;
     uint32_t audioPlaybackId;
+    int dolby_ms;
     int i, ret = 0;
 
     /* Check if sample rate is supported */
@@ -524,6 +541,13 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->framesPlayedTotal = 0;
+    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
+    bout->latencyEstimate = (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY,
+                                                ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                    NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
+                             * bout->config.sample_rate) / 1000;
+    bout->latencyPad = bout->latencyEstimate;
+
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
     bout->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
