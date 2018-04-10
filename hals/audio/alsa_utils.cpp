@@ -15,7 +15,7 @@
 ** limitations under the License.
 */
 
-#define LOG_TAG "AudioHAL:alsa_utils"
+#define LOG_TAG "AudioHAL[alsa_utils]"
 
 #include "alsa_utils.h"
 
