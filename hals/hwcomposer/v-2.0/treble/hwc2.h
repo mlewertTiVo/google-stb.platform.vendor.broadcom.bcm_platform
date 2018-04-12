@@ -447,6 +447,7 @@ enum hwc2_tweaks_e {
    hwc2_tweak_plm_off,
    hwc2_tweak_dump_enabled,
    hwc2_tweak_scale_gles,
+   hwc2_tweak_forced_eotf,
    /* settings. */
    hwc2_tweak_eotf,
    hwc2_tweak_dump_this,

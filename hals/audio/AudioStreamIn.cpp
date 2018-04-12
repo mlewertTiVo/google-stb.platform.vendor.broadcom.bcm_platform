@@ -15,7 +15,7 @@
 ** limitations under the License.
 */
 
-#define LOG_TAG "AudioHAL:AudioStreamIn"
+#define LOG_TAG "AudioHAL[AudioStreamIn]"
 #include <utils/Log.h>
 
 #include "AudioStreamIn.h"

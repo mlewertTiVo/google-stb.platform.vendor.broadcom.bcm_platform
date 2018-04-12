@@ -15,7 +15,7 @@
 ** limitations under the License.
 */
 
-#define LOG_TAG "AudioHAL:AudioHotplugThread"
+#define LOG_TAG "AudioHAL[AudioHotplugThread]"
 #include <utils/Log.h>
 
 #include <assert.h>

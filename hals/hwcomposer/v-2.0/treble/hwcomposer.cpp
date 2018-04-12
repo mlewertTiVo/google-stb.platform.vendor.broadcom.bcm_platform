@@ -243,6 +243,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_scale_gles:
       r = (bool)property_get_bool("dyn.nx.hwc2.tweak.sgles", 0);
    break;
+   case hwc2_tweak_forced_eotf:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
+   break;
    default:
    break;
    }
@@ -333,23 +336,25 @@ static void hwc2_dump_content(
 
 static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
-   int32_t forced) {
+   int32_t wanted) {
 
-   NEXUS_HdmiOutputExtraSettings s;
-   NEXUS_PlatformConfiguration p;
-   NEXUS_Error e;
-   NEXUS_HdmiOutputHandle hdmi;
-   int32_t eotf =
-      (forced != HWC2_INVALID) ? forced : hwc2_setting(hwc2_tweak_eotf);
+   NxClient_DisplaySettings s;
+   int32_t eotf = HWC2_INVALID;
 
-   if (!eotf) {
-      return;
+   if (hwc2_enabled(hwc2_tweak_forced_eotf)) {
+      if (dsp->aCfg->hdr10) {
+         eotf = HWC2_EOTF_HDR10;
+      } else if (dsp->aCfg->hlg) {
+         eotf = HWC2_EOTF_HLG;
+      } else {
+         eotf = HWC2_INVALID;
+      }
+   } else {
+      eotf =
+         (wanted != HWC2_INVALID) ? wanted : hwc2_setting(hwc2_tweak_eotf);
    }
 
-   NEXUS_Platform_GetConfiguration(&p);
-   hdmi = p.outputs.hdmi[0];
-   if (!hdmi) {
-      ALOGE("[eotf]: invalid hdmi output.");
+   if (eotf == HWC2_INVALID) {
       return;
    }
 
@@ -357,31 +362,27 @@ static void hwc2_eotf(
       return;
    }
    if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      NxClient_GetDisplaySettings(&s);
       switch (eotf) {
          case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
          break;
          case HWC2_EOTF_HLG:
             ALOGI("[eotf]: hlg.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
          break;
          case HWC2_EOTF_SDR:
             ALOGI("[eotf]: sdr.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
          case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
-            s.overrideDynamicRangeMasteringInfoFrame = false;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
          break;
       }
-      e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+      NxClient_SetDisplaySettings(&s);
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
@@ -473,6 +474,7 @@ static void hwc2_cfg_collect(
 
    NEXUS_DisplayCapabilities caps;
    NxClient_DisplayStatus status;
+   NEXUS_SurfaceComposition c;
    NEXUS_VideoFormatInfo vi;
    struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL, *cfg_s = NULL;
    int i, j;
@@ -607,6 +609,25 @@ static void hwc2_cfg_collect(
    }
 
    pthread_mutex_unlock(&dsp->mtx_cfg);
+
+   /* always align the virtual display to full screen.  this may lead to poor ui density however
+    * since we cannot control the density to framework any more in this situation (single shot
+    * read-only property used by SF on boot).
+    */
+   if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL && dsp->aCfg) {
+      NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+      if (c.virtualDisplay.width > dsp->aCfg->w || c.virtualDisplay.height > dsp->aCfg->h) {
+         NxClient_GetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         c.virtualDisplay.width  = dsp->aCfg->w;
+         c.virtualDisplay.height = dsp->aCfg->h;
+         c.position.x            = 0;
+         c.position.y            = 0;
+         c.position.width        = dsp->aCfg->w;
+         c.position.height       = dsp->aCfg->h;
+         NxClient_SetSurfaceClientComposition(dsp->u.ext.nxa.surfaceClient[0].id, &c);
+         dsp->sfb = true;
+      }
+   }
 }
 
 static void hwc2_hdmi_collect(
@@ -6105,10 +6126,17 @@ static void hwc2_ext_cmp_frame(
             if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
                if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                    (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  pah = {(int16_t)lyr->fr.left,
-                         (int16_t)lyr->fr.top,
-                         (uint16_t)(lyr->fr.right - lyr->fr.left),
-                         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  NEXUS_Rect c, p;
+                  c = {(int16_t)lyr->crp.left,
+                       (int16_t)lyr->crp.top,
+                       (uint16_t)(lyr->crp.right - lyr->crp.left),
+                       (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+                  p = {(int16_t)lyr->fr.left,
+                       (int16_t)lyr->fr.top,
+                       (uint16_t)(lyr->fr.right - lyr->fr.left),
+                       (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  hwc2_lyr_adj(dsp, &c, &p, NULL);
+                  pah = p;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                            "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                            dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
@@ -6153,10 +6181,17 @@ static void hwc2_ext_cmp_frame(
          if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
             if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                 (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-               pah = {(int16_t)lyr->fr.left,
-                      (int16_t)lyr->fr.top,
-                      (uint16_t)(lyr->fr.right - lyr->fr.left),
-                      (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               NEXUS_Rect c, p;
+               c = {(int16_t)lyr->crp.left,
+                    (int16_t)lyr->crp.top,
+                    (uint16_t)(lyr->crp.right - lyr->crp.left),
+                    (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               p = {(int16_t)lyr->fr.left,
+                    (int16_t)lyr->fr.top,
+                    (uint16_t)(lyr->fr.right - lyr->fr.left),
+                    (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               hwc2_lyr_adj(dsp, &c, &p, NULL);
+               pah = p;
                ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                         "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                         dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
@@ -6552,7 +6587,9 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
       ALOGV("[ext]: no more active video client.");
-      hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
