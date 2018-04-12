@@ -167,7 +167,7 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
 
        mNotificationListeners.add(hwc_listener_t(binder, kind));
 
-       if (kind == HWC_BINDER_HWC) {
+       if ((kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
           struct hwc_notification_info ntfy;
           memset(&ntfy, 0, sizeof(struct hwc_notification_info));
@@ -221,7 +221,7 @@ void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int val
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
            mVideoSurface[index].surface = value;
            mVideoSurface[index].listener = 0;
            mVideoSurface[index].disp_w = disp_w;
@@ -253,7 +253,7 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -292,7 +292,7 @@ void Hwc::freeVideoSurfaceId(const sp<IHwcListener>& listener, int index)
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -317,7 +317,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
            if (((type & HWC_BINDER_OMX) == HWC_BINDER_OMX) && (index < HWC_BINDER_VIDEO_SURFACE_SIZE)) {
               if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
                   memcmp(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position)) ||
@@ -453,7 +453,7 @@ void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
            mSidebandSurface[index].surface = value;
            mSidebandSurface[index].disp_w = disp_w;
            mSidebandSurface[index].disp_h = disp_h;
@@ -490,7 +490,7 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -529,7 +529,7 @@ void Hwc::freeSidebandSurfaceId(const sp<IHwcListener>& listener, int index)
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -559,7 +559,7 @@ void Hwc::setOverscanAdjust(const sp<IHwcListener>& listener,
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if (client.kind == HWC_BINDER_HWC) {
+        if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
            sp<IBinder> binder = client.binder;
            sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
            struct hwc_notification_info ntfy;

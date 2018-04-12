@@ -119,7 +119,7 @@ public:
 
 void HwcAppBinder::notify(int msg, struct hwc_notification_info &ntfy)
 {
-    ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
+    ALOGI("%s: notify received: msg=%u", __FUNCTION__, msg);
 
     if (cb)
         cb(cb_data, msg, ntfy);
@@ -140,6 +140,8 @@ static void DspEvtSvcNtfy(void *cb_data,
       for (v = obs->s.begin(); v != obs->s.end(); ++v) {
          if ((*v).cb != NULL) {
             if ((*v).v == ntfy.surface_hdl) {
+               ALOGI("[sbd]:client: %" PRIu32 ":NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE(%d,%d,%dx%d)",
+                     (*v).i, ntfy.frame.x, ntfy.frame.y, ntfy.frame.w, ntfy.frame.h);
                struct DspSvcExtGeom fromHidl;
                fromHidl.geom_x = ntfy.frame.x;
                fromHidl.geom_y = ntfy.frame.y;
