@@ -17,6 +17,25 @@ LOCAL_JAVA_LIBRARIES := \
 
 
 #
+# Build types.hal (DspSvcExtGeom)
+#
+GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/DspSvcExtGeom.java
+$(GEN): $(HIDL)
+$(GEN): PRIVATE_HIDL := $(HIDL)
+$(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/types.hal
+$(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
+$(GEN): PRIVATE_CUSTOM_TOOL = \
+        $(PRIVATE_HIDL) -o $(PRIVATE_OUTPUT_DIR) \
+        -Ljava \
+        -randroid.hidl:system/libhidl/transport \
+        -rbcm.hardware:vendor/broadcom/bcm_platform/hals \
+        bcm.hardware.dspsvcext@1.0::types.DspSvcExtGeom
+
+$(GEN): $(LOCAL_PATH)/types.hal
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+#
 # Build types.hal (DspSvcExtOvs)
 #
 GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/DspSvcExtOvs.java
@@ -61,6 +80,8 @@ GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/IDspSvcExt.java
 $(GEN): $(HIDL)
 $(GEN): PRIVATE_HIDL := $(HIDL)
 $(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/IDspSvcExt.hal
+$(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
+$(GEN): $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
 $(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/types.hal
 $(GEN): $(LOCAL_PATH)/types.hal
 $(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
@@ -72,6 +93,27 @@ $(GEN): PRIVATE_CUSTOM_TOOL = \
         bcm.hardware.dspsvcext@1.0::IDspSvcExt
 
 $(GEN): $(LOCAL_PATH)/IDspSvcExt.hal
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+#
+# Build IDspSvcExtSdbGeomCb.hal
+#
+GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/IDspSvcExtSdbGeomCb.java
+$(GEN): $(HIDL)
+$(GEN): PRIVATE_HIDL := $(HIDL)
+$(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
+$(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/types.hal
+$(GEN): $(LOCAL_PATH)/types.hal
+$(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
+$(GEN): PRIVATE_CUSTOM_TOOL = \
+        $(PRIVATE_HIDL) -o $(PRIVATE_OUTPUT_DIR) \
+        -Ljava \
+        -randroid.hidl:system/libhidl/transport \
+        -rbcm.hardware:vendor/broadcom/bcm_platform/hals \
+        bcm.hardware.dspsvcext@1.0::IDspSvcExtSdbGeomCb
+
+$(GEN): $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
 	$(transform-generated-source)
 LOCAL_GENERATED_SOURCES += $(GEN)
 include $(BUILD_JAVA_LIBRARY)
@@ -92,6 +134,25 @@ LOCAL_STATIC_JAVA_LIBRARIES := \
 
 
 #
+# Build types.hal (DspSvcExtGeom)
+#
+GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/DspSvcExtGeom.java
+$(GEN): $(HIDL)
+$(GEN): PRIVATE_HIDL := $(HIDL)
+$(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/types.hal
+$(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
+$(GEN): PRIVATE_CUSTOM_TOOL = \
+        $(PRIVATE_HIDL) -o $(PRIVATE_OUTPUT_DIR) \
+        -Ljava \
+        -randroid.hidl:system/libhidl/transport \
+        -rbcm.hardware:vendor/broadcom/bcm_platform/hals \
+        bcm.hardware.dspsvcext@1.0::types.DspSvcExtGeom
+
+$(GEN): $(LOCAL_PATH)/types.hal
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+#
 # Build types.hal (DspSvcExtOvs)
 #
 GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/DspSvcExtOvs.java
@@ -136,6 +197,8 @@ GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/IDspSvcExt.java
 $(GEN): $(HIDL)
 $(GEN): PRIVATE_HIDL := $(HIDL)
 $(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/IDspSvcExt.hal
+$(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
+$(GEN): $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
 $(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/types.hal
 $(GEN): $(LOCAL_PATH)/types.hal
 $(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
@@ -147,6 +210,27 @@ $(GEN): PRIVATE_CUSTOM_TOOL = \
         bcm.hardware.dspsvcext@1.0::IDspSvcExt
 
 $(GEN): $(LOCAL_PATH)/IDspSvcExt.hal
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+#
+# Build IDspSvcExtSdbGeomCb.hal
+#
+GEN := $(intermediates)/bcm/hardware/dspsvcext/V1_0/IDspSvcExtSdbGeomCb.java
+$(GEN): $(HIDL)
+$(GEN): PRIVATE_HIDL := $(HIDL)
+$(GEN): PRIVATE_DEPS := $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
+$(GEN): PRIVATE_DEPS += $(LOCAL_PATH)/types.hal
+$(GEN): $(LOCAL_PATH)/types.hal
+$(GEN): PRIVATE_OUTPUT_DIR := $(intermediates)
+$(GEN): PRIVATE_CUSTOM_TOOL = \
+        $(PRIVATE_HIDL) -o $(PRIVATE_OUTPUT_DIR) \
+        -Ljava \
+        -randroid.hidl:system/libhidl/transport \
+        -rbcm.hardware:vendor/broadcom/bcm_platform/hals \
+        bcm.hardware.dspsvcext@1.0::IDspSvcExtSdbGeomCb
+
+$(GEN): $(LOCAL_PATH)/IDspSvcExtSdbGeomCb.hal
 	$(transform-generated-source)
 LOCAL_GENERATED_SOURCES += $(GEN)
 include $(BUILD_STATIC_JAVA_LIBRARY)

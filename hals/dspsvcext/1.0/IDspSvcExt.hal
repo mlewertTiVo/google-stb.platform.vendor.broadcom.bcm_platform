@@ -1,5 +1,7 @@
 package bcm.hardware.dspsvcext@1.0;
 
+import IDspSvcExtSdbGeomCb;
+
 interface IDspSvcExt {
     /**
      * setup the interface to the hwc-binder for display service extensions.
@@ -18,6 +20,18 @@ interface IDspSvcExt {
      *
      */
     setOvs(DspSvcExtOvs o) generates (DspSvcExtStatus s);
+
+    /**
+     * register a sideband window support, i-ndex passed in is up to the
+     * application to manage, cb can be set to NULL to deregister from hwc,
+     * s-urface identifier returned can be used to populate the native
+     * window associating this sideband window.
+     *
+     * if i-ndex is already associated with a callback, calling this interface
+     * with the same i-ndex will simply override the previous one.
+     *
+     */
+    regSdbCb(int32_t i, IDspSvcExtSdbGeomCb cb) generates (int32_t s);
 };
 
 
