@@ -169,7 +169,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
 
     // Create a native handle
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-    priv->sidebandContext = libbcmsideband_init_sideband_tif(0, &pTVStream->sideband_stream_source_handle, NULL, NULL, NULL, NULL, NULL);
+    priv->sidebandContext = libbcmsideband_init_sideband_tif(0, &pTVStream->sideband_stream_source_handle, NULL, NULL);
     if (!priv->sidebandContext) {
         ALOGE("Unable to initalize the sideband");
         return -ENODEV;
