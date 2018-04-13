@@ -52,4 +52,8 @@ endif
 # private tools, not released.
 -include ${BCM_VENDOR_STB_ROOT}/bcm_platform/priv/Android.mk
 
+# tools requiring third party packages, may or not work in a
+# given environment.
+-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/3pip/Android.mk
+
 endif
