@@ -7,7 +7,7 @@ LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativebase/include
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/dspsvcext
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcevt/1.0
 else
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
