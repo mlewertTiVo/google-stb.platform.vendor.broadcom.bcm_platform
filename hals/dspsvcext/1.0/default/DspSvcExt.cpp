@@ -172,7 +172,9 @@ Return<DspSvcExtStatus> DspSvcExt::start() {
    return DspSvcExtStatus::SUCCESS;
 }
 
-Return<DspSvcExtStatus> DspSvcExt::setOvs(const DspSvcExtOvs& o) {
+Return<DspSvcExtStatus> DspSvcExt::setOvs(
+   const DspSvcExtOvs& o) {
+
    struct DspSvcExtOvs fromHidl;
    struct hwc_position toHwc;
 
@@ -189,7 +191,9 @@ Return<DspSvcExtStatus> DspSvcExt::setOvs(const DspSvcExtOvs& o) {
    }
 }
 
-Return<void> DspSvcExt::getOvs(getOvs_cb _hidl_cb) {
+Return<void> DspSvcExt::getOvs(
+   getOvs_cb _hidl_cb) {
+
    struct DspSvcExtOvs toHidl;
    struct hwc_position fromHwc;
 
@@ -237,12 +241,38 @@ Return<int32_t> DspSvcExt::regSdbCb(
       int32_t v = -1;
       appHwcBinder->getsideband(i, v);
       if (v != -1) {
-         struct SdbGeomCb n = {i, v, cb};
+         DspSvcExtGeom g = {0,0,0,0};
+         struct SdbGeomCb n = {i, v, cb, g};
          s.push_back(n);
          ALOGI("[sdb]:client: %" PRIu32 ": registered", i);
       }
       return v;
    }
+}
+
+Return<DspSvcExtStatus> DspSvcExt::setSdbGeom(
+   int32_t i,
+   const DspSvcExtGeom& g) {
+
+   Vector<struct SdbGeomCb>::iterator v;
+   Mutex::Autolock _l(l);
+   for (v = s.begin(); v != s.end(); ++v) {
+      if (((*v).i == i) && ((*v).cb != NULL)) {
+         // filter out non-change in sideband layer position.
+         if (memcmp(&g, &((*v).g), sizeof(DspSvcExtGeom))) {
+            struct SdbGeomCb n = {(*v).i, (*v).v, (*v).cb, g};
+            ALOGI("[sbd]:client: %" PRIu32 ":setSdbGeom(%d,%d,%dx%d)",
+              (*v).i, g.geom_x, g.geom_y, g.geom_w, g.geom_h);
+            (*v).cb->onGeom((*v).i, g);
+            s.erase(v);
+            s.push_back(n);
+            return DspSvcExtStatus::SUCCESS;
+         } else {
+            return DspSvcExtStatus::ALREADY_REGISTERED;
+         }
+      }
+   }
+   return DspSvcExtStatus::BAD_VALUE;
 }
 
 }  // namespace implementation

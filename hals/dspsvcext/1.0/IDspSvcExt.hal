@@ -32,6 +32,12 @@ interface IDspSvcExt {
      *
      */
     regSdbCb(int32_t i, IDspSvcExtSdbGeomCb cb) generates (int32_t s);
+
+    /**
+     * set sideband geometry configuration for i-ndex.
+     *
+     */
+    setSdbGeom(int32_t i, DspSvcExtGeom g) generates (DspSvcExtStatus s);
 };
 
 

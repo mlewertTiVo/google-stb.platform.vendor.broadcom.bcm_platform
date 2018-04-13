@@ -31,6 +31,7 @@ struct SdbGeomCb {
    int32_t i;
    int32_t v;
    sp<IDspSvcExtSdbGeomCb> cb;
+   DspSvcExtGeom g;
 };
 
 struct DspSvcExt : public IDspSvcExt {
@@ -38,6 +39,7 @@ struct DspSvcExt : public IDspSvcExt {
    Return<DspSvcExtStatus> setOvs(const DspSvcExtOvs& o);
    Return<void> getOvs(getOvs_cb _hidl_cb);
    Return<int32_t> regSdbCb(int32_t i, const ::android::sp<IDspSvcExtSdbGeomCb>& cb);
+   Return<DspSvcExtStatus> setSdbGeom(int32_t i, const DspSvcExtGeom& g);
 
    mutable Mutex l;
    Vector<struct SdbGeomCb> s;

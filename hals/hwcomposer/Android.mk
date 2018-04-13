@@ -164,6 +164,9 @@ LOCAL_SHARED_LIBRARIES += libsync
 LOCAL_SHARED_LIBRARIES += libnxwrap
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.dspsvcext@1.0
+LOCAL_SHARED_LIBRARIES += libhidlbase
+LOCAL_SHARED_LIBRARIES += libhidltransport
 else
 LOCAL_SHARED_LIBRARIES += libnxbinder
 LOCAL_SHARED_LIBRARIES += libnxevtsrc
@@ -181,7 +184,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/$(HAL_HWC_VERSION)
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcext/1.0/default
 else
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
