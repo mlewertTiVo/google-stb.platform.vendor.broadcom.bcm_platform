@@ -128,6 +128,8 @@
 using namespace android;
 
 static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
+static volatile int32_t g_decInstanceCount = 0;
+static Mutex g_decActiveStateLock("bomx_dec_active_state");
 
 // Handling of persistent nxclient
 static volatile bool g_persistNxClientOn = false;
@@ -1375,28 +1377,36 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     else
     {
-       int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
-
-       if ( (m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
-            (!m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
+       g_decActiveStateLock.lock();
+       g_decInstanceCount++;
+       // sanity checking
+       if ( (g_decInstanceCount == 1) && (g_decActiveState != B_DEC_ACTIVE_STATE_INACTIVE) )
        {
-           ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
+           ALOGW("Active state must be inactive for the first decoder instance!");
+           g_decActiveStateLock.unlock();
            this->Invalidate(OMX_ErrorUndefined);
            return;
        }
 
-       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+       if ( (m_secureDecoder && g_decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+            (!m_secureDecoder && g_decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
+       {
+           ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
+           g_decActiveStateLock.unlock();
+           this->Invalidate(OMX_ErrorUndefined);
+           return;
+       }
+
+       m_secureRuntimeHeaps = m_secureDecoder;
+       if ( (g_decInstanceCount == 1) && !BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder) )
        {
            BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
            // failed, so forced to assume picture buffer heaps are secured.
            m_secureRuntimeHeaps = true;
        }
-       else
-       {
-           m_secureRuntimeHeaps = m_secureDecoder;
-       }
 
-       android_atomic_release_store(m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR, &g_decActiveState);
+       g_decActiveState = m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR;
+       g_decActiveStateLock.unlock();
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -1889,12 +1899,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_pTunnelNativeHandle = NULL;
     }
 
-    int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
-    if ( (!m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
-         (m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
+    g_decActiveStateLock.lock();
+    if ( --g_decInstanceCount == 0 )
     {
-        android_atomic_release_store(B_DEC_ACTIVE_STATE_INACTIVE, &g_decActiveState);
+        g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
     }
+    g_decActiveStateLock.unlock();
 
     BOMX_VIDEO_STATS_RESET;
     Unlock();
