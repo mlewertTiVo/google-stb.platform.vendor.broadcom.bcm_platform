@@ -56,9 +56,13 @@ Mutex lock;
 #define ATTEMPT_PAUSE_USEC 500000
 #define MAX_ATTEMPT_COUNT  4
 static const sp<IDspSvcExt> idse(void) {
-   sp<IDspSvcExt> idse = NULL;
+   static sp<IDspSvcExt> idse = NULL;
    Mutex::Autolock _l(lock);
    int c = 0;
+
+   if (idse != NULL) {
+      return idse;
+   }
 
    do {
       idse = IDspSvcExt::getService();
@@ -80,7 +84,7 @@ public:
    void *geom_ctx;
    Return<void> onGeom(int32_t i, const DspSvcExtGeom& geom);
 };
-static SdbGeomCb *gSdbGeomCb = NULL;
+static sp<SdbGeomCb> gSdbGeomCb = NULL;
 
 struct bcmsideband_ctx {
    ANativeWindow *native_window;
@@ -117,6 +121,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(
    if (idse() != NULL) {
       gSdbGeomCb = new SdbGeomCb(cb, ctx);
       ctx->index = index;
+      ctx->surface = idse()->regSdbCb(index, NULL);
       ctx->surface = idse()->regSdbCb(index, gSdbGeomCb);
    } else {
       ALOGE("failed to get dspsvcext service");
@@ -126,12 +131,12 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(
 
    native_handle_t *native_handle = native_handle_create(0, 2);
    if (!native_handle) {
-      delete gSdbGeomCb;
+      gSdbGeomCb = NULL;
       free(ctx);
       ALOGE("failed to allocate native handle");
       return NULL;
    }
-   native_handle->data[0] = 2;
+   native_handle->data[0] = 1;
    native_handle->data[1] = ctx->surface;
    native_window_set_sideband_stream(native_window, native_handle);
    ctx->native_window = native_window;
@@ -155,6 +160,8 @@ struct bcmsideband_ctx *libbcmsideband_init_sideband_tif(
 
    if (idse() != NULL) {
       gSdbGeomCb = new SdbGeomCb(cb, ctx);
+      ctx->index = index;
+      ctx->surface = idse()->regSdbCb(index, NULL);
       ctx->surface = idse()->regSdbCb(index, gSdbGeomCb);
    } else {
       ALOGE("failed to get dspsvcext service");
@@ -164,12 +171,12 @@ struct bcmsideband_ctx *libbcmsideband_init_sideband_tif(
 
    native_handle_t *native_handle = native_handle_create(0, 2);
    if (!native_handle) {
-      delete gSdbGeomCb;
+      gSdbGeomCb = NULL;
       free(ctx);
       ALOGE("failed to allocate native handle");
       return NULL;
    }
-   native_handle->data[0] = 2;
+   native_handle->data[0] = 1;
    native_handle->data[1] = ctx->surface;
    ctx->native_handle = native_handle;
    *p_native_handle = native_handle;
@@ -181,6 +188,6 @@ void libbcmsideband_release(struct bcmsideband_ctx *ctx)
    if (ctx->native_window)
       native_window_set_sideband_stream(ctx->native_window, NULL);
    native_handle_delete(ctx->native_handle);
-   delete gSdbGeomCb;
+   gSdbGeomCb = NULL;
    free(ctx);
 }
