@@ -1,3 +1,5 @@
+#define LOG_TAG "bcm-hidl-dse"
+
 #include "DspSvcExt.h"
 
 #include "HwcCommon.h"
