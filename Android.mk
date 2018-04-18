@@ -37,13 +37,8 @@ include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
-ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
-endif
-ifneq ($(TARGET_BUILD_PDK),true)
-endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
-include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
@@ -56,5 +51,9 @@ endif
 
 # private tools, not released.
 -include ${BCM_VENDOR_STB_ROOT}/bcm_platform/priv/Android.mk
+
+# tools requiring third party packages, may or not work in a
+# given environment.
+-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/3pip/Android.mk
 
 endif

@@ -187,6 +187,10 @@ public:
     void PlaypumpEvent();
     void PlaypumpTimer();
     void OutputFrameEvent();
+    void FifoOverflowEvent();
+    void FifoUnderflowEvent();
+    void PlaypumpErrorCallbackEvent();
+    void PlaypumpCcErrorEvent();
 
     void InputBufferTimeoutCallback();
 
@@ -209,6 +213,14 @@ protected:
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
     B_SchedulerTimerId m_inputBuffersTimerId;
+    B_EventHandle m_hFifoOverflowEvent;
+    B_SchedulerEventId m_fifoOverflowEventId;
+    B_EventHandle m_hFifoUnderflowEvent;
+    B_SchedulerEventId m_fifoUnderflowEventId;
+    B_EventHandle m_hPlaypumpErrorCallbackEvent;
+    B_SchedulerEventId m_playpumpErrorCallbackEventId;
+    B_EventHandle m_hPlaypumpCcErrorEvent;
+    B_SchedulerEventId m_playpumpCcErrorEventId;
     unsigned m_submittedDescriptors;
     BOMX_AudioDecoderState m_decoderState;
 

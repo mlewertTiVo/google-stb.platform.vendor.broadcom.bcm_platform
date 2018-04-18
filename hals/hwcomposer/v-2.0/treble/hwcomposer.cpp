@@ -54,12 +54,15 @@
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
+#include <bcm/hardware/dspsvcext/1.0/IDspSvcExt.h>
 /* buffer memory interface. */
 #include "gralloc_priv.h"
 #include "nx_ashmem.h"
 /* last but not least... */
 #include "hwcutils.h"
 #include "treble/hwc2.h"
+
+using namespace bcm::hardware::dspsvcext::V1_0;
 
 const NEXUS_BlendEquation hwc2_a2n_col_be[4 /*hwc2_blend_mode_t*/] = {
    /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
@@ -139,6 +142,7 @@ struct hwc2_bcm_device_t {
    int                  vsync_exit;
 
    pthread_mutex_t      mtx_pwr;
+   pthread_mutex_t      mtx_idse;
 
    HwcBinder_wrap       *hb;
    bool                 con;
@@ -184,6 +188,30 @@ static int hwc2_blit_gpx(
    enum hwc2_seeding_e *ms,
    size_t cnt);
 
+#define ATTEMPT_PAUSE_USEC 100000
+#define MAX_ATTEMPT_COUNT  2
+static const sp<IDspSvcExt> hwc2_idse(
+   struct hwc2_bcm_device_t *hwc2) {
+
+   sp<IDspSvcExt> idse = NULL;
+   int c = 0;
+
+   if (pthread_mutex_lock(&hwc2->mtx_idse)) {
+      return NULL;
+   }
+   do {
+      idse = IDspSvcExt::getService();
+      if (idse != NULL) {
+         pthread_mutex_unlock(&hwc2->mtx_idse);
+         return idse;
+      }
+      usleep(ATTEMPT_PAUSE_USEC);
+      c++;
+   }
+   while(c < MAX_ATTEMPT_COUNT);
+   pthread_mutex_unlock(&hwc2->mtx_idse);
+   return NULL;
+}
 
 static uint32_t hwc2_fps2vsync(int fps) {
    switch (fps) {
@@ -5132,6 +5160,7 @@ static void hwc2_bcm_close(
    NEXUS_Graphics2D_Close(hwc2->hg2d);
 
    pthread_mutex_destroy(&hwc2->mtx_pwr);
+   pthread_mutex_destroy(&hwc2->mtx_idse);
    pthread_mutex_destroy(&hwc2->mtx_g2d);
 
    c = hwc2->nxi->client();
@@ -5836,7 +5865,18 @@ static void hwc2_sdb(
             c.x, c.y, c.width, c.height,
             p.x, p.y, p.width, p.height);
 
-   hwc2->hb->setgeometry(HWC_BINDER_SDB, index, fr, cl, 3 /*i.e. (5-2)*/, 1);
+   if (hwc2_idse(hwc2) != NULL) {
+      DspSvcExtGeom geom;
+      DspSvcExtStatus hs;
+      geom.geom_x = fr.x;
+      geom.geom_y = fr.y;
+      geom.geom_w = fr.w;
+      geom.geom_h = fr.h;
+      hs = hwc2_idse(hwc2)->setSdbGeom(index, geom);
+      ALOGW_IF((hs == DspSvcExtStatus::BAD_VALUE),
+            "[%s]:[sdb:%d]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed to inform geometry update.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", index, lyr->hdl, dsp->pres, dsp->post);
+   }
 }
 
 static void hwc2_ext_cmp_frame(
@@ -6694,6 +6734,7 @@ static void hwc2_bcm_open(
 
    pthread_mutexattr_init(&mattr);
    pthread_mutex_init(&hwc2->mtx_pwr, &mattr);
+   pthread_mutex_init(&hwc2->mtx_idse, &mattr);
    pthread_mutex_init(&hwc2->mtx_g2d, &mattr);
    pthread_mutexattr_destroy(&mattr);
 

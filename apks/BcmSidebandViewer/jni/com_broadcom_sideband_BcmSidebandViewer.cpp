@@ -21,28 +21,28 @@ struct bcmsideband_ctx *sidebandContext = NULL;
 
 static void sb_geometry_update(void *, unsigned int x, unsigned int y, unsigned int width, unsigned int height)
 {
-    ALOGV("%s", __FUNCTION__);
+    ALOGI("%s", __FUNCTION__);
     AutoMutex _l(lock);
     if (sidebandPlayer)
         sidebandPlayer->setWindowPosition(x, y, width, height);
+    ALOGI("%s - signaled", __FUNCTION__);
 }
 
 static jboolean start_sideband(JNIEnv *env, jobject /*thizvoid*/, jobject jsurface)
 {
     ANativeWindow *native_window;
-    int video_id = -1, audio_id = -1, surface_id = -1;
 
     ALOGV("%s", __FUNCTION__);
     AutoMutex _l(lock);
     if (sidebandContext == NULL) {
         native_window = ANativeWindow_fromSurface(env, jsurface);
         ALOGV("About to initialize sideband");
-        sidebandContext = libbcmsideband_init_sideband(0, native_window, &video_id, &audio_id, &surface_id, &sb_geometry_update);
+        sidebandContext = libbcmsideband_init_sideband(0, native_window, &sb_geometry_update);
         if (!sidebandContext) {
             ALOGE("Unable to initalize the sideband");
             return JNI_FALSE;
         }
-        ALOGI("Sideband initialized video:%d audio:%d surface:%d", video_id, audio_id, surface_id);
+        ALOGI("Sideband initialized");
     }
     return JNI_TRUE;
 }

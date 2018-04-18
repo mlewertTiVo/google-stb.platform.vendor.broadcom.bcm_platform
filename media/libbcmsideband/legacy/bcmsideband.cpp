@@ -100,8 +100,9 @@ static void BcmSidebandBinderNotify(void *cb_data, int msg, struct hwc_notificat
     }
 }
 
-struct bcmsideband_ctx * libbcmsideband_init_sideband(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
-    ANativeWindow *native_window, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
+struct bcmsideband_ctx * libbcmsideband_init_sideband(
+    int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+    ANativeWindow *native_window,
     sb_geometry_cb cb)
 {
     struct bcmsideband_ctx *ctx;
@@ -160,9 +161,11 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(int index, /* index in [0.
     return ctx;
 }
 
-struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
-    native_handle_t **p_native_handle, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
-    sb_geometry_cb cb, void *cb_ctx)
+struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(
+    int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+    native_handle_t **p_native_handle,
+    sb_geometry_cb cb,
+    void *cb_ctx)
 {
     struct bcmsideband_ctx *ctx;
 

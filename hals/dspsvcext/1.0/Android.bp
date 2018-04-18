@@ -6,6 +6,7 @@ filegroup {
     srcs: [
         "types.hal",
         "IDspSvcExt.hal",
+        "IDspSvcExtSdbGeomCb.hal",
     ],
 }
 
@@ -20,6 +21,7 @@ genrule {
     out: [
         "bcm/hardware/dspsvcext/1.0/types.cpp",
         "bcm/hardware/dspsvcext/1.0/DspSvcExtAll.cpp",
+        "bcm/hardware/dspsvcext/1.0/DspSvcExtSdbGeomCbAll.cpp",
     ],
 }
 
@@ -39,37 +41,16 @@ genrule {
         "bcm/hardware/dspsvcext/1.0/BnHwDspSvcExt.h",
         "bcm/hardware/dspsvcext/1.0/BpHwDspSvcExt.h",
         "bcm/hardware/dspsvcext/1.0/BsDspSvcExt.h",
+        "bcm/hardware/dspsvcext/1.0/IDspSvcExtSdbGeomCb.h",
+        "bcm/hardware/dspsvcext/1.0/IHwDspSvcExtSdbGeomCb.h",
+        "bcm/hardware/dspsvcext/1.0/BnHwDspSvcExtSdbGeomCb.h",
+        "bcm/hardware/dspsvcext/1.0/BpHwDspSvcExtSdbGeomCb.h",
+        "bcm/hardware/dspsvcext/1.0/BsDspSvcExtSdbGeomCb.h",
     ],
 }
 
 cc_library_shared {
     name: "bcm.hardware.dspsvcext@1.0",
-    owner: "broadcom",
-    defaults: ["hidl-module-defaults"],
-    generated_sources: ["bcm.hardware.dspsvcext@1.0_genc++"],
-    generated_headers: ["bcm.hardware.dspsvcext@1.0_genc++_headers"],
-    export_generated_headers: ["bcm.hardware.dspsvcext@1.0_genc++_headers"],
-    vendor_available: true,
-    shared_libs: [
-        "libhidlbase",
-        "libhidltransport",
-        "libhwbinder",
-        "liblog",
-        "libutils",
-        "libcutils",
-        "android.hidl.base@1.0",
-    ],
-    export_shared_lib_headers: [
-        "libhidlbase",
-        "libhidltransport",
-        "libhwbinder",
-        "libutils",
-        "android.hidl.base@1.0",
-    ],
-}
-
-cc_library_shared {
-    name: "bcm.hardware.dspsvcext@1.0_vendor",
     owner: "broadcom",
     defaults: ["hidl-module-defaults"],
     generated_sources: ["bcm.hardware.dspsvcext@1.0_genc++"],

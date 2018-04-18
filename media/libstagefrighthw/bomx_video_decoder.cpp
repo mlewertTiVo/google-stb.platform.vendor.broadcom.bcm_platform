@@ -147,6 +147,8 @@
 using namespace android;
 
 static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
+static volatile int32_t g_decInstanceCount = 0;
+static Mutex g_decActiveStateLock("bomx_dec_active_state");
 
 // Handling of persistent nxclient
 static volatile bool g_persistNxClientOn = false;
@@ -341,6 +343,10 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_eCheckpoint,
     BOMX_VideoDecoderEventType_eSourceChanged,
     BOMX_VideoDecoderEventType_eStreamChanged,
+    BOMX_VideoDecoderEventType_eDecodeError,
+    BOMX_VideoDecoderEventType_eFifoEmpty,
+    BOMX_VideoDecoderEventType_ePlaypumpErrorCallback,
+    BOMX_VideoDecoderEventType_ePlaypumpCcError,
     BOMX_VideoDecoderEventType_eMax
 };
 
@@ -536,7 +542,11 @@ static void BOMX_VideoDecoder_EventCallback(void *pParam, int param)
         "Data Ready",
         "Checkpoint",
         "SourceChanged",
-        "StreamChanged"
+        "StreamChanged",
+        "DecodeError",
+        "FifoEmpty",
+        "PlaypumpErrorCallback",
+        "PlaypumpCcError"
 
     };
 
@@ -579,6 +589,42 @@ static void BOMX_VideoDecoder_StreamChangedEvent(void *pParam)
     ALOGV("StreamChangedEvent");
 
     pDecoder->StreamChangedEvent();
+}
+
+static void BOMX_VideoDecoder_DecodeErrorEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("DecodeErrorEvent");
+
+    pDecoder->DecodeErrorEvent();
+}
+
+static void BOMX_VideoDecoder_FifoEmptyEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("FifoEmptyEvent");
+
+    pDecoder->FifoEmptyEvent();
+}
+
+static void BOMX_VideoDecoder_PlaypumpErrorCallbackEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("PlaypumpErrorCallbackEvent");
+
+    pDecoder->PlaypumpErrorCallbackEvent();
+}
+
+static void BOMX_VideoDecoder_PlaypumpCcErrorEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("PlaypumpCcErrorEvent");
+
+    pDecoder->PlaypumpCcErrorEvent();
 }
 
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
@@ -1255,6 +1301,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_sourceChangedEventId(NULL),
     m_hStreamChangedEvent(NULL),
     m_streamChangedEventId(NULL),
+    m_hDecodeErrorEvent(NULL),
+    m_decodeErrorEventId(NULL),
+    m_hFifoEmptyEvent(NULL),
+    m_fifoEmptyEventId(NULL),
+    m_hPlaypumpErrorCallbackEvent(NULL),
+    m_playpumpErrorCallbackEventId(NULL),
+    m_hPlaypumpCcErrorEvent(NULL),
+    m_playpumpCcErrorEventId(NULL),
     m_hDisplayFrameEvent(NULL),
     m_displayFrameEventId(NULL),
     m_hDisplayMutex(NULL),
@@ -1528,6 +1582,54 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
+    m_hDecodeErrorEvent = B_Event_Create(NULL);
+    if ( NULL == m_hDecodeErrorEvent )
+    {
+        ALOGW("Unable to create video decoder decode error event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_decodeErrorEventId = this->RegisterEvent(m_hDecodeErrorEvent, BOMX_VideoDecoder_DecodeErrorEvent, static_cast <void *> (this));
+    if ( NULL == m_decodeErrorEventId )
+    {
+        ALOGW("Unable to register video decoder decode error event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hFifoEmptyEvent = B_Event_Create(NULL);
+    if ( NULL == m_hFifoEmptyEvent )
+    {
+        ALOGW("Unable to create video decoder fifo empty event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_fifoEmptyEventId = this->RegisterEvent(m_hFifoEmptyEvent, BOMX_VideoDecoder_FifoEmptyEvent, static_cast <void *> (this));
+    if ( NULL == m_fifoEmptyEventId )
+    {
+        ALOGW("Unable to register video decoder fifo empty event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hPlaypumpErrorCallbackEvent = B_Event_Create(NULL);
+    if ( NULL == m_hPlaypumpErrorCallbackEvent )
+    {
+        ALOGW("Unable to create playpump error callback event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hPlaypumpCcErrorEvent = B_Event_Create(NULL);
+    if ( NULL == m_hPlaypumpCcErrorEvent )
+    {
+        ALOGW("Unable to create playpump continuity count  error  event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
     if ( BKNI_CreateEvent(&m_hDisplayFrameEvent) != BERR_SUCCESS )
     {
         ALOGW("Unable to create display frame event");
@@ -1586,28 +1688,36 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     else
     {
-        int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
+       g_decActiveStateLock.lock();
+       g_decInstanceCount++;
+       // sanity checking
+       if ( (g_decInstanceCount == 1) && (g_decActiveState != B_DEC_ACTIVE_STATE_INACTIVE) )
+       {
+           ALOGW("Active state must be inactive for the first decoder instance!");
+           g_decActiveStateLock.unlock();
+           this->Invalidate(OMX_ErrorUndefined);
+           return;
+       }
 
-        if ( (m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
-             (!m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
-        {
-            ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
-            this->Invalidate(OMX_ErrorUndefined);
-            return;
-        }
+       if ( (m_secureDecoder && g_decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+            (!m_secureDecoder && g_decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
+       {
+           ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
+           g_decActiveStateLock.unlock();
+           this->Invalidate(OMX_ErrorUndefined);
+           return;
+       }
 
-        if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
-        {
-            BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
-            // failed, so forced to assume picture buffer heaps are secured.
-            m_secureRuntimeHeaps = true;
-        }
-        else
-        {
-            m_secureRuntimeHeaps = m_secureDecoder;
-        }
+       m_secureRuntimeHeaps = m_secureDecoder;
+       if ( (g_decInstanceCount == 1) && !BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder) )
+       {
+           BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+           // failed, so forced to assume picture buffer heaps are secured.
+           m_secureRuntimeHeaps = true;
+       }
 
-        android_atomic_release_store(m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR, &g_decActiveState);
+       g_decActiveState = m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR;
+       g_decActiveStateLock.unlock();
     }
 
     NEXUS_VideoDecoderCapabilities caps;
@@ -2102,6 +2212,30 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_streamChangedEventId);
     }
+    if ( m_decodeErrorEventId )
+    {
+        UnregisterEvent(m_decodeErrorEventId);
+    }
+    if ( m_fifoEmptyEventId )
+    {
+        UnregisterEvent(m_fifoEmptyEventId);
+    }
+    if ( m_playpumpErrorCallbackEventId )
+    {
+        UnregisterEvent(m_playpumpErrorCallbackEventId);
+    }
+    if ( m_hPlaypumpErrorCallbackEvent )
+    {
+        B_Event_Destroy(m_hPlaypumpErrorCallbackEvent);
+    }
+    if ( m_playpumpCcErrorEventId )
+    {
+        UnregisterEvent(m_playpumpCcErrorEventId);
+    }
+    if ( m_hPlaypumpCcErrorEvent )
+    {
+        B_Event_Destroy(m_hPlaypumpCcErrorEvent);
+    }
     if ( m_displayFrameEventId )
     {
         UnregisterEvent(m_displayFrameEventId);
@@ -2121,6 +2255,14 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hStreamChangedEvent )
     {
         B_Event_Destroy(m_hStreamChangedEvent);
+    }
+    if ( m_hDecodeErrorEvent )
+    {
+        B_Event_Destroy(m_hDecodeErrorEvent);
+    }
+    if ( m_hFifoEmptyEvent )
+    {
+        B_Event_Destroy(m_hFifoEmptyEvent);
     }
     if ( m_hDisplayFrameEvent )
     {
@@ -2197,12 +2339,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_pTunnelNativeHandle = NULL;
     }
 
-    int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
-    if ( (!m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
-         (m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
+    g_decActiveStateLock.lock();
+    if ( --g_decInstanceCount == 0 )
     {
-        android_atomic_release_store(B_DEC_ACTIVE_STATE_INACTIVE, &g_decActiveState);
+        g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
     }
+    g_decActiveStateLock.unlock();
 
     BOMX_VIDEO_STATS_RESET;
     Unlock();
@@ -3167,6 +3309,15 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
             }
 
+            NEXUS_SimpleVideoDecoder_GetSettings(m_hSimpleVideoDecoder, &vdecSettings);
+            vdecSettings.decodeError.callback = BOMX_VideoDecoder_EventCallback;
+            vdecSettings.decodeError.context = (void *)m_hDecodeErrorEvent;
+            vdecSettings.decodeError.param = (int)BOMX_VideoDecoderEventType_eDecodeError;
+            vdecSettings.fifoEmpty.callback = BOMX_VideoDecoder_EventCallback;
+            vdecSettings.fifoEmpty.context = (void *)m_hFifoEmptyEvent;
+            vdecSettings.fifoEmpty.param = (int)BOMX_VideoDecoderEventType_eFifoEmpty;
+            NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
+
             NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
             extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
             extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
@@ -3196,6 +3347,12 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             playpumpSettings.dataCallback.callback = BOMX_VideoDecoder_EventCallback;
             playpumpSettings.dataCallback.context = static_cast <void *> (m_hPlaypumpEvent);
             playpumpSettings.dataCallback.param = (int)BOMX_VideoDecoderEventType_ePlaypump;
+            playpumpSettings.errorCallback.callback = BOMX_VideoDecoder_EventCallback;
+            playpumpSettings.errorCallback.context = static_cast <void *> (m_hPlaypumpErrorCallbackEvent);
+            playpumpSettings.errorCallback.param = (int)BOMX_VideoDecoderEventType_ePlaypumpErrorCallback;
+            playpumpSettings.ccError.callback = BOMX_VideoDecoder_EventCallback;
+            playpumpSettings.ccError.context = static_cast <void *> (m_hPlaypumpCcErrorEvent);
+            playpumpSettings.ccError.param = (int)BOMX_VideoDecoderEventType_ePlaypumpCcError;
             errCode = NEXUS_Playpump_SetSettings(m_hPlaypump, &playpumpSettings);
             if ( errCode )
             {
@@ -3219,6 +3376,28 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( NULL == m_playpumpEventId )
             {
                 ALOGW("Unable to register playpump event");
+                ClosePidChannel();
+                NEXUS_Playpump_Close(m_hPlaypump);
+                m_hPlaypump = NULL;
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                m_hSimpleVideoDecoder = NULL;
+                return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+            m_playpumpErrorCallbackEventId = RegisterEvent(m_hPlaypumpErrorCallbackEvent, BOMX_VideoDecoder_PlaypumpErrorCallbackEvent, static_cast <void *> (this));
+            if ( NULL == m_playpumpErrorCallbackEventId )
+            {
+                ALOGW("Unable to register playpump error callback event");
+                ClosePidChannel();
+                NEXUS_Playpump_Close(m_hPlaypump);
+                m_hPlaypump = NULL;
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                m_hSimpleVideoDecoder = NULL;
+                return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+            m_playpumpCcErrorEventId = RegisterEvent(m_hPlaypumpCcErrorEvent, BOMX_VideoDecoder_PlaypumpCcErrorEvent, static_cast <void *> (this));
+            if ( NULL == m_playpumpCcErrorEventId )
+            {
+                ALOGW("Unable to register playpump continuity count  error event");
                 ClosePidChannel();
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
@@ -5558,6 +5737,26 @@ void BOMX_VideoDecoder::StreamChangedEvent()
            (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexParamDescribeHdrColorInfo, NULL);
        }
     }
+}
+
+void BOMX_VideoDecoder::DecodeErrorEvent()
+{
+    ALOGE("%s: video decoder reports an error", __FUNCTION__);
+}
+
+void BOMX_VideoDecoder::FifoEmptyEvent()
+{
+    ALOGE("%s: the video source FIFO becomes empty during normal decode", __FUNCTION__);
+}
+
+void BOMX_VideoDecoder::PlaypumpErrorCallbackEvent()
+{
+    ALOGE("%s: playpump detects an error in processing of the stream data", __FUNCTION__);
+}
+
+void BOMX_VideoDecoder::PlaypumpCcErrorEvent()
+{
+    ALOGE("%s: cc error, continuity counter of next packet does not have the next counter value", __FUNCTION__);
 }
 
 void BOMX_VideoDecoder::ColorAspectsFromNexusStreamInfo(ColorAspects *colorAspects)
