@@ -3086,17 +3086,23 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(err);
         }
         // Ensure slice height and stride match frame width/height and update buffer size
-        portDef.format.video.nFrameWidth = m_outputWidth;
-        portDef.format.video.nFrameHeight = m_outputHeight;
-        portDef.format.video.nSliceHeight = m_outputHeight;
-        portDef.format.video.nStride = ComputeStride(portDef.format.video.eColorFormat, m_outputWidth);
-        portDef.nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, portDef.format.video.nStride, portDef.format.video.nSliceHeight);
-        err = m_pVideoPorts[1]->SetDefinition(&portDef);
-        if ( err )
+        OMX_S32 nStride = ComputeStride(portDef.format.video.eColorFormat, m_outputWidth);
+        size_t nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, nStride, m_outputHeight);
+        if ( portDef.format.video.nFrameWidth != m_outputWidth || portDef.format.video.nFrameHeight != m_outputHeight ||
+             portDef.format.video.nSliceHeight != m_outputHeight || portDef.format.video.nStride != nStride || portDef.nBufferSize != nBufferSize )
         {
-            return BOMX_ERR_TRACE(err);
+            portDef.format.video.nFrameWidth = m_outputWidth;
+            portDef.format.video.nFrameHeight = m_outputHeight;
+            portDef.format.video.nSliceHeight = m_outputHeight;
+            portDef.format.video.nStride = nStride;
+            portDef.nBufferSize = nBufferSize;
+            err = m_pVideoPorts[1]->SetDefinition(&portDef);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
+            PortFormatChanged(m_pVideoPorts[1]);
         }
-        PortFormatChanged(m_pVideoPorts[1]);
         return OMX_ErrorNone;
     }
     case OMX_IndexParamUseAndroidNativeBuffer:
