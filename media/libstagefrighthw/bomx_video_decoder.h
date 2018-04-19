@@ -265,6 +265,10 @@ public:
     void OutputFrameEvent();
     void SourceChangedEvent();
     void StreamChangedEvent();
+    void DecodeErrorEvent();
+    void FifoEmptyEvent();
+    void PlaypumpErrorCallbackEvent();
+    void PlaypumpCcErrorEvent();
 
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
     void DisplayFrameEvent();
@@ -304,6 +308,14 @@ protected:
     B_SchedulerEventId m_sourceChangedEventId;
     B_EventHandle m_hStreamChangedEvent;
     B_SchedulerEventId m_streamChangedEventId;
+    B_EventHandle m_hDecodeErrorEvent;
+    B_SchedulerEventId m_decodeErrorEventId;
+    B_EventHandle m_hFifoEmptyEvent;
+    B_SchedulerEventId m_fifoEmptyEventId;
+    B_EventHandle m_hPlaypumpErrorCallbackEvent;
+    B_SchedulerEventId m_playpumpErrorCallbackEventId;
+    B_EventHandle m_hPlaypumpCcErrorEvent;
+    B_SchedulerEventId m_playpumpCcErrorEventId;
     BKNI_EventHandle m_hDisplayFrameEvent;
     B_SchedulerEventId m_displayFrameEventId;
     B_MutexHandle m_hDisplayMutex;

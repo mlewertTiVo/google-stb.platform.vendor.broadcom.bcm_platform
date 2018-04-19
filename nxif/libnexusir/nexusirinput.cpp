@@ -49,11 +49,11 @@
 #include <string.h>
 
 /* Override for the hardcoded repeatTimeout values in bkir module */
-#define PROPERTY_IR_INITIAL_TIMEOUT "ro.ir_remote.initial_timeout"
-#define PROPERTY_IR_TIMEOUT "ro.ir_remote.timeout"
+#define PROPERTY_IR_INITIAL_TIMEOUT "ro.nx.ir_remote.initial_timeout"
+#define PROPERTY_IR_TIMEOUT "ro.nx.ir_remote.timeout"
 
-#define PROPERTY_BOOT_REASON "ro.nx.bootreason"
-#define BOOT_FROM_DEEP_SLEEP "s3_wakeup"
+#define PROPERTY_BOOT_REASON "sys.boot.reason"
+#define BOOT_FROM_DEEP_SLEEP "warm,s3_wakeup"
 
 #define PROPERTY_NX_BOOT_KEY_TWO "dyn.nx.boot.key2"
 #define PROPERTY_BOOT_COMPLETED "sys.boot_completed"

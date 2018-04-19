@@ -264,7 +264,7 @@ bool NxServer::init_ir(void) {
    uint64_t mask;
 
    memset(ir_mode_property, 0, sizeof(ir_mode_property));
-   property_get("ro.ir_remote.mode", ir_mode_property, ir_mode_default);
+   property_get("ro.nx.ir_remote.mode", ir_mode_property, ir_mode_default);
    if (parseNexusIrMode(ir_mode_property, &mode)) {
        ALOGI("Nexus IR remote mode: %s", ir_mode_property);
    } else {
@@ -274,7 +274,7 @@ bool NxServer::init_ir(void) {
    }
 
    memset(ir_map_property, 0, sizeof(ir_map_property));
-   property_get("ro.ir_remote.map", ir_map_property, ir_map_default);
+   property_get("ro.nx.ir_remote.map", ir_map_property, ir_map_default);
    String8 map_path(ir_map_path);
    map_path += "/";
    map_path += ir_map_property;
@@ -288,7 +288,7 @@ bool NxServer::init_ir(void) {
    }
 
    memset(ir_mask_property, 0, sizeof(ir_mask_property));
-   property_get("ro.ir_remote.mask", ir_mask_property, ir_mask_default);
+   property_get("ro.nx.ir_remote.mask", ir_mask_property, ir_mask_default);
    mask = strtoull(ir_mask_property, NULL, 0);
    ALOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
            (unsigned long long)mask);
