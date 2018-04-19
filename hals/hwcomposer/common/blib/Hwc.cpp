@@ -23,7 +23,9 @@
 #include <utils/String16.h>
 #include <utils/String8.h>
 #include <utils/threads.h>
+#ifndef __ANDROID_VNDK__
 #include <binder/PermissionCache.h>
+#endif
 
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
@@ -88,8 +90,14 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
     IPCThreadState* ipc = IPCThreadState::self();
     const int pid = ipc->getCallingPid();
     const int uid = ipc->getCallingUid();
+#ifndef __ANDROID_VNDK__
+    // permission check can't be done for vendors as vendors have no access to
+    // the PermissionController
     if ((uid != AID_SHELL) &&
             !PermissionCache::checkPermission(sDump, pid, uid)) {
+#else
+    if (uid != AID_SHELL) {
+#endif
         result.appendFormat("Permission Denial: "
                 "can't dump Hwc from pid=%d, uid=%d\n", pid, uid);
     } else {
