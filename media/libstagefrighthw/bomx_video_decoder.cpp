@@ -1366,6 +1366,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
+    m_pEndOfChunkBuffer(NULL),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
@@ -1922,6 +1923,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     // Allocate and fill end-of-chunk buffer for vp9
     errCode = NEXUS_Memory_Allocate(B_BPP_PACKET_LEN, &memorySettings, &m_pEndOfChunkBuffer);
+    if ( errCode )
+    {
+        ALOGW("Unable to allocate end-of-chunk buffer");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
     pBuffer = (char *)m_pEndOfChunkBuffer;
     m_pPes->FormBppPacket(pBuffer, 0x85);
     NEXUS_FlushCache(pBuffer, B_BPP_PACKET_LEN);
@@ -2293,6 +2300,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
             CleanupPortBuffers(i);
             delete m_pVideoPorts[i];
         }
+    }
+    if ( m_pEndOfChunkBuffer )
+    {
+        NEXUS_Memory_Free(m_pEndOfChunkBuffer);
     }
     if ( m_pEosBuffer )
     {
