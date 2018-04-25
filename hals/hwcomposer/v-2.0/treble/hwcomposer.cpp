@@ -5560,12 +5560,24 @@ int hwc2_blit_gpx_pm(
    int blt = 0;
    NEXUS_Error rc;
    NEXUS_Graphics2DBlitSettings bs;
+   NEXUS_SurfaceStatus ss;
 
    ALOGI_IF((dsp->lm & LOG_ICB_DEBUG),
             "[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x} {%d,%d,%dx%d,%p} out:{%p}\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             lyr->bm, al<<HWC2_ASHIFT,
             sa.x, sa.y, sa.width, sa.height, s, d);
+
+   NEXUS_Surface_GetStatus(d, &ss);
+   if (sa.x+sa.width > (int16_t)ss.width ||
+       sa.y+sa.height > (int16_t)ss.height) {
+      ALOGE("[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": rejecting {%d,%d:%d}{%d,%d:%d}.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            sa.x, sa.width, ss.width,
+            sa.y, sa.height, ss.height);
+      blt = HWC2_INVALID;
+      goto out;
+   }
 
    NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
    bs.source.surface = s;

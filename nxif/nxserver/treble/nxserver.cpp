@@ -174,6 +174,7 @@
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
 #define NX_TRIM_D0HD                   "ro.nx.trim.d0hd"
+#define NX_TRIM_DEINT                  "ro.nx.trim.deint"
 
 #define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
 
@@ -764,6 +765,17 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
 
    /* 1. encoder configuration. */
    trim_encoder_mem_config(pMemConfigSettings);
+
+   /* 1.5. deinterlacer (may be re-enabled in 2. per need). */
+   if (property_get(NX_TRIM_DEINT, value, NX_PROP_DISABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
+            for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+               pMemConfigSettings->display[i].window[j].deinterlacer = NEXUS_DeinterlacerMode_eNone;
+            }
+         }
+      }
+   }
 
    /* 2. additional display(s) (but display 0). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
