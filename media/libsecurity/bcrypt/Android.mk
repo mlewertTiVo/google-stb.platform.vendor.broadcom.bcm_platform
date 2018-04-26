@@ -15,32 +15,31 @@
 #-------------
 # libbcrypt.so
 #-------------
-LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/src
-LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
-
+LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+SRC_PREFIX := ../../../../refsw/BSEAV/lib/security/bcrypt/src
 LOCAL_SRC_FILES := \
-    bcrypt.c \
-    bcrypt_aes_sw.c \
-    bcrypt_aescbc_sw.c \
-    bcrypt_aesecb_sw.c \
-    bcrypt_asn1_sw.c \
-    bcrypt_cmac_sw.c \
-    bcrypt_dbg.c \
-    bcrypt_descbc_sw.c \
-    bcrypt_desecb_sw.c \
-    bcrypt_dh_sw.c \
-    bcrypt_dsa_sw.c \
-    bcrypt_ecc_sw.c \
-    bcrypt_ecdsa_sw.c \
-    bcrypt_md5_sw.c \
-    bcrypt_rc4_sw.c \
-    bcrypt_rng_sw.c \
-    bcrypt_rsa_sw.c \
-    bcrypt_sha1_sw.c \
-    bcrypt_sha256_sw.c \
-    bcrypt_x509_sw.c
+    ${SRC_PREFIX}/bcrypt.c \
+    ${SRC_PREFIX}/bcrypt_aes_sw.c \
+    ${SRC_PREFIX}/bcrypt_aescbc_sw.c \
+    ${SRC_PREFIX}/bcrypt_aesecb_sw.c \
+    ${SRC_PREFIX}/bcrypt_asn1_sw.c \
+    ${SRC_PREFIX}/bcrypt_cmac_sw.c \
+    ${SRC_PREFIX}/bcrypt_dbg.c \
+    ${SRC_PREFIX}/bcrypt_descbc_sw.c \
+    ${SRC_PREFIX}/bcrypt_desecb_sw.c \
+    ${SRC_PREFIX}/bcrypt_dh_sw.c \
+    ${SRC_PREFIX}/bcrypt_dsa_sw.c \
+    ${SRC_PREFIX}/bcrypt_ecc_sw.c \
+    ${SRC_PREFIX}/bcrypt_ecdsa_sw.c \
+    ${SRC_PREFIX}/bcrypt_md5_sw.c \
+    ${SRC_PREFIX}/bcrypt_rc4_sw.c \
+    ${SRC_PREFIX}/bcrypt_rng_sw.c \
+    ${SRC_PREFIX}/bcrypt_rsa_sw.c \
+    ${SRC_PREFIX}/bcrypt_sha1_sw.c \
+    ${SRC_PREFIX}/bcrypt_sha256_sw.c \
+    ${SRC_PREFIX}/bcrypt_x509_sw.c
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \

@@ -16,7 +16,7 @@
 ** limitations under the License.
 */
 
-#define LOG_TAG "AudioHAL:AudioHardwareInput"
+#define LOG_TAG "AudioHAL[AudioHardwareInput]"
 #include <utils/Log.h>
 
 #include <fcntl.h>

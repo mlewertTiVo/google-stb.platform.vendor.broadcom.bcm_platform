@@ -31,13 +31,12 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
-ifneq ($(TARGET_BUILD_PDK),true)
 # apk's released.
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
-endif
+#include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
@@ -53,5 +52,9 @@ endif
 
 # private tools, not released.
 -include ${BCM_VENDOR_STB_ROOT}/bcm_platform/priv/Android.mk
+
+# tools requiring third party packages, may or not work in a
+# given environment.
+-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/3pip/Android.mk
 
 endif

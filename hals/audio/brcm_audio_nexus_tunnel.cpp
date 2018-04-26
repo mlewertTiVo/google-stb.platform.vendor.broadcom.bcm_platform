@@ -1012,7 +1012,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             if (decStatus.queuedFrames < BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED) {
                 break;
             }
+            pthread_mutex_unlock(&bout->lock);
             usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
+            pthread_mutex_lock(&bout->lock);
         }
         ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, decStatus.queuedFrames);
     }

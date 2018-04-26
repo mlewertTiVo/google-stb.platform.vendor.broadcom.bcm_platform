@@ -47,7 +47,6 @@
 
 // Runtime properties
 #define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("media.brcm.aout_debug")
-#define BRCM_PROPERTY_DOLBY_MS           ("ro.nx.dolby.ms")
 
 struct output_hdr {
     char tag[4];
@@ -492,7 +491,7 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
 
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGV("%s: frames:%" PRIu64 ", timestamp(%ld.%06ld)", __FUNCTION__, *frames,
+    ALOGV("%s: frames:%" PRIu64 ", timestamp(%ld.%09ld)", __FUNCTION__, *frames,
           timestamp->tv_sec, timestamp->tv_nsec);
 
     return ret;

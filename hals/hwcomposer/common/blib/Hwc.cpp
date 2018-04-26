@@ -23,7 +23,9 @@
 #include <utils/String16.h>
 #include <utils/String8.h>
 #include <utils/threads.h>
+#ifndef __ANDROID_VNDK__
 #include <binder/PermissionCache.h>
+#endif
 
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
@@ -88,8 +90,14 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
     IPCThreadState* ipc = IPCThreadState::self();
     const int pid = ipc->getCallingPid();
     const int uid = ipc->getCallingUid();
+#ifndef __ANDROID_VNDK__
+    // permission check can't be done for vendors as vendors have no access to
+    // the PermissionController
     if ((uid != AID_SHELL) &&
             !PermissionCache::checkPermission(sDump, pid, uid)) {
+#else
+    if (uid != AID_SHELL) {
+#endif
         result.appendFormat("Permission Denial: "
                 "can't dump Hwc from pid=%d, uid=%d\n", pid, uid);
     } else {
@@ -167,7 +175,7 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
 
        mNotificationListeners.add(hwc_listener_t(binder, kind));
 
-       if (kind == HWC_BINDER_HWC) {
+       if ((kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
           struct hwc_notification_info ntfy;
           memset(&ntfy, 0, sizeof(struct hwc_notification_info));
@@ -221,7 +229,7 @@ void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int val
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
            mVideoSurface[index].surface = value;
            mVideoSurface[index].listener = 0;
            mVideoSurface[index].disp_w = disp_w;
@@ -253,7 +261,7 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -292,7 +300,7 @@ void Hwc::freeVideoSurfaceId(const sp<IHwcListener>& listener, int index)
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -317,8 +325,8 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
-           if ((type == HWC_BINDER_OMX) && (index < HWC_BINDER_VIDEO_SURFACE_SIZE)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
+           if (((type & HWC_BINDER_OMX) == HWC_BINDER_OMX) && (index < HWC_BINDER_VIDEO_SURFACE_SIZE)) {
               if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
                   memcmp(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position)) ||
                   (mVideoSurface[index].zorder != zorder) ||
@@ -329,7 +337,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
                  mVideoSurface[index].visible = visible;
                  updated = true;
               }
-           } else if ((type == HWC_BINDER_SDB) && (index < HWC_BINDER_SIDEBAND_SURFACE_SIZE)) {
+           } else if (((type & HWC_BINDER_SDB) == HWC_BINDER_SDB) && (index < HWC_BINDER_SIDEBAND_SURFACE_SIZE)) {
               if (memcmp(&frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position)) ||
                   memcmp(&clipped, &mSidebandSurface[index].clipped, sizeof(struct hwc_position)) ||
                   (mSidebandSurface[index].zorder != zorder) ||
@@ -348,7 +356,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
     // for sideband surfaces, inform of the geometry update.  for video surface, the
     // geometry information is collapsed within the frame display notification.
     //
-    if (updated && (type == HWC_BINDER_SDB) && (mSidebandSurface[index].listener)) {
+    if (updated && ((type & HWC_BINDER_SDB) == HWC_BINDER_SDB) && (mSidebandSurface[index].listener)) {
        for (size_t j = 0; j < N; j++) {
           const hwc_listener_t& notify = mNotificationListeners[j];
           if ((void *)notify.binder.get() == mSidebandSurface[index].listener) {
@@ -378,11 +386,11 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
     zorder = -1;
     visible = 0;
 
-    if (((type == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1)) ||
-        ((type == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1))) {
+    if ((((type & HWC_BINDER_OMX) == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1)) ||
+        (((type & HWC_BINDER_SDB) == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1))) {
        ALOGE("%s: %p, type %d, index %d - invalid, ignored", __FUNCTION__,
               listener->asBinder(listener).get(), type, index);
-    } else if (type == HWC_BINDER_OMX) {
+    } else if ((type & HWC_BINDER_OMX) == HWC_BINDER_OMX) {
        memcpy(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position));
        memcpy(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position));
        zorder = mVideoSurface[index].zorder;
@@ -390,7 +398,7 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
        ALOGD("%s:video: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
              listener->asBinder(listener).get(), index, frame.x, frame.y, frame.w, frame.h,
              clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
-    } else if (type == HWC_BINDER_SDB) {
+    } else if ((type & HWC_BINDER_SDB) == HWC_BINDER_SDB) {
        memcpy(&frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position));
        memcpy(&clipped, &mSidebandSurface[index].clipped, sizeof(struct hwc_position));
        zorder = mSidebandSurface[index].zorder;
@@ -453,7 +461,7 @@ void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
-            (client.kind == HWC_BINDER_HWC)) {
+            ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC)) {
            mSidebandSurface[index].surface = value;
            mSidebandSurface[index].disp_w = disp_w;
            mSidebandSurface[index].disp_h = disp_h;
@@ -490,7 +498,7 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -529,7 +537,7 @@ void Hwc::freeSidebandSurfaceId(const sp<IHwcListener>& listener, int index)
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if (client.kind == HWC_BINDER_HWC) {
+           if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -559,7 +567,7 @@ void Hwc::setOverscanAdjust(const sp<IHwcListener>& listener,
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if (client.kind == HWC_BINDER_HWC) {
+        if ((client.kind & HWC_BINDER_HWC) == HWC_BINDER_HWC) {
            sp<IBinder> binder = client.binder;
            sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
            struct hwc_notification_info ntfy;

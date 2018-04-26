@@ -3,6 +3,7 @@ package bcm.hardware.dspsvcext@1.0;
 enum DspSvcExtStatus : uint32_t {
     SUCCESS,
     BAD_VALUE,
+    ALREADY_REGISTERED,
     UNKNOWN,
 };
 
@@ -11,5 +12,12 @@ struct DspSvcExtOvs {
     int32_t ovs_y;
     int32_t ovs_w;
     int32_t ovs_h;
+};
+
+struct DspSvcExtGeom {
+    int32_t geom_x;
+    int32_t geom_y;
+    int32_t geom_w;
+    int32_t geom_h;
 };
 

@@ -1,0 +1,6 @@
+package bcm.hardware.dspsvcext@1.0;
+
+interface IDspSvcExtSdbGeomCb {
+    oneway onGeom(int32_t i, DspSvcExtGeom geom);
+};
+

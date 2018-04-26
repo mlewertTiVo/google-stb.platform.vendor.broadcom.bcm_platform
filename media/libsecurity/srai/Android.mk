@@ -23,6 +23,7 @@ LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 # add SAGElib related includes
 include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
+include $(LOCAL_PATH)/magnum/portinginterface/hsm/bhsm_defs.inc
 
 LOCAL_SRC_FILES := \
     BSEAV/lib/security/sage/srai/src/sage_srai.c \
@@ -46,6 +47,7 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 # Enable error logs for non debug build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
+LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
 
 LOCAL_SHARED_LIBRARIES := libnexus liblog
 

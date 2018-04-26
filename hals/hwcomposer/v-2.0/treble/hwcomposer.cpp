@@ -56,12 +56,15 @@ extern "C" {
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
+#include <bcm/hardware/dspsvcext/1.0/IDspSvcExt.h>
 /* buffer memory interface. */
 #include "gralloc_priv.h"
 #include "nx_ashmem.h"
 /* last but not least... */
 #include "hwcutils.h"
 #include "treble/hwc2.h"
+
+using namespace bcm::hardware::dspsvcext::V1_0;
 
 const NEXUS_BlendEquation hwc2_a2n_col_be[4 /*hwc2_blend_mode_t*/] = {
    /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
@@ -141,6 +144,7 @@ struct hwc2_bcm_device_t {
    int                  vsync_exit;
 
    pthread_mutex_t      mtx_pwr;
+   pthread_mutex_t      mtx_idse;
 
    HwcBinder_wrap       *hb;
    bool                 con;
@@ -186,6 +190,30 @@ static int hwc2_blit_gpx(
    enum hwc2_seeding_e *ms,
    size_t cnt);
 
+#define ATTEMPT_PAUSE_USEC 100000
+#define MAX_ATTEMPT_COUNT  2
+static const sp<IDspSvcExt> hwc2_idse(
+   struct hwc2_bcm_device_t *hwc2) {
+
+   sp<IDspSvcExt> idse = NULL;
+   int c = 0;
+
+   if (pthread_mutex_lock(&hwc2->mtx_idse)) {
+      return NULL;
+   }
+   do {
+      idse = IDspSvcExt::getService();
+      if (idse != NULL) {
+         pthread_mutex_unlock(&hwc2->mtx_idse);
+         return idse;
+      }
+      usleep(ATTEMPT_PAUSE_USEC);
+      c++;
+   }
+   while(c < MAX_ATTEMPT_COUNT);
+   pthread_mutex_unlock(&hwc2->mtx_idse);
+   return NULL;
+}
 
 static uint32_t hwc2_fps2vsync(int fps) {
    switch (fps) {
@@ -244,6 +272,9 @@ static bool hwc2_enabled(
    break;
    case hwc2_tweak_scale_gles:
       r = (bool)property_get_bool("dyn.nx.hwc2.tweak.sgles", 0);
+   break;
+   case hwc2_tweak_forced_eotf:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
    break;
    default:
    break;
@@ -335,23 +366,25 @@ static void hwc2_dump_content(
 
 static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
-   int32_t forced) {
+   int32_t wanted) {
 
-   NEXUS_HdmiOutputExtraSettings s;
-   NEXUS_PlatformConfiguration p;
-   NEXUS_Error e;
-   NEXUS_HdmiOutputHandle hdmi;
-   int32_t eotf =
-      (forced != HWC2_INVALID) ? forced : hwc2_setting(hwc2_tweak_eotf);
+   NxClient_DisplaySettings s;
+   int32_t eotf = HWC2_INVALID;
 
-   if (!eotf) {
-      return;
+   if (hwc2_enabled(hwc2_tweak_forced_eotf)) {
+      if (dsp->aCfg->hdr10) {
+         eotf = HWC2_EOTF_HDR10;
+      } else if (dsp->aCfg->hlg) {
+         eotf = HWC2_EOTF_HLG;
+      } else {
+         eotf = HWC2_INVALID;
+      }
+   } else {
+      eotf =
+         (wanted != HWC2_INVALID) ? wanted : hwc2_setting(hwc2_tweak_eotf);
    }
 
-   NEXUS_Platform_GetConfiguration(&p);
-   hdmi = p.outputs.hdmi[0];
-   if (!hdmi) {
-      ALOGE("[eotf]: invalid hdmi output.");
+   if (eotf == HWC2_INVALID) {
       return;
    }
 
@@ -359,31 +392,27 @@ static void hwc2_eotf(
       return;
    }
    if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      NxClient_GetDisplaySettings(&s);
       switch (eotf) {
          case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
          break;
          case HWC2_EOTF_HLG:
             ALOGI("[eotf]: hlg.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
          break;
          case HWC2_EOTF_SDR:
             ALOGI("[eotf]: sdr.");
-            s.overrideDynamicRangeMasteringInfoFrame = true;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
          case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
-            s.overrideDynamicRangeMasteringInfoFrame = false;
-            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
          break;
       }
-      e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+      NxClient_SetDisplaySettings(&s);
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
@@ -5132,6 +5161,7 @@ static void hwc2_bcm_close(
    NEXUS_Graphics2D_Close(hwc2->hg2d);
 
    pthread_mutex_destroy(&hwc2->mtx_pwr);
+   pthread_mutex_destroy(&hwc2->mtx_idse);
    pthread_mutex_destroy(&hwc2->mtx_g2d);
 
    c = hwc2->nxi->client();
@@ -5531,12 +5561,24 @@ int hwc2_blit_gpx_pm(
    int blt = 0;
    NEXUS_Error rc;
    NEXUS_Graphics2DBlitSettings bs;
+   NEXUS_SurfaceStatus ss;
 
    ALOGI_IF((dsp->lm & LOG_ICB_DEBUG),
             "[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x} {%d,%d,%dx%d,%p} out:{%p}\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             lyr->bm, al<<HWC2_ASHIFT,
             sa.x, sa.y, sa.width, sa.height, s, d);
+
+   NEXUS_Surface_GetStatus(d, &ss);
+   if (sa.x+sa.width > (int16_t)ss.width ||
+       sa.y+sa.height > (int16_t)ss.height) {
+      ALOGE("[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": rejecting {%d,%d:%d}{%d,%d:%d}.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            sa.x, sa.width, ss.width,
+            sa.y, sa.height, ss.height);
+      blt = HWC2_INVALID;
+      goto out;
+   }
 
    NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
    bs.source.surface = s;
@@ -5836,7 +5878,18 @@ static void hwc2_sdb(
             c.x, c.y, c.width, c.height,
             p.x, p.y, p.width, p.height);
 
-   hwc2->hb->setgeometry(HWC_BINDER_SDB, index, fr, cl, 3 /*i.e. (5-2)*/, 1);
+   if (hwc2_idse(hwc2) != NULL) {
+      DspSvcExtGeom geom;
+      DspSvcExtStatus hs;
+      geom.geom_x = fr.x;
+      geom.geom_y = fr.y;
+      geom.geom_w = fr.w;
+      geom.geom_h = fr.h;
+      hs = hwc2_idse(hwc2)->setSdbGeom(index, geom);
+      ALOGW_IF((hs == DspSvcExtStatus::BAD_VALUE),
+            "[%s]:[sdb:%d]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed to inform geometry update.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", index, lyr->hdl, dsp->pres, dsp->post);
+   }
 }
 
 static void hwc2_ext_cmp_frame(
@@ -6590,7 +6643,9 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
       ALOGV("[ext]: no more active video client.");
-      hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+      }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:
@@ -6695,6 +6750,7 @@ static void hwc2_bcm_open(
 
    pthread_mutexattr_init(&mattr);
    pthread_mutex_init(&hwc2->mtx_pwr, &mattr);
+   pthread_mutex_init(&hwc2->mtx_idse, &mattr);
    pthread_mutex_init(&hwc2->mtx_g2d, &mattr);
    pthread_mutexattr_destroy(&mattr);
 

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "AudioHAL:audio_hal_thunks"
+#define LOG_TAG "AudioHAL[audio_hal_thunks]"
 #include <utils/Log.h>
 
 #include <errno.h>

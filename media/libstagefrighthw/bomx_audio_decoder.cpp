@@ -114,6 +114,10 @@ enum BOMX_AudioDecoderEventType
     BOMX_AudioDecoderEventType_ePlaypump=0,
     BOMX_AudioDecoderEventType_eDataReady,
     BOMX_AudioDecoderEventType_eCheckpoint,
+    BOMX_AudioDecoderEventType_eFifoOverflow,
+    BOMX_AudioDecoderEventType_eFifoUnderflow,
+    BOMX_AudioDecoderEventType_ePlaypumpErrorCallback,
+    BOMX_AudioDecoderEventType_ePlaypumpCcError,
     BOMX_AudioDecoderEventType_eMax
 };
 
@@ -419,7 +423,11 @@ static void BOMX_AudioDecoder_EventCallback(void *pParam, int param)
     static const char *pEventMsg[BOMX_AudioDecoderEventType_eMax] = {
         "Playpump",
         "Data Ready",
-        "Checkpoint"
+        "Checkpoint",
+        "FifoOverflow",
+        "FifoUnderflow",
+        "PlaypumpErrorCallback",
+        "PlaypumpCcError"
     };
 
     hEvent = static_cast <B_EventHandle> (pParam);
@@ -443,6 +451,42 @@ static void BOMX_AudioDecoder_OutputFrameEvent(void *pParam)
     ALOGV("OutputFrameEvent");
 
     pDecoder->OutputFrameEvent();
+}
+
+static void BOMX_AudioDecoder_FifoOverflowEvent(void *pParam)
+{
+    BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
+
+    ALOGV("FifoOverflowEvent");
+
+    pDecoder->FifoOverflowEvent();
+}
+
+static void BOMX_AudioDecoder_FifoUnderflowEvent(void *pParam)
+{
+    BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
+
+    ALOGV("FifoUnderflowEvent");
+
+    pDecoder->FifoUnderflowEvent();
+}
+
+static void BOMX_AudioDecoder_PlaypumpErrorCallbackEvent(void *pParam)
+{
+    BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
+
+    ALOGV("PlaypumpErrorCallbackEvent");
+
+    pDecoder->PlaypumpErrorCallbackEvent();
+}
+
+static void BOMX_AudioDecoder_PlaypumpCcErrorEvent(void *pParam)
+{
+    BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
+
+    ALOGV("PlaypumpCcErrorEvent");
+
+    pDecoder->PlaypumpCcErrorEvent();
 }
 
 static void BOMX_AudioDecoder_InputBuffersTimer(void *pParam)
@@ -507,6 +551,14 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_hOutputFrameEvent(NULL),
     m_outputFrameEventId(NULL),
     m_inputBuffersTimerId(NULL),
+    m_hFifoOverflowEvent(NULL),
+    m_fifoOverflowEventId(NULL),
+    m_hFifoUnderflowEvent(NULL),
+    m_fifoUnderflowEventId(NULL),
+    m_hPlaypumpErrorCallbackEvent(NULL),
+    m_playpumpErrorCallbackEventId(NULL),
+    m_hPlaypumpCcErrorEvent(NULL),
+    m_playpumpCcErrorEventId(NULL),
     m_submittedDescriptors(0),
     m_decoderState(BOMX_AudioDecoderState_eStopped),
     m_pBufferTracker(NULL),
@@ -684,6 +736,54 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         return;
     }
 
+    m_hFifoOverflowEvent = B_Event_Create(NULL);
+    if ( NULL == m_hFifoOverflowEvent )
+    {
+        ALOGW("Unable to create audio input fifo overflow event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_fifoOverflowEventId = this->RegisterEvent(m_hFifoOverflowEvent, BOMX_AudioDecoder_FifoOverflowEvent, static_cast <void *> (this));
+    if ( NULL == m_fifoOverflowEventId )
+    {
+        ALOGW("Unable to register audio input fifo overflow event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hFifoUnderflowEvent = B_Event_Create(NULL);
+    if ( NULL == m_hFifoUnderflowEvent )
+    {
+        ALOGW("Unable to create audio input fifo underflow event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_fifoUnderflowEventId = this->RegisterEvent(m_hFifoUnderflowEvent, BOMX_AudioDecoder_FifoUnderflowEvent, static_cast <void *> (this));
+    if ( NULL == m_fifoUnderflowEventId )
+    {
+        ALOGW("Unable to register audio input fifo underflow event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hPlaypumpErrorCallbackEvent = B_Event_Create(NULL);
+    if ( NULL == m_hPlaypumpErrorCallbackEvent )
+    {
+        ALOGW("Unable to create playpump error callback event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hPlaypumpCcErrorEvent = B_Event_Create(NULL);
+    if ( NULL == m_hPlaypumpCcErrorEvent )
+    {
+        ALOGW("Unable to create playpump continuity count  error  event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
     m_pBufferTracker = new BOMX_BufferTracker(this);
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
@@ -742,6 +842,17 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
+
+    NEXUS_AudioDecoderSettings audioSettings;
+    NEXUS_AudioDecoder_GetSettings(m_hAudioDecoder, &audioSettings);
+    audioSettings.fifoOverflow.callback = BOMX_AudioDecoder_EventCallback;
+    audioSettings.fifoOverflow.context = static_cast<void *>(m_hFifoOverflowEvent);
+    audioSettings.fifoOverflow.param = BOMX_AudioDecoderEventType_eFifoOverflow;
+    audioSettings.fifoUnderflow.callback = BOMX_AudioDecoder_EventCallback;
+    audioSettings.fifoUnderflow.context = static_cast<void *>(m_hFifoUnderflowEvent);
+    audioSettings.fifoUnderflow.param = BOMX_AudioDecoderEventType_eFifoUnderflow;
+    NEXUS_AudioDecoder_SetSettings(m_hAudioDecoder, &audioSettings);
+
     NEXUS_AudioDecoderDecodeToMemorySettings decSettings;
     NEXUS_AudioDecoder_GetDecodeToMemorySettings(m_hAudioDecoder, &decSettings);
     decSettings.bitsPerSample = 16; // Android defaults
@@ -1008,6 +1119,38 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     if ( m_hOutputFrameEvent )
     {
         B_Event_Destroy(m_hOutputFrameEvent);
+    }
+    if ( m_fifoOverflowEventId )
+    {
+        UnregisterEvent(m_fifoOverflowEventId);
+    }
+    if ( m_hFifoOverflowEvent )
+    {
+        B_Event_Destroy(m_hFifoOverflowEvent);
+    }
+    if ( m_fifoUnderflowEventId )
+    {
+        UnregisterEvent(m_fifoUnderflowEventId);
+    }
+    if ( m_hFifoUnderflowEvent )
+    {
+        B_Event_Destroy(m_hFifoUnderflowEvent);
+    }
+    if ( m_playpumpErrorCallbackEventId )
+    {
+        UnregisterEvent(m_playpumpErrorCallbackEventId);
+    }
+    if ( m_hPlaypumpErrorCallbackEvent )
+    {
+        B_Event_Destroy(m_hPlaypumpErrorCallbackEvent);
+    }
+    if ( m_playpumpCcErrorEventId )
+    {
+        UnregisterEvent(m_playpumpCcErrorEventId);
+    }
+    if ( m_hPlaypumpCcErrorEvent )
+    {
+        B_Event_Destroy(m_hPlaypumpCcErrorEvent);
     }
     for ( i = 0; i < m_numAudioPorts; i++ )
     {
@@ -1849,6 +1992,12 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
             playpumpSettings.dataCallback.callback = BOMX_AudioDecoder_EventCallback;
             playpumpSettings.dataCallback.context = static_cast <void *> (m_hPlaypumpEvent);
             playpumpSettings.dataCallback.param = (int)BOMX_AudioDecoderEventType_ePlaypump;
+            playpumpSettings.errorCallback.callback = BOMX_AudioDecoder_EventCallback;
+            playpumpSettings.errorCallback.context = static_cast <void *> (m_hPlaypumpErrorCallbackEvent);
+            playpumpSettings.errorCallback.param = (int)BOMX_AudioDecoderEventType_ePlaypumpErrorCallback;
+            playpumpSettings.ccError.callback = BOMX_AudioDecoder_EventCallback;
+            playpumpSettings.ccError.context = static_cast <void *> (m_hPlaypumpCcErrorEvent);
+            playpumpSettings.ccError.param = (int)BOMX_AudioDecoderEventType_ePlaypumpCcError;
             errCode = NEXUS_Playpump_SetSettings(m_hPlaypump, &playpumpSettings);
             if ( errCode )
             {
@@ -1868,6 +2017,24 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( NULL == m_playpumpEventId )
             {
                 ALOGW("Unable to register playpump event");
+                ClosePidChannel();
+                NEXUS_Playpump_Close(m_hPlaypump);
+                m_hPlaypump = NULL;
+                return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+            m_playpumpErrorCallbackEventId = RegisterEvent(m_hPlaypumpErrorCallbackEvent, BOMX_AudioDecoder_PlaypumpErrorCallbackEvent, static_cast <void *> (this));
+            if ( NULL == m_playpumpErrorCallbackEventId )
+            {
+                ALOGW("Unable to register playpump error callback event");
+                ClosePidChannel();
+                NEXUS_Playpump_Close(m_hPlaypump);
+                m_hPlaypump = NULL;
+                return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+            m_playpumpCcErrorEventId = RegisterEvent(m_hPlaypumpCcErrorEvent, BOMX_AudioDecoder_PlaypumpCcErrorEvent, static_cast <void *> (this));
+            if ( NULL == m_playpumpCcErrorEventId )
+            {
+                ALOGW("Unable to register playpump continuity count  error  event");
                 ClosePidChannel();
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
@@ -3446,6 +3613,26 @@ void BOMX_AudioDecoder::OutputFrameEvent()
 {
     // Check for new frames
     PollDecodedFrames();
+}
+
+void BOMX_AudioDecoder::FifoOverflowEvent()
+{
+    ALOGE("%s: the audio input FIFO overflows", __FUNCTION__);
+}
+
+void BOMX_AudioDecoder::FifoUnderflowEvent()
+{
+    ALOGE("%s: the audio input FIFO underflows", __FUNCTION__);
+}
+
+void BOMX_AudioDecoder::PlaypumpErrorCallbackEvent()
+{
+    ALOGE("%s: playpump detects an error in processing of the stream data", __FUNCTION__);
+}
+
+void BOMX_AudioDecoder::PlaypumpCcErrorEvent()
+{
+    ALOGE("%s: cc error, continuity counter of next packet does not have the next counter value", __FUNCTION__);
 }
 
 static const struct {
