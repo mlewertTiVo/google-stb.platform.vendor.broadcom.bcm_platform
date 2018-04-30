@@ -85,9 +85,9 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define GRALLOC_MIN_BUFFER_ALIGNED  256
 
 #define NX_MMA_MGMT_MODE        "ro.nx.mma.mgmt_mode"
-#define NX_GR_LOG_MAP           "ro.gr.log.map"
-#define NX_GR_CONV_TIME         "ro.gr.conv.time"
-#define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
+#define NX_GR_LOG_MAP           "ro.nx.gr.log.map"
+#define NX_GR_CONV_TIME         "ro.nx.gr.conv.time"
+#define NX_GR_BOOM_CHK          "ro.nx.gr.boom.chk"
 #define NX_MMA_MGMT_MODE_DEF    "locked"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
@@ -686,7 +686,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       return -EINVAL;
    }
 
-   property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+   property_get("ro.nx.ashmem.devname", value, "nx_ashmem");
    strcpy(value2, "/dev/");
    strcat(value2, value);
 

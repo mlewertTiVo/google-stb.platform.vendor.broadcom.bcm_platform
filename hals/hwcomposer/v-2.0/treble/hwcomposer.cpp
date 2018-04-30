@@ -276,6 +276,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_forced_eotf:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
    break;
+   case hwc2_tweak_hdp0:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.hpd0", 0);
+   break;
    default:
    break;
    }
@@ -5334,6 +5337,10 @@ int hwc2_blit_yv12(
    y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
                           shared->container.stride, NEXUS_PixelFormat_eY8,
                           shared->container.block, 0);
+   if (y == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(y, &slock);
    NEXUS_Surface_Flush(y);
 
@@ -5344,19 +5351,31 @@ int hwc2_blit_yv12(
    cr = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCr8,
                            shared->container.block, cr_o);
+   if (cr == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cr, &slock);
    NEXUS_Surface_Flush(cr);
 
    cb = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCb8,
                            shared->container.block, cb_o);
+   if (cb == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cb, &slock);
    NEXUS_Surface_Flush(cb);
 
    yuv = hwc_to_nsc_surface(shared->container.width, shared->container.height,
-                            shared->container.width * shared->container.bpp,
+                            shared->container.stride /* y-width aligned */ * shared->container.bpp,
                             NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
                             0, 0);
+   if (yuv == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(yuv, &slock);
    NEXUS_Surface_Flush(yuv);
 
@@ -6547,14 +6566,16 @@ static void hwc2_setup_ext(
       }
       NEXUS_HdmiOutput_Close(hdmi);
    }
-   if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+
+   hwc2->ext->u.ext.rhpd = hwc2_enabled(hwc2_tweak_hdp0);
+   if (!hwc2->ext->u.ext.rhpd &&
+       hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
       ALOGV("[ext]: initial hotplug CONNECTED\n");
       HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
       f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
            (hwc2_display_t)(intptr_t)hwc2->ext,
            (int)HWC2_CONNECTION_CONNECTED);
    }
-   hwc2->ext->u.ext.rhpd = false;
 
    hwc2->ext->u.ext.ct.rtl.tl = sw_sync_timeline_create();
    if (hwc2->ext->u.ext.ct.rtl.tl < 0) {

@@ -64,7 +64,8 @@
 #include "nexus_platform.h"
 
 
-#define RPMB_DEFAULT_PATH "/dev/block/mmcblk0rpmb"
+#define RPMB_DEFAULT_PATH  "/dev/block/mmcblk0rpmb"
+#define RPMB_DEFAULT_PATH2 "/dev/block/mmcblk1rpmb"
 
 /* From kernel linux/mmc/mmc.h */
 #define MMC_READ_MULTIPLE_BLOCK  18   /* adtc [31:0] data addr   R1  */
@@ -85,7 +86,13 @@ void SSD_RPMB_Get_Default_Settings(ssd_rpmb_settings *settings)
 {
     if (settings != NULL) {
         BKNI_Memset((uint8_t *) settings, 0x00, sizeof(ssd_rpmb_settings));
-        settings->dev_path = RPMB_DEFAULT_PATH;
+        if (access(RPMB_DEFAULT_PATH, F_OK) != -1) {
+           settings->dev_path = RPMB_DEFAULT_PATH;
+        } else if (access(RPMB_DEFAULT_PATH2, F_OK) != -1) {
+           settings->dev_path = RPMB_DEFAULT_PATH2;
+        } else {
+           settings->dev_path = NULL;
+        }
     }
 
     return;
@@ -129,10 +136,15 @@ BERR_Code SSD_RPMB_Operation(ssd_rpmb_frame_t *frames, unsigned int blockCount)
         goto errorExit;
     }
 
-    dev_fd = open(g_settings.dev_path, O_RDWR);
-    if (dev_fd < 0) {
-        rc = BERR_OS_ERROR;
-        goto errorExit;
+    if (g_settings.dev_path) {
+       dev_fd = open(g_settings.dev_path, O_RDWR);
+       if (dev_fd < 0) {
+           rc = BERR_OS_ERROR;
+           goto errorExit;
+       }
+    } else {
+       rc = BERR_OS_ERROR;
+       goto errorExit;
     }
 
     rpmb_type = be16toh(frames->req_resp);

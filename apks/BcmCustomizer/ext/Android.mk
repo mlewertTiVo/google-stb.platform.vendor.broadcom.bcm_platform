@@ -13,8 +13,10 @@ LOCAL_SRC_FILES := $(call all-java-files-under, src)
 LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmCustomizerReceiverBase.java
 LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmSplashActivity.java
 
-LOCAL_PACKAGE_NAME := BcmCustomizer
+ifeq ($(call math_gt_or_eq,$(PRODUCT_SHIPPING_API_LEVEL),28),)
 LOCAL_PRIVATE_PLATFORM_APIS := true
+endif
+LOCAL_PACKAGE_NAME := BcmCustomizer
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CERTIFICATE := platform
 

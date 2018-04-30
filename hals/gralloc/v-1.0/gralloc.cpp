@@ -32,9 +32,9 @@
 #include <nexus_base_mmap.h>
 #include <nexus_platform.h>
 
-#define GR_ASHMEM_PROP "ro.nexus.ashmem.devname"
+#define GR_ASHMEM_PROP "ro.nx.ashmem.devname"
 #define GR_ASHMEM_VAL  "nx_ashmem"
-#define GR_LOG_MAP     "ro.gr.log.map"
+#define GR_LOG_MAP     "ro.nx.gr.log.map"
 
 void __attribute__ ((constructor)) gr1_load(void);
 void __attribute__ ((destructor)) gr1_unload(void);

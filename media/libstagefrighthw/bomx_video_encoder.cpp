@@ -60,11 +60,11 @@
 #define BOMX_INPUT_MSG(x)
 
 // Runtime Properties (note: set selinux to permissive mode)
-#define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
-#define B_PROPERTY_INPUT_DEBUG ("media.brcm.venc_input_debug")      // WARNING: Enabling this feature would save raw input to the
+#define B_PROPERTY_ITB_DESC_DEBUG ("ro.nx.media.venc_itb_desc_debug")
+#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.venc_input_debug")      // WARNING: Enabling this feature would save raw input to the
                                                                     //      userdata partition. Make sure there is enough space for
                                                                     //      storing the captures.
-#define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
+#define B_PROPERTY_MEMBLK_ALLOC ("ro.nx.ashmem.devname")
 #define B_PROPERTY_ENC_MAX_WIDTH ("ro.nx.enc.max.width")
 #define B_PROPERTY_ENC_MAX_HEIGHT ("ro.nx.enc.max.height")
 

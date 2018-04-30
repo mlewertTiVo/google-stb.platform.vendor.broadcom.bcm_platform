@@ -52,7 +52,7 @@
 
 #include <log/log.h>
 
-#define VFS_DEFAULT_PATH "/data/nexus/ssd/vfs.raw"
+#define VFS_DEFAULT_PATH "/data/vendor/nexus/ssd/vfs.raw"
 
 static ssd_vfs_settings g_settings;
 

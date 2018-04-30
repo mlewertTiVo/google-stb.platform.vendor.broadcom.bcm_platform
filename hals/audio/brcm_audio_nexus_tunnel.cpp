@@ -76,7 +76,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define NEXUS_OUT_SAMPLE_RATE_COUNT                     \
     (sizeof(nexus_out_sample_rates) / sizeof(uint32_t))
 
-#define BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG    "media.brcm.aout_t_pes_debug"
+#define BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG    "ro.nx.media.aout_t_pes_debug"
 
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 

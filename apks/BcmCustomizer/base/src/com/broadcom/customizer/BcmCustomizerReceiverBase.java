@@ -131,9 +131,8 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
                 }
             } else if (localKeyCode == KeyEvent.KEYCODE_BUTTON_15 &&
                     localAction == KeyEvent.ACTION_UP) {
-                /* trigger plm toggle demo function. */
+                /* TODO: trigger plm toggle demo function. */
                 if (DEBUG) Log.d(TAG, "Got PLM toggle key");
-                SystemProperties.set(SYSPROP_TOGGLE_PLM, "toggle");
             }
         } else if (ACTION_SPLASH_COMPLETED.equals(action)) {
             Log.i(TAG, "Splash completed");

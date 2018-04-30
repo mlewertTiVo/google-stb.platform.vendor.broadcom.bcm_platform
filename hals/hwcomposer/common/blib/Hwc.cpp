@@ -91,8 +91,6 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
     const int pid = ipc->getCallingPid();
     const int uid = ipc->getCallingUid();
 #ifndef __ANDROID_VNDK__
-    // permission check can't be done for vendors as vendors have no access to
-    // the PermissionController
     if ((uid != AID_SHELL) &&
             !PermissionCache::checkPermission(sDump, pid, uid)) {
 #else

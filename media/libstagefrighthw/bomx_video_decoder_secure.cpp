@@ -47,6 +47,7 @@
 #include "nexus_platform.h"
 #include "nexus_dma.h"
 #include "nexus_security_client.h"
+#include "nexus_security.h" /* secv2 equivalent api's */
 #include "bomx_secure_buff.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"

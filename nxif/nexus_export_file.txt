@@ -37,4 +37,5 @@ NEXUS_MemoryBlock_LockOffset
 NEXUS_MemoryBlock_UnlockOffset
 NEXUS_Platform_GetIdFromObject
 NEXUS_Platform_GetObjectFromId
-
+NEXUS_Platform_GetDefaultInterfaceName
+NEXUS_Platform_GetClientObjects

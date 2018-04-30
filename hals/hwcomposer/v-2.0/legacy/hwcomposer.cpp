@@ -5303,6 +5303,10 @@ int hwc2_blit_yv12(
    y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
                           shared->container.stride, NEXUS_PixelFormat_eY8,
                           shared->container.block, 0);
+   if (y == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(y, &slock);
    NEXUS_Surface_Flush(y);
 
@@ -5313,19 +5317,31 @@ int hwc2_blit_yv12(
    cr = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCr8,
                            shared->container.block, cr_o);
+   if (cr == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cr, &slock);
    NEXUS_Surface_Flush(cr);
 
    cb = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCb8,
                            shared->container.block, cb_o);
+   if (cb == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cb, &slock);
    NEXUS_Surface_Flush(cb);
 
    yuv = hwc_to_nsc_surface(shared->container.width, shared->container.height,
-                            shared->container.width * shared->container.bpp,
+                            shared->container.stride /* y-width aligned */ * shared->container.bpp,
                             NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
                             0, 0);
+   if (yuv == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(yuv, &slock);
    NEXUS_Surface_Flush(yuv);
 

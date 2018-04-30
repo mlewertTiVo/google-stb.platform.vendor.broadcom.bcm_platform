@@ -64,22 +64,22 @@
 #endif
 
 // Runtime Properties
-#define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
-#define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
-#define B_PROPERTY_OUTPUT_DEBUG ("media.brcm.vdec_output_debug")    // Available for non-secure decoding in standard/metadata mode.
+#define B_PROPERTY_PES_DEBUG ("ro.nx.media.vdec_pes_debug")
+#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.vdec_input_debug")
+#define B_PROPERTY_OUTPUT_DEBUG ("ro.nx.media.vdec_output_debug")    // Available for non-secure decoding in standard/metadata mode.
                                                                     // WARNING: Enabling this feature would save raw YUV decoded output
                                                                     //    to the userdata partition. Make sure there is enough space for
                                                                     //    storing the captures.
-#define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
-#define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
-#define B_PROPERTY_SHOW_DESTRIPE_DELAY ("media.brcm.vdec_show_destripe_delay")
-#define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("media.brcm.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
-#define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
+#define B_PROPERTY_ENABLE_METADATA ("ro.nx.media.vdec_enable_metadata")
+#define B_PROPERTY_TUNNELED_HFRVIDEO ("ro.nx.media.vdec_hfrvideo_tunnel")
+#define B_PROPERTY_SHOW_DESTRIPE_DELAY ("ro.nx.media.vdec_show_destripe_delay")
+#define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("ro.nx.media.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
+#define B_PROPERTY_MEMBLK_ALLOC ("ro.nx.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
 #define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
-#define B_PROPERTY_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
-#define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
+#define B_PROPERTY_HW_SYNC_FAKE ("ro.nx.media.hw_sync.fake")
+#define B_PROPERTY_EARLYDROP_THRESHOLD ("ro.nx.media.stat.earlydrop_thres")
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 #define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
@@ -1367,6 +1367,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
+    m_pEndOfChunkBuffer(NULL),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
@@ -1924,6 +1925,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     // Allocate and fill end-of-chunk buffer for vp9
     errCode = NEXUS_Memory_Allocate(B_BPP_PACKET_LEN, &memorySettings, &m_pEndOfChunkBuffer);
+    if ( errCode )
+    {
+        ALOGW("Unable to allocate end-of-chunk buffer");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
     pBuffer = (char *)m_pEndOfChunkBuffer;
     m_pPes->FormBppPacket(pBuffer, 0x85);
     NEXUS_FlushCache(pBuffer, B_BPP_PACKET_LEN);
@@ -2295,6 +2302,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
             CleanupPortBuffers(i);
             delete m_pVideoPorts[i];
         }
+    }
+    if ( m_pEndOfChunkBuffer )
+    {
+        NEXUS_Memory_Free(m_pEndOfChunkBuffer);
     }
     if ( m_pEosBuffer )
     {
@@ -3088,18 +3099,24 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(err);
         }
         // Ensure slice height and stride match frame width/height and update buffer size
-        portDef.format.video.nFrameWidth = m_outputWidth;
-        portDef.format.video.nFrameHeight = m_outputHeight;
-        portDef.format.video.nSliceHeight = m_outputHeight;
-        portDef.format.video.nStride = ComputeStride(portDef.format.video.eColorFormat, m_outputWidth);
-        portDef.nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, portDef.format.video.nStride, portDef.format.video.nSliceHeight);
-        err = m_pVideoPorts[1]->SetDefinition(&portDef);
-        if ( err )
+        OMX_S32 nStride = ComputeStride(portDef.format.video.eColorFormat, m_outputWidth);
+        size_t nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, nStride, m_outputHeight);
+        if ( portDef.format.video.nFrameWidth != m_outputWidth || portDef.format.video.nFrameHeight != m_outputHeight ||
+             portDef.format.video.nSliceHeight != m_outputHeight || portDef.format.video.nStride != nStride || portDef.nBufferSize != nBufferSize )
         {
-            return BOMX_ERR_TRACE(err);
+            portDef.format.video.nFrameWidth = m_outputWidth;
+            portDef.format.video.nFrameHeight = m_outputHeight;
+            portDef.format.video.nSliceHeight = m_outputHeight;
+            portDef.format.video.nStride = nStride;
+            portDef.nBufferSize = nBufferSize;
+            err = m_pVideoPorts[1]->SetDefinition(&portDef);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
+            m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eUnknown);
+            PortFormatChanged(m_pVideoPorts[1]);
         }
-        m_pVideoPorts[1]->SetBufferHwTexUsed(BOMX_PortBufferHwTexUsage_eUnknown);
-        PortFormatChanged(m_pVideoPorts[1]);
         return OMX_ErrorNone;
     }
     case OMX_IndexParamUseAndroidNativeBuffer:
@@ -3259,6 +3276,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_Playpump_Close(m_hPlaypump);
             UnregisterEvent(m_playpumpEventId);
             m_playpumpEventId = NULL;
+            UnregisterEvent(m_playpumpErrorCallbackEventId);
+            m_playpumpErrorCallbackEventId = NULL;
+            UnregisterEvent(m_playpumpCcErrorEventId);
+            m_playpumpCcErrorEventId = NULL;
             m_hPlaypump = NULL;
             CancelTimerId(m_playpumpTimerId);
             BOMX_VIDEO_STATS_PRINT_BASIC;

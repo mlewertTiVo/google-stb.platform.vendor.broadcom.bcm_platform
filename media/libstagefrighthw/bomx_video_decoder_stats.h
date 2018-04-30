@@ -59,7 +59,7 @@
 #define BOMX_VIDEO_STATS_PRINT_BASIC m_stats.printBasicStats()
 #define BOMX_VIDEO_STATS_PRINT_DETAILED m_stats.printDetailedStats()
 
-#define BOMX_VDEC_STATS_PROPERTY "media.brcm.vdec_stats.level"
+#define BOMX_VDEC_STATS_PROPERTY "ro.nx.media.vdec_stats.level"
 class BOMX_VD_Stats {
 public:
     BOMX_VD_Stats(): mStatsLevel(STATS_DISABLED) {
