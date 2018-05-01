@@ -110,10 +110,20 @@ protected:
                            int32_t priority = PRIORITY_DEFAULT,
                            size_t stack = 0);
 
-      virtual void stop() {mState = STATE_STOPPED;}
-      bool isRunning() {return (mState == STATE_RUNNING);}
+      virtual void stop() {
+         Mutex::Autolock autoLock(mSmLck);
+         mState = STATE_STOPPED;
+         Thread::requestExit();
+         mSmCond.signal();
+      }
+      bool isRunning() {
+         Mutex::Autolock autoLock(mSmLck);
+         return (mState == STATE_RUNNING);
+      }
       private:
          State mState;
+         Mutex mSmLck;
+         Condition mSmCond;
          StdbyMonCb mCb;
          void *mCtx;
          unsigned mStdbyId;
