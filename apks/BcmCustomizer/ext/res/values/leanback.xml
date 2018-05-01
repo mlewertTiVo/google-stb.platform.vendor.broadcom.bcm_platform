@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-
-    <!-- disable view outline rounded corner for low power chipset -->
-    <bool name="leanback_outline_clipping_disabled">true</bool>
-
-</resources>
