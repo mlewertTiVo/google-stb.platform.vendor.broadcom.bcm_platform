@@ -3273,6 +3273,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_Playpump_Close(m_hPlaypump);
             UnregisterEvent(m_playpumpEventId);
             m_playpumpEventId = NULL;
+            UnregisterEvent(m_playpumpErrorCallbackEventId);
+            m_playpumpErrorCallbackEventId = NULL;
+            UnregisterEvent(m_playpumpCcErrorEventId);
+            m_playpumpCcErrorEventId = NULL;
             m_hPlaypump = NULL;
             CancelTimerId(m_playpumpTimerId);
             BOMX_VIDEO_STATS_PRINT_BASIC;

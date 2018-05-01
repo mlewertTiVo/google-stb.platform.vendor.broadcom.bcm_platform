@@ -64,6 +64,8 @@
 #define NX_HD_OUT_COLOR_DEPTH_10B    "ro.nx.colordepth10b.force"
 #define PROPERTY_PM_WOL_OPTS         "ro.pm.wol.opts"
 #define DEFAULT_PROPERTY_PM_WOL_OPTS "s"
+#define PROPERTY_PM_WOL_MDNS_EN          "ro.pm.wol.mdns.en"
+#define DEFAULT_PROPERTY_PM_WOL_MDNS_EN   1
 
 Return<NexusStatus> NexusImpl::rmlmk(uint64_t cid) {
    Mutex::Autolock _l(mLock);
@@ -127,6 +129,11 @@ static status_t parse_sopass(String8& src, uint8_t *dest)
     return status;
 }
 
+static bool power_get_property_wol_mdns_en()
+{
+    return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
+}
+
 Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    Mutex::Autolock _l(mLock);
    int status;
@@ -145,18 +152,20 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
       close(fd);
       return NexusStatus::UNKNOWN;
    } else {
-      struct ethtool_rxnfc rxnfc;
-      memset(&rxnfc, 0, sizeof(rxnfc));
-      rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
-      rxnfc.fs.flow_type = IPV4_USER_FLOW;
-      rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
-      rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
-      rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
-      ifr.ifr_data = (void *)&rxnfc;
-      status = ioctl(fd, SIOCETHTOOL, &ifr);
-      if (status != NO_ERROR) {
-         close(fd);
-         return NexusStatus::UNKNOWN;
+      if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
+         struct ethtool_rxnfc rxnfc;
+         memset(&rxnfc, 0, sizeof(rxnfc));
+         rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
+         rxnfc.fs.flow_type = IPV4_USER_FLOW;
+         rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
+         rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
+         rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
+         ifr.ifr_data = (void *)&rxnfc;
+         status = ioctl(fd, SIOCETHTOOL, &ifr);
+         if (status != NO_ERROR) {
+            close(fd);
+            return NexusStatus::UNKNOWN;
+         }
       }
    }
    // success, now setup options if any.
