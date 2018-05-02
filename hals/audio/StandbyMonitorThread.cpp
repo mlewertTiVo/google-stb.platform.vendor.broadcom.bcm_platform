@@ -114,6 +114,7 @@ void StandbyMonitorThread::UnregisterCallback(int id)
     if (mNumCallbacks == 0) {
         /* requestExitAndWait() creates a deadlock in the Thread library */
         requestExit();
+        mCond.signal();
     }
 }
 
@@ -149,7 +150,10 @@ bool StandbyMonitorThread::threadLoop()
             }
             mMutex.unlock();
         }
-        BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
+        {
+           android::Mutex::Autolock _l(mMutex);
+           mCond.waitRelative(mMutex, NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS * 1000000ll);
+        }
     }
     NxClient_UnregisterAcknowledgeStandby(mStandbyId);
     ALOGD("%s: UnregisterAcknowledgeStandby(%d)", __FUNCTION__, mStandbyId);
