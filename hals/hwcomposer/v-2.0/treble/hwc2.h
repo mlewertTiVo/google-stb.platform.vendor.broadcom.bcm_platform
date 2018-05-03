@@ -83,6 +83,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 
 #define HWC2_FB_MAX_W   1920
 #define HWC2_FB_MAX_H   1080
+#define HWC2_FB_MIN_W   1280
+#define HWC2_FB_MIN_H   720
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
@@ -330,8 +332,10 @@ struct hwc2_dsp_t {
    uint64_t                tlm;
    enum hwc2_record_dump_e dmp;
 
-   uint32_t                gfbw;
-   uint32_t                gfbh;
+   uint32_t                gfbwxl;
+   uint32_t                gfbhxl;
+   uint32_t                gfbwsm;
+   uint32_t                gfbhsm;
 
    uint64_t                pres;
    uint64_t                post;
