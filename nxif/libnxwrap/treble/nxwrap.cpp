@@ -256,10 +256,11 @@ NxWrap::StdbyMon::~StdbyMon() {
 status_t NxWrap::StdbyMon::run(const char* name, int32_t priority, size_t stack)
 {
    status_t status;
+   Mutex::Autolock autoLock(mSmLck);
    mState = StdbyMon::STATE_RUNNING;
    status = Thread::run(name, priority, stack);
    if (status != OK) {
-       mState = StdbyMon::STATE_STOPPED;
+      mState = StdbyMon::STATE_STOPPED;
    }
    return status;
 }
@@ -278,7 +279,9 @@ bool NxWrap::StdbyMon::threadLoop()
             NxClient_AcknowledgeStandby(mStdbyId);
          }
       }
-      usleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS * 1000);
+      Mutex::Autolock autoLock(mSmLck);
+      mSmCond.waitRelative(mSmLck,
+         NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS * 1000000ll);
    }
    return false;
 }
