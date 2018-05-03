@@ -953,6 +953,7 @@ static void BOMX_OmxBinderNotify(void *cb_data, int msg, struct hwc_notification
         pComponent->BinderNotifyDisplay(ntfy);
         break;
     }
+#if !defined(BCM_FULL_TREBLE)
     case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
     {
        NEXUS_Rect position, clip;
@@ -967,10 +968,65 @@ static void BOMX_OmxBinderNotify(void *cb_data, int msg, struct hwc_notification
        pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
        break;
     }
+#endif
     default:
         break;
     }
 }
+
+#if defined(BCM_FULL_TREBLE)
+Mutex idseLock;
+#define ATTEMPT_PAUSE_USEC 500000
+#define MAX_ATTEMPT_COUNT  4
+static const sp<IDspSvcExt> BOMX_idse(void) {
+   static sp<IDspSvcExt> idse = NULL;
+   Mutex::Autolock _l(idseLock);
+   int c = 0;
+
+   if (idse != NULL) {
+      return idse;
+   }
+
+   do {
+      idse = IDspSvcExt::getService();
+      if (idse != NULL) {
+         return idse;
+      }
+      usleep(ATTEMPT_PAUSE_USEC);
+      c++;
+   }
+   while(c < MAX_ATTEMPT_COUNT);
+   // can't get interface.
+   return NULL;
+}
+
+Return<void> SdbGeomCb::onGeom(int32_t i, const DspSvcExtGeom& geom) {
+   ALOGV( "SdbGeomCb on index %d", i);
+   if (geom_cb) {
+      geom_cb(geom_ctx, geom.geom_x, geom.geom_y, geom.geom_w, geom.geom_h);
+   }
+   return Void();
+}
+
+static void BOMX_SdbGeomCb(void *context, unsigned int x, unsigned int y,
+                           unsigned int width, unsigned int height)
+{
+    NEXUS_Rect position, clip;
+    BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)context;
+
+    ALOG_ASSERT(NULL != pComponent);
+
+    position.x = x;
+    position.y = y;
+    position.width = width;
+    position.height = height;
+    clip.x = 0;
+    clip.y = 0;
+    clip.width = 0;
+    clip.height = 0;
+    pComponent->SetVideoGeometry(&position, &clip, -1, 0, 0, 0, true);
+}
+#endif
 
 static void *BOMX_DisplayThread(void *pParam)
 {
@@ -1393,6 +1449,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_indexSurface(-1),
     m_virtual(false),
     m_forcePortResetOnHwTex(true)
+#if defined(BCM_FULL_TREBLE)
+    , m_sdbGeomCb(NULL)
+#endif
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -2047,10 +2106,26 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, this);
+
+#if defined(BCM_FULL_TREBLE)
+    m_sdbGeomCb = new SdbGeomCb(&BOMX_SdbGeomCb, this);
+    if ( m_sdbGeomCb == NULL )
+    {
+        ALOGW("Unable to connect to SdbGeomCb");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+#endif
+
     if (m_tunnelMode)
     {
        int sidebandId;
+#if defined(BCM_FULL_TREBLE)
+       sidebandId = BOMX_idse()->regSdbCb(0, NULL);         // safeguard.
+       sidebandId = BOMX_idse()->regSdbCb(0, m_sdbGeomCb);  // registration.
+#else
        m_omxHwcBinder->getsideband(0, sidebandId);
+#endif
        m_pTunnelNativeHandle = native_handle_create(0, 2);
        if (!m_pTunnelNativeHandle)
        {
@@ -2058,7 +2133,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
           this->Invalidate(OMX_ErrorUndefined);
           return;
        }
-       m_pTunnelNativeHandle->data[0] = 2;
+       m_pTunnelNativeHandle->data[0] = 1;
        m_pTunnelNativeHandle->data[1] = sidebandId;
 
        m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
@@ -2121,10 +2196,17 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         }
         if (m_tunnelMode)
         {
+#if defined(BCM_FULL_TREBLE)
+           BOMX_idse()->regSdbCb(0, NULL);
+#else
            m_omxHwcBinder->freesideband(0);
+#endif
         }
         delete m_omxHwcBinder;
         m_omxHwcBinder = NULL;
+#if defined(BCM_FULL_TREBLE)
+        m_sdbGeomCb = NULL;
+#endif
     }
 
     if (m_virtual)
