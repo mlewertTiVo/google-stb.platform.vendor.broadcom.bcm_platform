@@ -21,27 +21,35 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(ANDROID)/frameworks/native/libs/arect/include \
                     $(ANDROID)/frameworks/native/libs/nativewindow/include \
                     $(ANDROID)/frameworks/native/libs/nativebase/include \
+                    $(ANDROID)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libbcmsideband/include \
                     $(ANDROID)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/apps/utils \
                     $(ANDROID)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils \
                     $(ANDROID)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/tshdrbuilder
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus libnxclient libbinder
+LOCAL_SHARED_LIBRARIES :=  \
+    libcutils \
+    liblog \
+    libutils \
+    libnexus \
+    libnxclient \
+    libbinder \
+    libandroid \
+    libbcmsideband
 
 LOCAL_SRC_FILES := \
     bcmtuner.cpp \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_decode.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/binput.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_source.c \
     $(PREFIX_RELATIVE_PATH)refsw/nexus/utils/namevalue.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/bgui.c \
+    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_decode.c \
+    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_source.c \
     $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/tspsimgr3.c \
 
 LOCAL_MODULE := libbcmtuner
 LOCAL_MODULE_TAGS := optional
-#LOCAL_PROPRIETARY_MODULE := true
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_SHARED_LIBRARY)

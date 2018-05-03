@@ -16,6 +16,8 @@
 package com.broadcom.tvinput;
 
 import android.util.Log;
+import android.view.Surface;
+
 
 /* Singleton class */
 public class BcmTunerJniBridge {
@@ -25,15 +27,18 @@ public class BcmTunerJniBridge {
         System.loadLibrary("bcmtuner");
     }
 
-    //List of all native methods avaialbe in bcmtuner. java->jni
+    //List of all native methods available in bcmtuner. java->jni
     public native int getMsgFromJni();
     public native int tune(int tsid, int sid);
     public native int stop();
-    public native int initGUI();
-    public native int uninitGUI();
-    public native int initializeTuner();
+    public native int closeSession();
+    public native int servicesScan();
+    public native int servicesAvailable();
     public native int uninitializeTuner();
     public native String getScanResults();
+
+    public native int releaseSdb();
+    public native int initialiseSdb(Surface s);
 
     private static BcmTunerJniBridge instance;
 
