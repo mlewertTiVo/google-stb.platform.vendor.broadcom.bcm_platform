@@ -264,6 +264,7 @@ enum hwc2_cbs_e {
 struct hwc2_lyr_vid_t {
    hwc_rect_t        fr;
    hwc_rect_t        crp;
+   uint32_t          z;
 };
 
 /* external (ie hdmi) display specific information. */
