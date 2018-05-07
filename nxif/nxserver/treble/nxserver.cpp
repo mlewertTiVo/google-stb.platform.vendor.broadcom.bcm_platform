@@ -143,8 +143,8 @@
 #define NX_HDCP_MODE                   "ro.nx.hdcp.mode"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
-#define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
-#define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
+#define NX_HDCP1X_KEY                  "ro.nx.nxserver.hdcp1x_keys"
+#define NX_HDCP2X_KEY                  "ro.nx.nxserver.hdcp2x_keys"
 
 #define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
@@ -500,6 +500,12 @@ static void *proactive_runner_task(void *argv)
        if (strlen(value)) {
           gfx_heap_shrink_threshold = calc_heap_size(value);
        }
+    }
+    /* reset heap grow mechanism if using dtu. */
+    if (property_get_bool(NX_CAPABLE_DTU, 0) &&
+        property_get_bool("ro.nx.dtu.user.set", true)) {
+       gfx_heap_grow_size = 0;
+       gfx_heap_shrink_threshold = 0;
     }
     active_gc  = property_get_int32(NX_ACT_GC,  1);
     active_gs  = property_get_int32(NX_ACT_GS,  1);
@@ -1108,7 +1114,12 @@ static nxserver_t init_nxserver(void)
     }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
-    settings.display.compositePreferences.enabled = false;
+    if (cvbs) {
+       settings.display.compositePreferences.enabled = true;
+       settings.display.defaultSdFormat = NEXUS_VideoFormat_eNtsc;
+    } else {
+       settings.display.compositePreferences.enabled = false;
+    }
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
     if (cvbs) {
@@ -1131,7 +1142,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
+    if (property_get(NX_HEAP_HIGH_MEM, value, "")) {
        /* high-mem heap is used for 40 bits addressing. */
        int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
        if (strlen(value) && (index != -1)) {
@@ -1188,7 +1199,9 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_GROW, value, NULL)) {
+    if ((!cmdline_settings.dtu ||
+          (cmdline_settings.dtu && !property_get_bool("ro.nx.dtu.user.set", true)))
+        && property_get(NX_HEAP_GROW, value, NULL)) {
        if (strlen(value)) {
           /* -growHeapBlockSize XXy */
           settings.growHeapBlockSize = calc_heap_size(value);
@@ -1284,7 +1297,45 @@ static nxserver_t init_nxserver(void)
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
        return NULL;
     }
-    if (settings.growHeapBlockSize) {
+
+    if (property_get_bool(NX_CAPABLE_DTU, 0)) {
+       char addr[PROPERTY_VALUE_MAX];
+       char size[PROPERTY_VALUE_MAX];
+       if (property_get_bool("ro.nx.dtu.pbuf0.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.pbuf0.addr", addr, "0x80000000");
+          property_get("ro.nx.dtu.pbuf0.size", size, "0x16000000"); /* 352MB */
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling pbuf0 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].size   = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool("ro.nx.dtu.spbuf0.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.spbuf0.addr", addr, "0x96000000");
+          property_get("ro.nx.dtu.spbuf0.size", size, "0x16000000"); /* 352MB */
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling spbuf0 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+    }
+
+    if (settings.growHeapBlockSize || !property_get_bool("ro.nx.dtu.user.set", true)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        g_app.dcma_index = settings.heaps.dynamicHeap;
        platformSettings.heap[g_app.dcma_index].heapType |= NX_ASHMEM_NEXUS_DCMA_MARKER;
@@ -1304,6 +1355,36 @@ static nxserver_t init_nxserver(void)
     if (rc) {
        ALOGE("FATAL: failed NEXUS_Platform_MemConfigInit");
        return NULL;
+    }
+
+    /* insert a 'user' dtu heap in the dtu space. */
+    if (property_get_bool(NX_CAPABLE_DTU, 0)) {
+       NEXUS_PlatformCreateHeapSettings chs;
+       NEXUS_HeapHandle hh;
+       char addr[PROPERTY_VALUE_MAX];
+       char size[PROPERTY_VALUE_MAX];
+       if (property_get_bool("ro.nx.dtu.user.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.user.addr", addr, "0xAC000000");
+          property_get("ro.nx.dtu.user.size", size, "0x14000000"); /* 320MB */
+          if (strlen(addr) && strlen(size)) {
+             NEXUS_Platform_GetDefaultCreateHeapSettings(&chs);
+             chs.offset = strtoull(addr, NULL, 16);
+             chs.size   = strtoull(size, NULL, 16);
+             chs.memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_HIGH_MEMORY;
+             chs.heapType = NEXUS_HEAP_TYPE_DTU;
+             chs.alignment = 0;
+             chs.locked = false;
+             chs.userAddress = (unsigned int)NULL;
+             hh = NEXUS_Platform_CreateHeap(&chs);
+             if (hh == NULL) {
+                ALOGE("failed to create user-dtu heap.");
+             } else {
+                ALOGI("user-dtu: heap %p (@%s, size %s)", hh, addr, size);
+             }
+          }
+       }
     }
 
     BKNI_CreateMutex(&g_app.lock);
@@ -1563,7 +1644,7 @@ int main(void)
        ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
     }
 
-    property_get("ro.nexus.ashmem.devname", device, NULL);
+    property_get("ro.nx.ashmem.devname", device, NULL);
     if (strlen(device)) {
        strcpy(name, "/dev/");
        strcat(name, device);

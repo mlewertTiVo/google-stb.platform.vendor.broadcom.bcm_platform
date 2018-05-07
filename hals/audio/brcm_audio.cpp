@@ -46,7 +46,7 @@
 #define BRCM_SUPPORTED_DOLBY_MS 12
 
 // Runtime properties
-#define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("media.brcm.aout_debug")
+#define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("ro.nx.media.aout_debug")
 
 struct output_hdr {
     char tag[4];

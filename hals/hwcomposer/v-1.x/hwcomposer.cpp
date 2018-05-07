@@ -141,7 +141,7 @@ using namespace android;
 #define HWC_GLES_MODE_ALWAYS         "always"
 #define HWC_GLES_MODE_NEVER          "never"
 #define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
-#define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
+#define HWC_GLES_MODE_PROP           "ro.nx.hwc.gles.mode"
 #define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
 #define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
 #define HWC_CAPABLE_TOGGLE_MODE      "ro.nx.capable.tm"
@@ -160,14 +160,14 @@ using namespace android;
 #define HWC_BLANK_VIDEO              "dyn.nx.hwc.vid.blank"
 #define HWC_UPSIDE_DOWN              "dyn.nx.hwc.comp.updwn"
 
-#define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
+#define HWC_GLES_VIRTUAL_PROP        "ro.nx.hwc.gles.virtual"
 #define HWC_WITH_V3D_FENCE_PROP      "ro.v3d.fence.expose"
-#define HWC_WITH_DSP_FENCE_PROP      "ro.hwc.fence.retire"
-#define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
-#define HWC_G2D_SIM_OPS_PROP         "ro.hwc.g2d.sim_ops"
-#define HWC_HACK_SYNC_REFRESH        "ro.hwc.hack.sync.refresh"
+#define HWC_WITH_DSP_FENCE_PROP      "ro.nx.hwc.fence.retire"
+#define HWC_TRACK_COMP_TIME          "ro.nx.hwc.track.comptime"
+#define HWC_G2D_SIM_OPS_PROP         "ro.nx.hwc.g2d.sim_ops"
+#define HWC_HACK_SYNC_REFRESH        "ro.nx.hwc.hack.sync.refresh"
 
-#define HWC_EXT_REFCNT_DEV           "ro.nexus.ashmem.devname"
+#define HWC_EXT_REFCNT_DEV           "ro.nx.ashmem.devname"
 
 #define HWC_CHECKPOINT_TIMEOUT       (5000)
 

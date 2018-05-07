@@ -42,7 +42,9 @@ include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
+ifneq ($(BCM_DIST_FORCED_BINDIST), y)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
+endif
 
 # additional tools, not needed for default integration.
 ifneq ($(TARGET_BUILD_PDK),true)

@@ -12,7 +12,6 @@ LOCAL_STATIC_JAVA_LIBRARIES := bcm.hardware.dspsvcext-V1.0-java-static
 
 LOCAL_PRIVATE_PLATFORM_APIS := true
 LOCAL_PACKAGE_NAME := BcmAdjustScreenOffset
-LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 
 include $(BUILD_PACKAGE)

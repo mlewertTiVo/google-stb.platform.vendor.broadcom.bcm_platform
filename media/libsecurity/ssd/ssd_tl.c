@@ -36,6 +36,7 @@
  *  ANY LIMITED REMEDY.
 
  ******************************************************************************/
+#include <log/log.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -54,10 +55,10 @@
 #include "nxclient.h"
 #include "nexus_memory.h"
 
-#include <log/log.h>
-
 /* infinite timeout waiting for sage to asks us to do something. */
 #define SSD_WAIT_TIMEOUT (-1)
+
+#define SSD_DEV_OPS_FAIL_THRESHOLD 10
 
 typedef struct ssd_sage_operation_s {
     bool rpmb_partition;
@@ -70,6 +71,7 @@ static ssdd_Settings settings;
 static bool hasInit = false;
 static bool TA_Terminate_Event = false;
 static bool isRunning = true;
+static int failedDevOpsCnt = 0;
 
 static BKNI_EventHandle indication_event = NULL;/* used for indication event */
 static void  SSDTl_priv_indication_cb(SRAI_ModuleHandle module, uint32_t arg, uint32_t id, uint32_t value);
@@ -152,6 +154,11 @@ static BERR_Code SSDTl_Perform_Full_Operation_Cycle(int *SSD_TA_rc)
         ALOGD("SAGE operation received\n");
 
         rc = SSDTl_Device_Operation();
+        if (rc != BERR_SUCCESS) {
+           failedDevOpsCnt++;
+        } else {
+           failedDevOpsCnt = 0;
+        }
 
         rc = SSDTl_Operation(SSD_CommandId_eOperationResult, rc, SSD_TA_rc);
         if ((rc != BERR_SUCCESS) || (*SSD_TA_rc != BERR_SUCCESS)) {
@@ -411,9 +418,16 @@ void SSDTl_Wait_For_Operations(void)
     BERR_Code rc = BERR_SUCCESS;
     BERR_Code SSD_TA_rc = BERR_SUCCESS;
     bool checkAgain = false;
+    bool exitOnDeviceOpsFailure = false;
     ALOGD("Start waiting for operations\n");
 
     while (isRunning) {
+
+        if (exitOnDeviceOpsFailure) {
+           ALOGE("too many consecutive device operations failure, exiting...");
+           SSDTl_Uninit();
+           goto errorExit;
+        }
 
         if (TA_Terminate_Event) {
             SSDTl_Uninit();
@@ -453,10 +467,14 @@ void SSDTl_Wait_For_Operations(void)
                     ALOGE("Operation cycle failed\n");
                 }
 
-                /* Set flag to check again if we have an operation ready, in
-                 * case we missed an event while processing the previous
-                 * operation */
-                checkAgain = true;
+                if (failedDevOpsCnt > SSD_DEV_OPS_FAIL_THRESHOLD) {
+                   exitOnDeviceOpsFailure = true;
+                } else {
+                   /* Set flag to check again if we have an operation ready, in
+                    * case we missed an event while processing the previous
+                    * operation */
+                   checkAgain = true;
+                }
             }
         } else {
             ALOGE("BKNI_WaitForEvent failed (rc=%d)\n", rc);

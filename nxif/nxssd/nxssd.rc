@@ -1,5 +1,5 @@
 service nxssd /vendor/bin/nxssd
    class core
+   oneshot
    user root
    group system
-

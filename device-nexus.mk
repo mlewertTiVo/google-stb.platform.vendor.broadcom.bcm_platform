@@ -124,28 +124,6 @@ endif
 endif
 include $(BUILD_PREBUILT)
 
-include $(CLEAR_VARS)
-LOCAL_MODULE := libnxclient_static
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .a
-LOCAL_MODULE_CLASS := STATIC_LIBRARIES
-LOCAL_STRIP_MODULE := false
-LOCAL_PROPRIETARY_MODULE := true
-ifeq ($(TARGET_2ND_ARCH),arm)
-LOCAL_MULTILIB := both
-LOCAL_MODULE_TARGET_ARCH := arm arm64
-LOCAL_SRC_FILES_arm64 := ${NEXUS_NXC_BIN_DIR_1ST_ARCH}/libnxclient_static.a
-LOCAL_SRC_FILES_arm   := ${NEXUS_NXC_BIN_DIR_2ND_ARCH}/libnxclient_static.a
-else
-LOCAL_MODULE_TARGET_ARCH := arm
-ifeq ($(BCM_DIST_KNLIMG_BINS),y)
-LOCAL_SRC_FILES_arm   := ${BINDIST_NXC_BIN_DIR_1ST_ARCH}/libnxclient_static.a
-else
-LOCAL_SRC_FILES_arm   := ${NEXUS_NXC_BIN_DIR_1ST_ARCH}/libnxclient_static.a
-endif
-endif
-include $(BUILD_PREBUILT)
-
 # core nexus integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libb_os/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir/Android.mk

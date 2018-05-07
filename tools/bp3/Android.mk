@@ -64,14 +64,15 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
-LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign
+LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign -DCATCH_OUTPUT
 LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
 
 SRCS = $(APP_TOP)/utils/sage_app_utils.c
 SRCS += $(APP_TOP)/app/bp3_platform_host.c
 SRCS += $(APP_TOP)/app/bp3_module_host.c
 SRCS += $(APP_TOP)/app/main.c
-SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3_host.c $(REFSW_TOP)/BSEAV/tools/bp3/quick_ssdp.c $(REFSW_TOP)/BSEAV/tools/bp3/civetweb.c
+SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3_host.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c 
+SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/quick_ssdp.c $(REFSW_TOP)/BSEAV/tools/bp3/civetweb.c cJSON.c
 
 LOCAL_SRC_FILES := $(SRCS)
 
@@ -108,10 +109,10 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
-LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign
+LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign -DCATCH_OUTPUT
 LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
 
-SRCS = $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c cJSON.c
+SRCS = $(REFSW_TOP)/BSEAV/tools/bp3/bp3_main.c
 
 LOCAL_SRC_FILES := $(SRCS)
 

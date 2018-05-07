@@ -80,6 +80,9 @@ ifeq ($(NEXUS_SECURITY_SUPPORT),n)
 LOCAL_SRC_FILES += nxserver_stub_security.cpp
 else
 LOCAL_SRC_FILES += nxserver_with_security.cpp
+ifeq ($(NEXUS_SECURITY_API_VERSION),2)
+LOCAL_CFLAGS += -DSECV2
+endif
 endif
 
 ifeq ($(LOCAL_NVI_LAYOUT),y)

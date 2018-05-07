@@ -147,8 +147,8 @@
 #define NX_HDCP_MODE                   "ro.nx.hdcp.mode"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
-#define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
-#define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
+#define NX_HDCP1X_KEY                  "ro.nx.nxserver.hdcp1x_keys"
+#define NX_HDCP2X_KEY                  "ro.nx.nxserver.hdcp2x_keys"
 
 #define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
@@ -1115,7 +1115,12 @@ static nxserver_t init_nxserver(void)
     }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
-    settings.display.compositePreferences.enabled = false;
+    if (cvbs) {
+       settings.display.compositePreferences.enabled = true;
+       settings.display.defaultSdFormat = NEXUS_VideoFormat_eNtsc;
+    } else {
+       settings.display.compositePreferences.enabled = false;
+    }
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
     if (cvbs) {
@@ -1548,7 +1553,7 @@ int main(void)
        ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
     }
 
-    property_get("ro.nexus.ashmem.devname", device, NULL);
+    property_get("ro.nx.ashmem.devname", device, NULL);
     if (strlen(device)) {
        strcpy(name, "/dev/");
        strcat(name, device);

@@ -59,18 +59,18 @@
 #define BOMX_INPUT_MSG(x)
 
 // Runtime Properties
-#define B_PROPERTY_PES_DEBUG ("media.brcm.adec_pes_debug")
-#define B_PROPERTY_INPUT_DEBUG ("media.brcm.adec_input_debug")
-#define B_PROPERTY_OUTPUT_DEBUG ("media.brcm.adec_output_debug")
-#define B_PROPERTY_MP3_DELAY ("media.brcm.adec_mp3_delay")
-#define B_PROPERTY_AAC_DELAY ("media.brcm.adec_aac_delay")
-#define B_PROPERTY_ADEC_ENABLED ("media.brcm.adec_enabled")
-#define B_PROPERTY_ADEC_DRC_MODE ("media.brcm.adec_drc_mode")           // Can be set to "rf" or "line"
-#define B_PROPERTY_ADEC_DRC_MODE_DD ("media.brcm.adec_drc_mode_dd")     // Can be set to "rf", "rf_23", "rf_24", or "line"
-#define B_PROPERTY_ADEC_DRC_REF_LEVEL ("media.brcm.adec_drc_ref_level") // Specified in -.25 dB units - e.g. 64 = -16dB.
-#define B_PROPERTY_ADEC_DRC_CUT ("media.brcm.adec_drc_cut")             // 0..127 where 127=maximum compression
-#define B_PROPERTY_ADEC_DRC_BOOST ("media.brcm.adec_drc_boost")         // 0..127 where 127=maximum compression
-#define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("media.brcm.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
+#define B_PROPERTY_PES_DEBUG ("ro.nx.media.adec_pes_debug")
+#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.adec_input_debug")
+#define B_PROPERTY_OUTPUT_DEBUG ("ro.nx.media.adec_output_debug")
+#define B_PROPERTY_MP3_DELAY ("ro.nx.media.adec_mp3_delay")
+#define B_PROPERTY_AAC_DELAY ("ro.nx.media.adec_aac_delay")
+#define B_PROPERTY_ADEC_ENABLED ("ro.nx.media.adec_enabled")
+#define B_PROPERTY_ADEC_DRC_MODE ("ro.nx.media.adec_drc_mode")           // Can be set to "rf" or "line"
+#define B_PROPERTY_ADEC_DRC_MODE_DD ("ro.nx.media.adec_drc_mode_dd")     // Can be set to "rf", "rf_23", "rf_24", or "line"
+#define B_PROPERTY_ADEC_DRC_REF_LEVEL ("ro.nx.media.adec_drc_ref_level") // Specified in -.25 dB units - e.g. 64 = -16dB.
+#define B_PROPERTY_ADEC_DRC_CUT ("ro.nx.media.adec_drc_cut")             // 0..127 where 127=maximum compression
+#define B_PROPERTY_ADEC_DRC_BOOST ("ro.nx.media.adec_drc_boost")         // 0..127 where 127=maximum compression
+#define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("ro.nx.media.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
 
 #define B_DRC_DEFAULT_MODE ("rf")
 #define B_DRC_DEFAULT_MODE_DD ("rf_23")
@@ -1961,6 +1961,10 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_Playpump_Close(m_hPlaypump);
             UnregisterEvent(m_playpumpEventId);
             m_playpumpEventId = NULL;
+            UnregisterEvent(m_playpumpErrorCallbackEventId);
+            m_playpumpErrorCallbackEventId = NULL;
+            UnregisterEvent(m_playpumpCcErrorEventId);
+            m_playpumpCcErrorEventId = NULL;
             m_hPlaypump = NULL;
             CancelTimerId(m_playpumpTimerId);
         }
