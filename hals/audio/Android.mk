@@ -88,6 +88,8 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libutils \
     libmedia \
+    libnexus \
+    libnxclient \
     libaudiopolicymanagerdefault
 
 ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
@@ -101,6 +103,15 @@ LOCAL_C_INCLUDES := \
     frameworks/av/services/audiopolicy/engine/interface \
     frameworks/av/services/audiopolicy/common/managerdefinitions/include \
     frameworks/av/services/audiopolicy/common/include/
+
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+endif
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
