@@ -125,7 +125,8 @@ LOCAL_C_INCLUDES := \
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcevt/1.0
 else
 LOCAL_C_INCLUDES += \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
@@ -161,7 +162,10 @@ LOCAL_SHARED_LIBRARIES :=         \
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 LOCAL_SHARED_LIBRARIES += \
-        bcm.hardware.nexus@1.0
+        bcm.hardware.nexus@1.0 \
+        bcm.hardware.dspsvcext@1.0 \
+        libhidlbase \
+        libhidltransport
 else
 LOCAL_SHARED_LIBRARIES += \
         libnxbinder \

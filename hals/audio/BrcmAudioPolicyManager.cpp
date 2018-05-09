@@ -25,6 +25,10 @@
 
 #include "BrcmAudioPolicyManager.h"
 
+#define NXCLIENT_SERVER_TIMEOUT_IN_MS (500)
+#include "nxclient.h"
+#include "nexus_audio_output.h"
+
 namespace android {
 
 // ----------------------------------------------------------------------------
@@ -81,6 +85,42 @@ status_t BrcmAudioPolicyManager::setDeviceConnectionState(audio_devices_t device
         if (parameters.getInt(String8("force"), forceValue) == OK) {
             mForceSubmixInputSelection = forceValue != 0;
         }
+    }
+
+    // Restrict HDMI and S/PDIF output modes if surround setting is set to Never
+    if ((device == AUDIO_DEVICE_OUT_HDMI) && state == AUDIO_POLICY_DEVICE_STATE_AVAILABLE) {
+        NEXUS_Error rc;
+        NxClient_JoinSettings joinSettings;
+        NxClient_AudioSettings audioSettings;
+
+        NxClient_GetDefaultJoinSettings(&joinSettings);
+        do {
+            rc = NxClient_Join(&joinSettings);
+            if (rc != NEXUS_SUCCESS) {
+                ALOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
+                usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
+            }
+            else {
+                ALOGD("%s: NxClient_Join succeeded.", __FUNCTION__);
+            }
+        } while (rc != NEXUS_SUCCESS);
+
+        NxClient_GetAudioSettings(&audioSettings);
+        if (AudioPolicyManager::getForceUse(AUDIO_POLICY_FORCE_FOR_ENCODED_SURROUND) ==
+                AUDIO_POLICY_FORCE_ENCODED_SURROUND_NEVER) {
+            ALOGI("Force PCM output");
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+        } else {
+            ALOGI("Auto output");
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+        }
+        rc = NxClient_SetAudioSettings(&audioSettings);
+        if (rc) {
+            ALOGE("%s: Error %d setting output mode", __FUNCTION__, rc);
+        }
+        NxClient_Uninit();
     }
 
     status_t ret = 0;

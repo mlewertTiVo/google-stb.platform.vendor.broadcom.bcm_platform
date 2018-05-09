@@ -54,8 +54,15 @@
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
+#if defined(BCM_FULL_TREBLE)
+#include <bcm/hardware/dspsvcext/1.0/IDspSvcExt.h>
+#endif
 
 using namespace android;
+#if defined(BCM_FULL_TREBLE)
+using namespace android::hardware;
+using namespace bcm::hardware::dspsvcext::V1_0;
+#endif
 
 typedef void (* OMX_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
 
@@ -167,5 +174,18 @@ public:
       return ihwc.get();
    }
 };
+
+#if defined(BCM_FULL_TREBLE)
+typedef void (*SB_GEOM_CB) (void *context, unsigned int x, unsigned int y,
+                            unsigned int width, unsigned int height);
+
+class SdbGeomCb : public IDspSvcExtSdbGeomCb {
+public:
+   SdbGeomCb(SB_GEOM_CB cb, void *cb_data): geom_cb(cb), geom_ctx(cb_data) {};
+   SB_GEOM_CB geom_cb;
+   void       *geom_ctx;
+   Return<void> onGeom(int32_t i, const DspSvcExtGeom& geom);
+};
+#endif
 
 #endif /* #ifndef BOMX_HWCBINDER_H__*/
