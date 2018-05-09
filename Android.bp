@@ -1,4 +1,5 @@
 optional_subdirs = [
     "hals/nexus/1.0",
     "hals/dspsvcext/1.0",
+    "hals/bluetooth/1.0",
 ]

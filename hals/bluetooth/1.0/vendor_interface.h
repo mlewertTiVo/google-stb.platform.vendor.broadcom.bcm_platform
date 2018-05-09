@@ -45,6 +45,7 @@ class VendorInterface {
   size_t Send(uint8_t type, const uint8_t *data, size_t length);
 
   void OnFirmwareConfigured(uint8_t result);
+  void OnLpmConfigured(uint8_t result);
 
  private:
   virtual ~VendorInterface() = default;

@@ -18,13 +18,15 @@
 
 #include <assert.h>
 
-#define LOG_TAG "android.hardware.bluetooth@1.0-impl"
+#define LOG_TAG "android.hardware.bluetooth@1.0-impl-bcm"
 #include <android-base/logging.h>
 #include <cutils/properties.h>
 #include <utils/Log.h>
 
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <mutex>
+#include <condition_variable>
 
 #include "bluetooth_address.h"
 #include "h4_protocol.h"
@@ -50,6 +52,8 @@ struct {
 bool lpm_wake_deasserted;
 uint32_t lpm_timeout_ms;
 bool recent_activity_flag;
+std::mutex lpm_mutex;
+std::condition_variable lpm_cv;
 
 VendorInterface* g_vendor_interface = nullptr;
 
@@ -105,6 +109,7 @@ void sco_config_cb(bt_vendor_op_result_t result) {
 
 void low_power_mode_cb(bt_vendor_op_result_t result) {
   ALOGD("%s result: %d", __func__, result);
+  VendorInterface::get()->OnLpmConfigured(result);
 }
 
 void sco_audiostate_cb(bt_vendor_op_result_t result) {
@@ -265,11 +270,21 @@ bool VendorInterface::Open(InitializeCompleteCallback initialize_complete_cb,
 }
 
 void VendorInterface::Close() {
+  ALOGD("%s", __func__);
   // These callbacks may send HCI events (vendor-dependent), so make sure to
   // StopWatching the file descriptor after this.
   if (lib_interface_ != nullptr) {
     bt_vendor_lpm_mode_t mode = BT_VND_LPM_DISABLE;
     lib_interface_->op(BT_VND_OP_LPM_SET_MODE, &mode);
+
+    // Wait for callback signal, continue if it takes longer than 100 ms.
+    auto timeout_time =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    {
+      std::unique_lock<std::mutex> lock(lpm_mutex);
+      if (lpm_cv.wait_until(lock, timeout_time) == std::cv_status::timeout)
+         ALOGD("%s LPM mode disable timeout", __func__);
+    }
   }
 
   fd_watcher_.StopWatchingFileDescriptors();
@@ -324,9 +339,11 @@ void VendorInterface::OnFirmwareConfigured(uint8_t result) {
     firmware_startup_timer_ = nullptr;
   }
 
-  if (initialize_complete_cb_ != nullptr) {
-    initialize_complete_cb_(result == 0);
-    initialize_complete_cb_ = nullptr;
+  if (result != 0)
+  {
+    // failure case, skip further setup
+    OnLpmConfigured(result);
+    return;
   }
 
   lib_interface_->op(BT_VND_OP_GET_LPM_IDLE_TIMEOUT, &lpm_timeout_ms);
@@ -338,6 +355,20 @@ void VendorInterface::OnFirmwareConfigured(uint8_t result) {
   ALOGD("%s Calling StartLowPowerWatchdog()", __func__);
   fd_watcher_.ConfigureTimeout(std::chrono::milliseconds(lpm_timeout_ms),
                                [this]() { OnTimeout(); });
+}
+
+void VendorInterface::OnLpmConfigured(uint8_t result) {
+  ALOGD("%s result: %d", __func__, result);
+
+  // Opening
+  if (initialize_complete_cb_ != nullptr) {
+    initialize_complete_cb_(result == 0);
+    initialize_complete_cb_ = nullptr;
+    return;
+  }
+
+  // Closing
+  lpm_cv.notify_one();
 }
 
 void VendorInterface::OnTimeout() {
