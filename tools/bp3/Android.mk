@@ -66,6 +66,7 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
 LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign -DCATCH_OUTPUT
 LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
+LOCAL_CFLAGS += -DBP3_TA_FEATURE_READ_SUPPORT
 
 SRCS = $(APP_TOP)/utils/sage_app_utils.c
 SRCS += $(APP_TOP)/app/bp3_platform_host.c
@@ -111,6 +112,7 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DWITH_POSIX -Wno-pedantic -Wno-variadic-macros -Wno-sometimes-uninitialized -Wno-unused-parameter
 LOCAL_CFLAGS += -std=c11 -Wno-sign-compare -Wno-date-time -Wno-pointer-sign -DCATCH_OUTPUT
 LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
+LOCAL_CFLAGS += -DBP3_TA_FEATURE_READ_SUPPORT
 
 SRCS = $(REFSW_TOP)/BSEAV/tools/bp3/bp3_main.c
 
