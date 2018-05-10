@@ -801,12 +801,12 @@ static int hwc2_chkpt_l(
       rc = BKNI_WaitForEvent(hwc2->g2dchk, HWC2_CHKPT_TO);
       if (rc) {
          ALOGE("[chpt]: time out waiting for %d ms", HWC2_CHKPT_TO);
-         return -1;
+         return HWC2_INVALID;
       }
    break;
    default:
       ALOGE("[chpt]: checkpoint error: %d", rc);
-   return -1;
+   return HWC2_INVALID;
    }
    return 0;
 }
@@ -816,7 +816,7 @@ static int hwc2_chkpt(
 {
    int rc;
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
-      return -1;
+      return HWC2_INVALID;
    }
    rc = hwc2_chkpt_l(hwc2);
    pthread_mutex_unlock(&hwc2->mtx_g2d);
@@ -2569,6 +2569,43 @@ out:
    return ret;
 }
 
+static bool hwc2_is_video(
+   struct hwc2_bcm_device_t *hwc2,
+   struct hwc2_lyr_t *lyr,
+   int *vid) {
+
+   bool video = false;
+   NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
+   NEXUS_MemoryBlockHandle bh = NULL;
+   PSHARED_DATA shared = NULL;
+   void *map = NULL;
+
+   *vid = HWC2_INVALID;
+   if (lyr->bh == NULL) {
+      return video;
+   }
+
+   private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+   lrc = hwc2_mem_lock(hwc2, bh, &map);
+   shared = (PSHARED_DATA) map;
+   if (lrc || shared == NULL) {
+      goto out;
+   }
+   *vid = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
+   if (*vid > 0) {
+      if (shared->videoWindow.nexusClientContext) {
+         video = true;
+         lyr->oob = true;
+      }
+   }
+
+out:
+   if (lrc == NEXUS_SUCCESS) {
+      hwc2_mem_unlock(hwc2, bh);
+   }
+   return video;
+}
+
 static int32_t hwc2_lyrRem(
    hwc2_device_t* device,
    hwc2_display_t display,
@@ -2582,6 +2619,7 @@ static int32_t hwc2_lyrRem(
    uint32_t kind;
    uint64_t hdl;
    size_t cnt = 0;
+   int vid = HWC2_INVALID;
 
    ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
@@ -2626,6 +2664,13 @@ static int32_t hwc2_lyrRem(
       if ((kind != HWC2_DSP_VD) ||
           ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
          hwc2_lyr_tl_unset(dsp, kind, lyr->hdl, lyr->thdl);
+      }
+      if (hwc2_is_video(hwc2, lyr, &vid)) {
+         if ((vid < HWC2_VID_MAGIC) || (vid > HWC2_VID_MAGIC+HWC2_VID_WIN)) {
+            memset((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, 0, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr));
+            memset((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, 0, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp));
+            dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z = 0;
+         }
       }
       free(lyr);
       lyr = NULL;
@@ -4550,43 +4595,6 @@ out:
    return ret;
 }
 
-static bool hwc2_is_video(
-   struct hwc2_bcm_device_t *hwc2,
-   struct hwc2_lyr_t *lyr,
-   int *vid) {
-
-   bool video = false;
-   NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
-   NEXUS_MemoryBlockHandle bh = NULL;
-   PSHARED_DATA shared = NULL;
-   void *map = NULL;
-
-   *vid = -1;
-   if (lyr->bh == NULL) {
-      return video;
-   }
-
-   private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-   lrc = hwc2_mem_lock(hwc2, bh, &map);
-   shared = (PSHARED_DATA) map;
-   if (lrc || shared == NULL) {
-      goto out;
-   }
-   *vid = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
-   if (*vid > 0) {
-      if (shared->videoWindow.nexusClientContext) {
-         video = true;
-         lyr->oob = true;
-      }
-   }
-
-out:
-   if (lrc == NEXUS_SUCCESS) {
-      hwc2_mem_unlock(hwc2, bh);
-   }
-   return video;
-}
-
 static bool hwc2_lyr_adj(
    struct hwc2_dsp_t *dsp,
    NEXUS_Rect *c,
@@ -4665,7 +4673,7 @@ static int32_t hwc2_preDsp(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt = 0, vcnt = 0, scnt = 0;
-   int ccli = 0, vid = -1;
+   int ccli = 0, vid = HWC2_INVALID;
    bool ivid;
    bool dc = false;
 
@@ -4673,7 +4681,7 @@ static int32_t hwc2_preDsp(
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
      display);
 
-   *outRetireFence = -1;
+   *outRetireFence = HWC2_INVALID;
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -4782,8 +4790,10 @@ static int32_t hwc2_preDsp(
                        (uint16_t)(lyr->fr.right - lyr->fr.left),
                        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
                   if ((lyr->lpf == HWC2_RLPF) ||
+                      (lyr->z != dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z) ||
                       memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp)) != 0 ||
                       memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr)) != 0) {
+                     dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z = lyr->z;
                      memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr));
                      memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp));
                      hwc2_lyr_adj(dsp, &c, &p, NULL);
@@ -4795,12 +4805,11 @@ static int32_t hwc2_preDsp(
                      cl.y = c.y;
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
-                     // TODO: associate relative z-order from android z-layer.
-                     z = 3;
+                     z = dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z + 1;
                      hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-HWC2_VID_MAGIC, fr, cl, z, 1);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
-                              "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
-                              dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
+                              "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}, @%u\n",
+                              dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h, z);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
@@ -4882,7 +4891,7 @@ static int32_t hwc2_preDsp(
       struct hwc2_lyr_t *clyr = NULL;
 
       if (HWC2_VD_GLES) {
-         *outRetireFence = -1;
+         *outRetireFence = HWC2_INVALID;
          if (dsp->u.vd.wrFence >= 0) {
             close(dsp->u.vd.wrFence);
             dsp->u.vd.wrFence = HWC2_INVALID;
@@ -5333,6 +5342,10 @@ int hwc2_blit_yv12(
    y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
                           shared->container.stride, NEXUS_PixelFormat_eY8,
                           shared->container.block, 0);
+   if (y == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(y, &slock);
    NEXUS_Surface_Flush(y);
 
@@ -5343,19 +5356,31 @@ int hwc2_blit_yv12(
    cr = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCr8,
                            shared->container.block, cr_o);
+   if (cr == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cr, &slock);
    NEXUS_Surface_Flush(cr);
 
    cb = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCb8,
                            shared->container.block, cb_o);
+   if (cb == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(cb, &slock);
    NEXUS_Surface_Flush(cb);
 
    yuv = hwc_to_nsc_surface(shared->container.width, shared->container.height,
-                            shared->container.width * shared->container.bpp,
+                            shared->container.stride /* y-width aligned */ * shared->container.bpp,
                             NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
                             0, 0);
+   if (yuv == NULL) {
+      blt = HWC2_INVALID;
+      goto out;
+   }
    NEXUS_Surface_Lock(yuv, &slock);
    NEXUS_Surface_Flush(yuv);
 
@@ -5838,7 +5863,7 @@ static void hwc2_sdb(
 
    NEXUS_Rect c, p;
    struct hwc_position fr, cl;
-   int index = -1;
+   int index = HWC2_INVALID;
    native_handle_t *nh = lyr->sbh;
 
    if (nh) {
@@ -6509,7 +6534,7 @@ static void hwc2_setup_ext(
    c.position.y            = 0;
    c.position.width        = c.virtualDisplay.width;
    c.position.height       = c.virtualDisplay.height;
-   c.zorder                = 5; /* above any video or sideband layer(s). */
+   c.zorder                = 10; /* above any video or sideband layer(s). */
    c.visible               = true;
    c.colorBlend            = hwc2_a2n_col_be[HWC2_BLEND_MODE_PREMULTIPLIED];
    c.alphaBlend            = hwc2_a2n_al_be[HWC2_BLEND_MODE_PREMULTIPLIED];
