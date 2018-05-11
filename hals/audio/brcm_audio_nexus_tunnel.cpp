@@ -85,6 +85,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS      (200)
 #define BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER       (BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS / BRCM_AUDIO_TUNNEL_DURATION_MS)
 #define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
+#define BRCM_AUDIO_TUNNEL_NEXUS_LATENCY_MS      (128)   // Audio latency is 128ms + lipsync offset in standard latency mode
 
 #define BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE      (2048)
 #define BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED     (100)
@@ -313,6 +314,13 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
         *frames = 0;
     }
     return 0;
+}
+
+
+static uint32_t nexus_tunnel_bout_get_latency(struct brcm_stream_out *bout)
+{
+    UNUSED(bout);
+    return BRCM_AUDIO_TUNNEL_NEXUS_LATENCY_MS;
 }
 
 static void nexus_tunnel_bout_debounce_reset(struct brcm_stream_out *bout)
@@ -1370,7 +1378,7 @@ static int nexus_tunnel_bout_dump(struct brcm_stream_out *bout, int fd)
 struct brcm_stream_out_ops nexus_tunnel_bout_ops = {
     .do_bout_open = nexus_tunnel_bout_open,
     .do_bout_close = nexus_tunnel_bout_close,
-    .do_bout_get_latency = NULL,
+    .do_bout_get_latency = nexus_tunnel_bout_get_latency,
     .do_bout_start = nexus_tunnel_bout_start,
     .do_bout_stop = nexus_tunnel_bout_stop,
     .do_bout_write = nexus_tunnel_bout_write,

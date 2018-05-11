@@ -33,8 +33,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 # apk's released.
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
-include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
-include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
+include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 #include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk

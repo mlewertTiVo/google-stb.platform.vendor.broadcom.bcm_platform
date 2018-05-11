@@ -235,9 +235,11 @@ typedef struct {
         NxClient_JoinSettings joinSettings;
         unsigned pid;
         NEXUS_ClientHandle handle;
-        unsigned mmumem;
-        unsigned nxmem;
-        unsigned gfxmem;
+        unsigned long mmuvrt; /* total mapped for process. */
+        unsigned long mmushm; /* linux allocation (vs cma). */
+        unsigned long mmucma; /* cma allocation (vs linux). */
+        unsigned long nxmem;  /* nexus cma gfx allocation. */
+        unsigned long gfxmem; /* nexus bmem gfx allocation. */
         int score;
     } clients[APP_MAX_CLIENTS];
     unsigned connected;
@@ -396,18 +398,35 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     }
 
     pip = open("/dev/bcmpip", O_RDWR);
-    nxm = open("/dev/ion", O_RDWR);
+    nxm = open("/dev/nxmem", O_RDWR);
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client && g_app.clients[i].pid) {
-            sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+            sprintf(memstats, "%s/%d/rawmem", NX_DRM_ROOT, g_app.clients[i].pid);
             fd = open(memstats, O_RDONLY);
             if (fd >= 0) {
                memset(memstats, 0, sizeof(memstats));
                rc = read(fd, memstats, sizeof(memstats));
                close(fd);
-               g_app.clients[i].mmumem = strtoul(memstats, NULL, 10);
+               fd = sscanf(memstats, "%lu:%lu:%lu",
+                  &g_app.clients[i].mmuvrt, &g_app.clients[i].mmushm, &g_app.clients[i].mmucma);
+               if (fd != 3) {
+                  g_app.clients[i].mmuvrt = 0;
+                  g_app.clients[i].mmushm = 0;
+                  g_app.clients[i].mmucma = 0;
+               }
             } else {
-               g_app.clients[i].mmumem = 0;
+               g_app.clients[i].mmushm = 0;
+               g_app.clients[i].mmucma = 0;
+               sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+               fd = open(memstats, O_RDONLY);
+               if (fd >= 0) {
+                  memset(memstats, 0, sizeof(memstats));
+                  rc = read(fd, memstats, sizeof(memstats));
+                  close(fd);
+                  g_app.clients[i].mmuvrt = strtoul(memstats, NULL, 10);
+               } else {
+                  g_app.clients[i].mmuvrt = 0;
+               }
             }
             pidalloc.pid = g_app.clients[i].pid;
             pidalloc.alloc = 0;
@@ -426,7 +445,11 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                g_app.clients[i].gfxmem = 0;
             }
             g_app.clients[i].score = OOM_SCORE_IGNORE;
-            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem)) {
+            if ((g_app.clients[i].mmuvrt+
+                 g_app.clients[i].mmushm+
+                 g_app.clients[i].mmucma+
+                 g_app.clients[i].nxmem+
+                 g_app.clients[i].gfxmem)) {
                struct proxy_info_oomadj oomadj;
                oomadj.pid = g_app.clients[i].pid;
                rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
@@ -436,15 +459,26 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
             }
 
             ALOGI_IF(NX_CLIENT_USAGE_LOG &&
-                     (g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem),
-               "client[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", i,
+                     (g_app.clients[i].mmuvrt+
+                      g_app.clients[i].mmushm+
+                      g_app.clients[i].mmucma+
+                      g_app.clients[i].nxmem+
+                      g_app.clients[i].gfxmem),
+               "client[%u]:%u::mmuvrt:%luMB::mmushm:%luMB::mmucma:%luMB::nxmem:%luMB::gfxo:%luMB::score:%d",
+               i,
                g_app.clients[i].pid,
-               g_app.clients[i].mmumem,
+               g_app.clients[i].mmuvrt,
+               g_app.clients[i].mmushm,
+               g_app.clients[i].mmucma,
                g_app.clients[i].nxmem,
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
 
-            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem) >= threshold &&
+            if ((g_app.clients[i].mmuvrt+
+                 g_app.clients[i].mmushm+
+                 g_app.clients[i].mmucma+
+                 g_app.clients[i].nxmem+
+                 g_app.clients[i].gfxmem) >= threshold &&
                 g_app.clients[i].score > 0) {
                 if (selected == NX_INVALID) {
                    selected = i;
@@ -458,9 +492,12 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     }
     if (selected != NX_INVALID) {
        *candidate = g_app.clients[selected].pid;
-       ALOGI("oom-kill[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", selected,
+       ALOGI("oom-kill[%u]:%u::mmuvrt:%luMB::mmushm:%luMB::mmucma:%luMB::nxmem:%luMB::gfxo:%luMB::score:%d",
+          selected,
           *candidate,
-          g_app.clients[selected].mmumem,
+          g_app.clients[selected].mmuvrt,
+          g_app.clients[selected].mmushm,
+          g_app.clients[selected].mmucma,
           g_app.clients[selected].nxmem,
           g_app.clients[selected].gfxmem,
           g_app.clients[selected].score);

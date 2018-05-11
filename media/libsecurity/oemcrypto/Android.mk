@@ -65,8 +65,8 @@ LOCAL_SRC_FILES := \
     libwvdrmengine/cdm/core/src/string_conversions.cpp\
     libwvdrmengine/cdm/core/src/properties.cpp \
     libwvdrmengine/cdm/src/log.cpp \
-    libwvdrmengine/third_party/stringencoders/src/modp_b64.cpp \
-    libwvdrmengine/third_party/stringencoders/src/modp_b64w.cpp \
+    brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64.cpp \
+    brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64w.cpp \
 
 
 LOCAL_C_INCLUDES := \
@@ -76,7 +76,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/external/boringssl/include \
     $(TOP)/vendor/widevine/brcm_oemcrypto_L1/include \
     $(TOP)/vendor/widevine/libwvdrmengine/cdm/core/include \
-    $(TOP)/vendor/widevine/libwvdrmengine/third_party/stringencoders/src \
+    $(TOP)/vendor/widevine/brcm_oemcrypto_L1/tp/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \

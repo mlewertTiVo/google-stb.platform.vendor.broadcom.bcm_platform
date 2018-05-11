@@ -64,7 +64,7 @@
 #define NX_HD_OUT_COLOR_DEPTH_10B    "ro.nx.colordepth10b.force"
 #define PROPERTY_PM_WOL_OPTS         "ro.nx.pm.wol.opts"
 #define DEFAULT_PROPERTY_PM_WOL_OPTS "s"
-#define PROPERTY_PM_WOL_MDNS_EN          "ro.pm.wol.mdns.en"
+#define PROPERTY_PM_WOL_MDNS_EN          "ro.nx.pm.wol.mdns.en"
 #define DEFAULT_PROPERTY_PM_WOL_MDNS_EN   1
 
 Return<NexusStatus> NexusImpl::rmlmk(uint64_t cid) {

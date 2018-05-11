@@ -44,6 +44,7 @@ LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
 ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
+
 LOCAL_SHARED_LIBRARIES := liblog libdrmrootfs libsrai libnexus libbcrypt
 
 LOCAL_MULTILIB := 32
@@ -233,6 +234,9 @@ endif
 
 # Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
 LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
+
+# android P (9.0) onward.
+LOCAL_CFLAGS += -DANDROID_DATA_VENDOR_PLATFORM_SPLIT
 
 LOCAL_SHARED_LIBRARIES := libnexus libdrmrootfs libsrai liblog libcmndrm
 
