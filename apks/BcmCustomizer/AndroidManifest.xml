@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sharedUserId="android.uid.system"
+    package="com.broadcom.customizer">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="26" />
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="com.netflix.ninja.permission.NETFLIX_KEY" />
+
+    <application android:label="@string/app_label">
+        <receiver android:name=".GlobalKeyReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.GLOBAL_BUTTON" />
+            </intent-filter>
+            <!-- Dummy intent filter used by leanback support library to locate leanback.xml -->
+            <intent-filter>
+                <action android:name="android.support.v17.leanback.action.PARTNER_CUSTOMIZATION" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".BootCompletedReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".SplashActivity"
+                  android:label="@string/app_label"
+                  android:excludeFromRecents="true"
+                  android:noHistory="true"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        </activity>
+        <activity android:name=".ForcedOtaActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.TV_BOOT_COMPLETED" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".PartnerConfigurationReceiver">
+            <intent-filter>
+                <action android:name="com.google.android.tvlauncher.action.PARTNER_CONFIGURATION" />
+            </intent-filter>
+        </receiver>
+        <provider android:name=".ConfigurationProvider"
+            android:authorities="tvlauncher.config"
+            android:enabled="true"
+            android:exported="true" />
+    </application>
+</manifest>

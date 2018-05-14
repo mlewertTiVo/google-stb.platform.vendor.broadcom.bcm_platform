@@ -441,6 +441,10 @@ protected:
     bool m_virtual;
     bool m_forcePortResetOnHwTex;
 
+#if defined(BCM_FULL_TREBLE)
+    sp<SdbGeomCb> m_sdbGeomCb;
+#endif
+
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
     NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);

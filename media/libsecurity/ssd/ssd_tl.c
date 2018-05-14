@@ -55,6 +55,11 @@
 #include "nxclient.h"
 #include "nexus_memory.h"
 
+#include <log/log.h>
+
+#define SSD_FORMAT_PROP_RPMB  "persist.nx.ssd.rpmb.fmt"
+#define SSD_FORMAT_PROP_VFS   "persist.nx.ssd.vfs.fmt"
+
 /* infinite timeout waiting for sage to asks us to do something. */
 #define SSD_WAIT_TIMEOUT (-1)
 
@@ -196,6 +201,8 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     SRAI_Settings sraiSettings;
     BSAGElib_InOutContainer *container = NULL;
     int rpmb = 1;
+    bool rpmb_format = property_get_bool(SSD_FORMAT_PROP_RPMB, 1);
+    bool vfs_format = property_get_bool(SSD_FORMAT_PROP_VFS, 1);
 
     ALOGD("Initialising SSD TA\n");
 
@@ -278,7 +285,7 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
         sage_operation->rpmb_partition = true;
 
         container->basicIn[1] = sage_operation->rpmb_partition;
-        container->basicIn[3] = 0;
+        container->basicIn[3] = rpmb_format ? SSD_DaemonInit_eFormatPartition : 0;
 
         rc = SRAI_Module_ProcessCommand(moduleHandle, SSD_CommandId_eDaemonInit, container);
         if (rc != BERR_SUCCESS) {
@@ -301,6 +308,10 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
 
         if ((rc != BERR_SUCCESS) || (SSD_TA_rc != BERR_SUCCESS)) {
             ALOGE("Error initialising RPMB partition\n");
+        } else {
+           if (rpmb_format) {
+              property_set(SSD_FORMAT_PROP_RPMB, "0");
+           }
         }
     }
 
@@ -310,7 +321,7 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     sage_operation->rpmb_partition = false;
 
     container->basicIn[1] = sage_operation->rpmb_partition;
-    container->basicIn[3] = 0;
+    container->basicIn[3] = vfs_format ? SSD_DaemonInit_eFormatPartition : 0;
 
     rc = SRAI_Module_ProcessCommand(moduleHandle, SSD_CommandId_eDaemonInit, container);
     if (rc != BERR_SUCCESS) {
@@ -330,6 +341,10 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
             ALOGE("Error initialising VFS partition\n");
             rc = BERR_OS_ERROR;
             goto errorExit;
+        } else {
+           if (vfs_format) {
+              property_set(SSD_FORMAT_PROP_VFS, "0");
+           }
         }
     } else if (rc == BSAGE_ERR_ALREADY_INITIALIZED) {
         ALOGD("VFS partition already initialised\n");

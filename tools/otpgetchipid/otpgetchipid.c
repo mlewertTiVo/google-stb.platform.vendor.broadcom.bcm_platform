@@ -46,20 +46,24 @@
 #endif
 
 #include "nexus_platform.h"
-#include "nexus_display.h"
-#include "nexus_message.h"
 #include "nexus_memory.h"
 #include "bstd.h"
 #include "bkni.h"
+#if defined(SECV2)
+#include "nexus_otp_key.h"
+#else
+#include "nexus_display.h"
+#include "nexus_message.h"
 #include "nexus_otpmsp.h"
 #include "nexus_read_otp_id.h"
 #ifdef NEXUS_HAS_PROGRAM_OTP_DATASECTION
- #include "crc/bhsm_crc.h"
+#include "crc/bhsm_crc.h"
+#endif
+#include <math.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include "nxclient.h"
 
 BDBG_MODULE(OTPGETCHIPID);
@@ -74,9 +78,49 @@ BDBG_MODULE(OTPGETCHIPID);
             printf("\n");                                                       \
 }
 
+#if defined(SECV2)
+static NEXUS_Error _P_DumpOtpKeyInfo(unsigned index)
+{
+    NEXUS_Error rc;
+    NEXUS_OtpKeyInfo keyInfo;
+    rc = NEXUS_OtpKey_GetInfo(index, &keyInfo);
+    if (rc == NEXUS_SUCCESS) {
+#define COM_STR "OTP ID for "
+        char str[sizeof(COM_STR) + 1] = COM_STR "A";
+        str[sizeof(COM_STR)-1] = 'A' + index;
+        str[sizeof(COM_STR)] = 0;
+        DEBUG_PRINT_ARRAY( str, sizeof(keyInfo.id), keyInfo.id );
+    }
+    else {
+        fprintf( stderr, "\nNEXUS_OtpKey_GetInfo() failed. Error code: %x\n", rc );
+    }
+    return rc;
+}
 
+int main(void)
+{
+    NEXUS_Error rc = BERR_SUCCESS;
+    NxClient_JoinSettings joinSettings;
 
+    NxClient_GetDefaultJoinSettings(&joinSettings);
+    joinSettings.ignoreStandbyRequest = true;
+    joinSettings.timeout = 60;
+    rc = NxClient_Join(&joinSettings);
+    if (rc) {
+       fprintf( stderr, "\nfailed to join nexus.  aborting.\n" );
+       goto BHSM_P_DONE_LABEL;
+    }
 
+    rc = _P_DumpOtpKeyInfo(0); /* 0 is for OTP key A */
+    if( rc != NEXUS_SUCCESS ) { goto BHSM_P_DONE_LABEL; }
+
+BHSM_P_DONE_LABEL:
+
+    NxClient_Uninit();
+    return rc;
+}
+
+#else
 int main(void)
 {
     NEXUS_Error rc;
@@ -168,3 +212,4 @@ BHSM_P_DONE_LABEL:
     NxClient_Uninit();
     return rc;
 }
+#endif
