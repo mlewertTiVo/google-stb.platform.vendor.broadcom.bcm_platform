@@ -98,7 +98,7 @@
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
 #define OOM_SCORE_IGNORE               (-16)
-#define OOM_CONSUME_MAX                (110)
+#define OOM_CONSUME_MAX                (80)
 #define OOM_THRESHOLD_AGRESSIVE        (16)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
@@ -479,7 +479,7 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                  g_app.clients[i].mmucma+
                  g_app.clients[i].nxmem+
                  g_app.clients[i].gfxmem) >= threshold &&
-                g_app.clients[i].score > 0) {
+                g_app.clients[i].score > 1 /* keep background preserved tasks. */) {
                 if (selected == NX_INVALID) {
                    selected = i;
                    break;
