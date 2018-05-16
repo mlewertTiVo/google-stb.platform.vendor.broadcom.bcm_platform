@@ -338,9 +338,11 @@ static int km_init(struct bcm_km *km_hdl) {
             km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
          }
       }
+      property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
       return km_berr_2_interr(km_err);
    }
 
+   property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
    return 0;
 }
 

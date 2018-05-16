@@ -27,6 +27,7 @@ include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
     BSEAV/lib/security/sage/keymaster/src/keymaster_tl.c \
+    BSEAV/lib/security/sage/keymaster/src/gatekeeper_tl.c \
     BSEAV/lib/security/sage/keymaster/src/keymaster_tags.c \
     BSEAV/lib/security/sage/keymaster/src/keymaster_platform.c
 
