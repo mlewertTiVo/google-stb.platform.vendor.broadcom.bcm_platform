@@ -454,7 +454,7 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                oomadj.pid = g_app.clients[i].pid;
                rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
                if (rc >= 0) {
-                  g_app.clients[i].score = oomadj.score;
+                  g_app.clients[i].score = OOM_SCORE_IGNORE; //oomadj.score;
                }
             }
 
