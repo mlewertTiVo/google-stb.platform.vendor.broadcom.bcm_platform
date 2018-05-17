@@ -396,7 +396,7 @@ OEMCryptoResult OEMCrypto_SelectKey(const OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
-    if (drm_WVOemCrypto_SelectKey(session, key_id, key_id_length, (int*)&wvRc) != Drm_Success)
+    if (drm_WVOemCrypto_SelectKey_V13(session, key_id, key_id_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_SelectKeys(SID=%08X): failed]", session);
         return wvRc;
