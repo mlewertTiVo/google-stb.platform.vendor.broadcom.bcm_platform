@@ -1,4 +1,6 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC. All Rights Reserved. This file and proprietary
+// source code may only be used and distributed under the Widevine Master
+// License Agreement.
 
 /*********************************************************************
  * OEMCryptoCENC.h
@@ -6,9 +8,9 @@
  * Reference APIs needed to support Widevine's crypto algorithms.
  *
  * See the document "WV Modular DRM Security Integration Guide for Common
- * Encryption (CENC) -- version 12" for a description of this API. You
+ * Encryption (CENC) -- version 14" for a description of this API. You
  * can find this document in the widevine repository as
- * docs/WidevineModularDRMSecurityIntegrationGuideforCENC.pdf
+ * docs/WidevineModularDRMSecurityIntegrationGuideforCENC_v14.pdf
  * Changes between different versions of this API are documented in the files
  * docs/Widevine_Modular_DRM_Version_*_Delta.pdf
  *
@@ -33,10 +35,10 @@ typedef enum OEMCryptoResult {
   OEMCrypto_ERROR_TERMINATE_FAILED             = 2,
   OEMCrypto_ERROR_OPEN_FAILURE                 = 3,
   OEMCrypto_ERROR_CLOSE_FAILURE                = 4,
-  OEMCrypto_ERROR_ENTER_SECURE_PLAYBACK_FAILED = 5,
-  OEMCrypto_ERROR_EXIT_SECURE_PLAYBACK_FAILED  = 6,
+  OEMCrypto_ERROR_ENTER_SECURE_PLAYBACK_FAILED = 5,  // deprecated
+  OEMCrypto_ERROR_EXIT_SECURE_PLAYBACK_FAILED  = 6,  // deprecated
   OEMCrypto_ERROR_SHORT_BUFFER                 = 7,
-  OEMCrypto_ERROR_NO_DEVICE_KEY                = 8,
+  OEMCrypto_ERROR_NO_DEVICE_KEY                = 8,  // no keybox device key.
   OEMCrypto_ERROR_NO_ASSET_KEY                 = 9,
   OEMCrypto_ERROR_KEYBOX_INVALID               = 10,
   OEMCrypto_ERROR_NO_KEYDATA                   = 11,
@@ -68,6 +70,19 @@ typedef enum OEMCryptoResult {
   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES       = 37,
   OEMCrypto_ERROR_INSUFFICIENT_HDCP            = 38,
   OEMCrypto_ERROR_BUFFER_TOO_LARGE             = 39,
+  OEMCrypto_WARNING_GENERATION_SKEW            = 40,  // Warning, not an error.
+  OEMCrypto_ERROR_GENERATION_SKEW              = 41,
+  OEMCrypto_LOCAL_DISPLAY_ONLY                 = 42,  // Info, not an error.
+  OEMCrypto_ERROR_ANALOG_OUTPUT                = 43,
+  OEMCrypto_ERROR_WRONG_PST                    = 44,
+  OEMCrypto_ERROR_WRONG_KEYS                   = 45,
+  OEMCrypto_ERROR_MISSING_MASTER               = 46,
+  OEMCrypto_ERROR_LICENSE_INACTIVE             = 47,
+  OEMCrypto_ERROR_ENTRY_NEEDS_UPDATE           = 48,
+  OEMCrypto_ERROR_ENTRY_IN_USE                 = 49,
+  OEMCrypto_ERROR_USAGE_TABLE_UNRECOVERABLE    = 50,  // Reserved. Do not use.
+  OEMCrypto_KEY_NOT_LOADED                     = 51,
+  OEMCrypto_KEY_NOT_ENTITLED                   = 52,
 } OEMCryptoResult;
 
 /*
@@ -133,13 +148,21 @@ typedef struct {
   } buffer;
 } OEMCrypto_DestBufferDesc;
 
-/** OEMCryptoCipherMode is used in LoadKeys to prepare a key for either CTR
+/** OEMCryptoCipherMode is used in SelectKey to prepare a key for either CTR
  * decryption or CBC decryption.
  */
 typedef enum OEMCryptoCipherMode {
   OEMCrypto_CipherMode_CTR,
   OEMCrypto_CipherMode_CBC,
 } OEMCryptoCipherMode;
+
+/** OEMCrypto_LicenseType is used in LoadKeys to indicate if the key objects
+ *  are for content keys, or for entitlement keys.
+ */
+typedef enum OEMCrypto_LicenseType {
+  OEMCrypto_ContentLicense = 0,
+  OEMCrypto_EntitlementLicense = 1
+} OEMCrypto_LicenseType;
 
 /*
  * OEMCrypto_KeyObject
@@ -159,8 +182,6 @@ typedef enum OEMCryptoCipherMode {
  *        key_control field.
  *    key_control - the key control block. It is encrypted (AES-128-CBC) with
  *        the content key from the key_data field.
- *    cipher_mode - whether the key should be prepared for CTR mode or CBC mode
- *        when used in later calls to DecryptCENC.
  *
  *  The memory for the OEMCrypto_KeyObject fields is allocated and freed
  *  by the caller of OEMCrypto_LoadKeys().
@@ -173,8 +194,30 @@ typedef struct {
   size_t key_data_length;
   const uint8_t* key_control_iv;
   const uint8_t* key_control;
-  OEMCryptoCipherMode cipher_mode;
 } OEMCrypto_KeyObject;
+
+/*
+ * OEMCrypto_EntitledContentKeyObject
+ * Contains encrypted content key data for loading into the sessions keytable.
+ * The content key data is encrypted using AES-256-CBC encryption, with PKCS#7
+ * padding.
+ * entitlement_key_id - entitlement key id to be matched to key table.
+ * entitlement_key_id_length - length of entitlment_key_id in bytes (1 to 16).
+ * content_key_id - content key id to be loaded into key table.
+ * content_key_id_length - length of content key id in bytes (1 to 16).
+ * key_data_iv - the IV for performing AES-256-CBC decryption of the key data.
+ * key_data - encrypted content key data.
+ * key_data_length - length of key_data - 16 or 32 depending on intended use.
+ */
+typedef struct {
+  const uint8_t* entitlement_key_id;
+  size_t entitlement_key_id_length;
+  const uint8_t* content_key_id;
+  size_t content_key_id_length;
+  const uint8_t* content_key_data_iv;
+  const uint8_t* content_key_data;
+  size_t content_key_data_length;
+} OEMCrypto_EntitledContentKeyObject;
 
 /*
  * OEMCrypto_KeyRefreshObject
@@ -235,12 +278,19 @@ typedef struct {
 typedef enum OEMCrypto_Usage_Entry_Status {
   kUnused = 0,
   kActive = 1,
-  kInactive = 2
+  kInactive = 2,  // Deprecated.  Used kInactiveUsed or kInactiveUnused.
+  kInactiveUsed = 3,
+  kInactiveUnused = 4,
 } OEMCrypto_Usage_Entry_Status;
 
 /*
  * OEMCrypto_PST_Report is used to report an entry from the Usage Table.
+ *
+ * Platforms that have compilers that support packed structures, may use the
+ * following definition.  Other platforms may use the header pst_report.h which
+ * defines a wrapper class.
  */
+#if 0  // If your compiler supports __attribute__((packed)).
 typedef struct {
   uint8_t signature[20];  //  -- HMAC SHA1 of the rest of the report.
   uint8_t status;  // current status of entry. (OEMCrypto_Usage_Entry_Status)
@@ -252,6 +302,7 @@ typedef struct {
   int64_t seconds_since_last_decrypt;      // now - time_of_last_decrypt
   uint8_t pst[];
 } __attribute__((packed)) OEMCrypto_PST_Report;
+#endif
 
 /*
  *  OEMCrypto_Clock_Security_Level.
@@ -274,12 +325,12 @@ typedef enum RSA_Padding_Scheme {
  * level, and in GetHDCPCapability for reporting.
  */
 typedef enum OEMCrypto_HDCP_Capability {
-  HDCP_NONE = 0,                 // No HDCP supported, no secure data path.
-  HDCP_V1 = 1,                   // HDCP version 1.0
-  HDCP_V2 = 2,                   // HDCP version 2.0
-  HDCP_V2_1 = 3,                 // HDCP version 2.1
-  HDCP_V2_2 = 4,                 // HDCP version 2.2 Type 1.
-  HDCP_NO_DIGITAL_OUTPUT = 0xff  // No digital output.
+  HDCP_NONE  = 0,               // No HDCP supported, no secure data path.
+  HDCP_V1    = 1,               // HDCP version 1.0
+  HDCP_V2    = 2,               // HDCP version 2.0 Type 1.
+  HDCP_V2_1  = 3,               // HDCP version 2.1 Type 1.
+  HDCP_V2_2  = 4,               // HDCP version 2.2 Type 1.
+  HDCP_NO_DIGITAL_OUTPUT = 0xff // No digital output.
 } OEMCrypto_HDCP_Capability;
 
 /* Return value for OEMCrypto_GetProvisioningMethod(). */
@@ -290,6 +341,29 @@ typedef enum OEMCrypto_ProvisioningMethod {
   OEMCrypto_Keybox = 2,        // Device has factory installed unique keybox.
   OEMCrypto_OEMCertificate = 3 // Device has factory installed OEM certificate.
 } OEMCrypto_ProvisioningMethod;
+
+/*
+ * Flags indicating RSA keys supported.
+ */
+#define OEMCrypto_Supports_RSA_2048bit 0x1
+#define OEMCrypto_Supports_RSA_3072bit 0x2
+#define OEMCrypto_Supports_RSA_CAST   0x10
+
+/*
+ * Flags indicating full decrypt path hash supported.
+ */
+#define OEMCrypto_Hash_Not_Supported 0
+#define OEMCrypto_HMAC_Clear_Buffer 1
+
+/*
+ * Return values from OEMCrypto_GetAnalogOutputFlags.
+ */
+#define OEMCrypto_No_Analog_Output            0x0
+#define OEMCrypto_Supports_Analog_Output      0x1
+#define OEMCrypto_Can_Disable_Analog_Ouptput  0x2
+#define OEMCrypto_Supports_CGMS_A             0x4
+// Unknown_Analog_Output is used only for backwards compatibility.
+#define OEMCrypto_Unknown_Analog_Output       (1<<31)
 
 /*
  * Obfuscation Renames.
@@ -310,7 +384,7 @@ typedef enum OEMCrypto_ProvisioningMethod {
 #define OEMCrypto_GenerateNonce            _oecc14
 #define OEMCrypto_LoadKeys_V8              _oecc15
 #define OEMCrypto_RefreshKeys              _oecc16
-#define OEMCrypto_SelectKey                _oecc17
+#define OEMCrypto_SelectKey_V13            _oecc17
 #define OEMCrypto_RewrapDeviceRSAKey       _oecc18
 #define OEMCrypto_LoadDeviceRSAKey         _oecc19
 #define OEMCrypto_GenerateRSASignature_V8  _oecc20
@@ -324,10 +398,10 @@ typedef enum OEMCrypto_ProvisioningMethod {
 #define OEMCrypto_GetHDCPCapability_V9     _oecc28
 #define OEMCrypto_SupportsUsageTable       _oecc29
 #define OEMCrypto_UpdateUsageTable         _oecc30
-#define OEMCrypto_DeactivateUsageEntry     _oecc31
+#define OEMCrypto_DeactivateUsageEntry_V12 _oecc31
 #define OEMCrypto_ReportUsage              _oecc32
 #define OEMCrypto_DeleteUsageEntry         _oecc33
-#define OEMCrypto_DeleteUsageTable         _oecc34
+#define OEMCrypto_DeleteOldUsageTable      _oecc34
 #define OEMCrypto_LoadKeys_V9_or_V10       _oecc35
 #define OEMCrypto_GenerateRSASignature     _oecc36
 #define OEMCrypto_GetMaxNumberOfSessions   _oecc37
@@ -335,17 +409,37 @@ typedef enum OEMCrypto_ProvisioningMethod {
 #define OEMCrypto_IsAntiRollbackHwPresent  _oecc39
 #define OEMCrypto_CopyBuffer               _oecc40
 #define OEMCrypto_QueryKeyControl          _oecc41
-#define OEMCrypto_LoadTestKeybox           _oecc42
+#define OEMCrypto_LoadTestKeybox_V13       _oecc42
 #define OEMCrypto_ForceDeleteUsageEntry    _oecc43
 #define OEMCrypto_GetHDCPCapability        _oecc44
 #define OEMCrypto_LoadTestRSAKey           _oecc45
 #define OEMCrypto_Security_Patch_Level     _oecc46
-#define OEMCrypto_LoadKeys                 _oecc47
+#define OEMCrypto_LoadKeys_V11_or_V12      _oecc47
 #define OEMCrypto_DecryptCENC              _oecc48
 #define OEMCrypto_GetProvisioningMethod    _oecc49
 #define OEMCrypto_GetOEMPublicCertificate  _oecc50
 #define OEMCrypto_RewrapDeviceRSAKey30     _oecc51
-
+#define OEMCrypto_SupportedCertificates       _oecc52
+#define OEMCrypto_IsSRMUpdateSupported        _oecc53
+#define OEMCrypto_GetCurrentSRMVersion        _oecc54
+#define OEMCrypto_LoadSRM                     _oecc55
+#define OEMCrypto_LoadKeys_V13                _oecc56
+#define OEMCrypto_RemoveSRM                   _oecc57
+#define OEMCrypto_CreateUsageTableHeader      _oecc61
+#define OEMCrypto_LoadUsageTableHeader        _oecc62
+#define OEMCrypto_CreateNewUsageEntry         _oecc63
+#define OEMCrypto_LoadUsageEntry              _oecc64
+#define OEMCrypto_UpdateUsageEntry            _oecc65
+#define OEMCrypto_DeactivateUsageEntry        _oecc66
+#define OEMCrypto_ShrinkUsageTableHeader      _oecc67
+#define OEMCrypto_MoveEntry                   _oecc68
+#define OEMCrypto_CopyOldUsageEntry           _oecc69
+#define OEMCrypto_CreateOldUsageEntry         _oecc70
+#define OEMCrypto_GetAnalogOutputFlags        _oecc71
+#define OEMCrypto_LoadTestKeybox              _oecc78
+#define OEMCrypto_LoadEntitledContentKeys     _oecc79
+#define OEMCrypto_SelectKey                   _oecc81
+#define OEMCrypto_LoadKeys                    _oecc82
 
 /*
  * OEMCrypto_Initialize
@@ -424,7 +518,10 @@ OEMCryptoResult OEMCrypto_OpenSession(OEMCrypto_SESSION* session);
  *
  * Description:
  *   Closes the crypto security engine session and frees any associated
- *   resources.
+ *   resources.  If this session is associated with a Usage Entry, all resident
+ *   memory associated with it will be freed.  It is the CDM layer’s
+ *   responsibility to call OEMCrypto_UpdateUsageEntry before closing the
+ *   session.
  *
  * Parameters:
  *   session (in) - handle for the session to be closed.
@@ -643,6 +740,20 @@ OEMCryptoResult OEMCrypto_GenerateSignature(OEMCrypto_SESSION session,
  *   Refer to document "Widevine Modular DRM Security Integration Guide for
  *   CENC" for details.
  *
+ *   If the parameter license_type is OEMCrypto_ContentLicense, then the fields
+ *   key_id and key_data in an OEMCrypto_KeyObject are loaded in to the
+ *   content_key_id and content_key_data fields of the key table entry.  In
+ *   this case, entitlement key ids and entitlement key data is left blank.
+ *
+ *   If the parameter license_type is OEMCrypto_EntitlementLicense, then the
+ *   fields key_id and key_data in an OEMCrypto_KeyObject are loaded in to the
+ *   entitlement_key_id and entitlement_key_data fields of the key table entry.
+ *   In this case, content key ids and content key data will be loaded later
+ *   with a call to OEMCrypto_LoadEntitledContentKeys().
+ *
+ *   OEMCrypto may assume that the key_id_length is at most 16.  However,
+ *   OEMCrypto shall correctly handle key id lengths from 1 to 16 bytes.
+ *
  *   OEMCrypto shall handle at least 20 keys per session. This allows a
  *   single license to contain separate keys for 3 key rotations (previous
  *   interval, current interval, next interval) times 4 content keys (audio,
@@ -750,6 +861,11 @@ OEMCryptoResult OEMCrypto_GenerateSignature(OEMCrypto_SESSION session,
  *   key_array (in) - set of keys to be installed.
  *   pst (in) - the Provider Session Token.
  *   pst_length (in) - the length of pst.
+ *   srm_restriction_data (in) - optional data specifying the minimum SRM
+ *                               version.
+ *   license_type (in) - specifies if the license contains content keys or
+ *                       entitlement keys.
+
  *
  * Threading:
  *   This function may be called simultaneously with functions on other
@@ -772,14 +888,75 @@ OEMCryptoResult OEMCrypto_GenerateSignature(OEMCrypto_SESSION session,
  *   larger than the supported size.
  *
  * Version:
- *   This method changed in API version 11.
+ *   This method changed in API version 14.
  */
 OEMCryptoResult OEMCrypto_LoadKeys(
     OEMCrypto_SESSION session, const uint8_t* message, size_t message_length,
     const uint8_t* signature, size_t signature_length,
     const uint8_t* enc_mac_keys_iv, const uint8_t* enc_mac_keys,
     size_t num_keys, const OEMCrypto_KeyObject* key_array, const uint8_t* pst,
-    size_t pst_length);
+    size_t pst_length, const uint8_t* srm_requirement,
+    OEMCrypto_LicenseType license_type);
+
+
+/*
+ * OEMCrypto_LoadEntitledContentKeys
+ *
+ * Description:
+ *   Load content keys into a session which already has entitlement
+ *   keys loaded.  This function will only be called for a session after a call
+ *   to OEMCrypto_LoadKeys with the parameter type license_type equal to
+ *   OEMCrypto_EntitlementLicense.  This function may be called multiple times
+ *   for the same session.
+ *
+ *   If the session does not have license_type equal to
+ *   OEMCrypto_EntitlementLicense, return OEMCrypto_ERROR_INVALID_CONTEXT and
+ *   perform no work.
+ *
+ *   For each key object in key_array, OEMCrypto shall look up the entry in the
+ *   key table with the corresponding entitlement_key_id.
+ *    1) If no entry is found, return OEMCrypto_KEY_NOT_ENTITLED.
+ *    2) If the entry already has a content_key_id and content_key_data, that id
+ *       and data are erased.
+ *    3) The content_key_id from the key_array is copied to the entry's
+ *       content_key_id.
+ *    4) The content_key_data decrypted using the entitlement_key_data as a key
+ *       for AES-256-CBC with an IV of content_key_data_iv, and using PKCS#7
+ *       padding.  Notice that the entitlement key will be an AES 256 bit key.
+ *       The clear content key data will be stored in the entry's
+ *       content_key_data.
+ *
+ *   Entries in the key table that do not correspond to anything in the
+ *   key_array are not modified or removed.
+ *
+ *   For devices that use a hardware key ladder, it may be more appropriate to
+ *   store the encrypted content key data in the key table, and defer decrypting
+ *   it until the function SelectKey is called.
+ *
+ * Parameters:
+ *   session (in) - handle for the session to be used.
+ *   num_keys (in) - number of keys present.
+ *   key_array (in) - set of key updates.
+ *
+ * Returns
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_INVALID_SESSION
+ *   OEMCrypto_ERROR_INVALID_CONTEXT
+ *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *   OEMCrypto_KEY_NOT_ENTITLED
+ * Threading
+ *
+ *   This function may be called simultaneously with functions on other
+ *   sessions, but not with other functions on this session.
+ *
+ * Version
+ *   This method is new in API version 14.
+ */
+OEMCryptoResult OEMCrypto_LoadEntitledContentKeys(
+    OEMCrypto_SESSION session,
+    size_t num_keys,
+    const OEMCrypto_EntitledContentKeyObject* key_array);
 
 /*
  * OEMCrypto_RefreshKeys
@@ -818,6 +995,19 @@ OEMCryptoResult OEMCrypto_LoadKeys(
  *   this case, key_control_iv will also be null and the control block will not
  *   be encrypted.
  *
+ *   If the session's license_type is OEMCrypto_ContentLicense, and the
+ *   KeyRefreshObject's key_id is not null, then the entry in the
+ *   keytable with the matching content_key_id is updated.
+ *
+ *   If the session's license_type is OEMCrypto_EntitlementLicense, and the
+ *   KeyRefreshObject's key_id is not null, then the entry in the keytable with
+ *   the matching entitlment_key_id is updated.
+ *
+ *   If the key_id is not null, and no matching entry is found in the key
+ *   table, then return OEMCrypto_KEY_NOT_LOADED.
+ *
+ *   Aside from the key's duration, no other values in the key control block
+ *   should be updated by this function.
  *
  * Verification:
  *   The following checks should be performed. If any check fails, an error is
@@ -866,6 +1056,7 @@ OEMCryptoResult OEMCrypto_LoadKeys(
  *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
  *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *   OEMCrypto_KEY_NOT_LOADED
  *
  * Buffer Sizes
  *    OEMCrypto shall support message sizes of at least 8 KiB.
@@ -910,8 +1101,8 @@ OEMCryptoResult OEMCrypto_RefreshKeys(
  *      OEMCrypto_ERROR_NO_CONTENT_KEY.
  *
  * Parameters
- *   key_id (in) - The unique id of the key of interest.
- *   key_id_length (in) - The length of key_id, in bytes. From 1 to 16
+ *   content_key_id (in) - The unique id of the content key of interest.
+ *   content_key_id_length (in) - The length of key_id, in bytes. From 1 to 16
  *                        inclusive.
  *   key_control_block(out) - A caller-owned buffer.
  *   key_control_block_length (in/out) - The length of key_control_block buffer.
@@ -937,8 +1128,8 @@ OEMCryptoResult OEMCrypto_RefreshKeys(
  *   This method is added in API version 10.
  */
 OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session,
-                                          const uint8_t* key_id,
-                                          size_t key_id_length,
+                                          const uint8_t* content_key_id,
+                                          size_t content_key_id_length,
                                           uint8_t* key_control_block,
                                           size_t* key_control_block_length);
 
@@ -964,24 +1155,49 @@ OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session,
  *   Step 3: use the latched content key to decrypt (AES-128-CTR) buffers
  *           passed in via OEMCrypto_DecryptCENC(). If the key is 256 bits it
  *           will be used for OEMCrypto_Generic_Sign or
- *           OEMCrypto_Generic_Verify as specified in the key control
- *           block. Continue to use this key until OEMCrypto_SelectKey() is
- *           called again, or until OEMCrypto_CloseSession() is called.
+ *           OEMCrypto_Generic_Verify as specified in the key control block.
+ *           If the key will be used with OEMCrypto_Generic_Encrypt or
+ *           OEMCrypto_Generic_Decrypt, the cipher mode will always be
+ *           OEMCrypto_CipherMode_CBC. Continue to use this key until
+ *           OEMCrypto_SelectKey() is called again, or until
+ *           OEMCrypto_CloseSession() is called.
  *
  * Verification:
  *   The following checks should be performed if is_encrypted is true. If any
  *   check fails, an error is returned, and no decryption is performed.
  *
- *   1. If the current key’s control block has a nonzero duration field, then
- *   the API shall verify that the duration is greater than the session’s
- *   elapsed time clock. If not, return OEMCrypto_ERROR_KEY_EXPIRED.
+ *   1.  If the key id is not found in the keytable for this session, then the
+ *   key state is not changed and OEMCrypto shall return
+ *   OEMCrypto_KEY_NOT_LOADED.
  *
+ *   2. If the current key's control block has a nonzero Duration field, then
+ *   the API shall verify that the duration is greater than the session's
+ *   elapsed time clock before the key is used.  OEMCrypto may return
+ *   OEMCrypto_ERROR_KEY_EXPIRED from OEMCrypto_SelectKey, or SelectKey may
+ *   return success from select key and the decrypt or generic crypto call will
+ *   return OEMCrypto_ERROR_KEY_EXPIRED.
+ *
+ *   3. If the key control block has the bit Disable_Analog_Output set, then
+ *   the device should disable analog video output.  If the device has analog
+ *   output that cannot be disabled, then the key is not selected, and
+ *   OEMCrypto_ERROR_ANALOG_OUTPUT is returned.
+ *
+ *   4. If the key control block has HDCP required, and the device cannot
+ *   enforce HDCP, then the key is not selected, and
+ *   OEMCrypto_ERROR_INSUFFICIENT_HDCP is returned.
+ *
+ *   5. If the key control block has a nonzero value for HDCP_Version, and the
+ *   device cannot enforce at least that version of HDCP, then the key is not
+ *   selected, and OEMCrypto_ERROR_INSUFFICIENT_HDCP is returned.
  *
  * Parameters:
  *    session (in) - crypto session identifier
- *    key_id (in) - pointer to the Key ID
- *    key_id_length (in) - length of the Key ID in bytes. From 1 to 16
+ *    content_key_id (in) - pointer to the Content Key ID
+ *    content_key_id_length (in) - length of the Key ID in bytes. From 1 to 16
  *                         inclusive.
+ *    cipher_mode (in) - whether the key should be prepared for CTR mode or CBC
+ *                       mode when used in later calls to DecryptCENC. This
+ *                       should be ignored when the key is used for Generic Crypto calls.
  *
  * Threading:
  *   This function may be called simultaneously with functions on other
@@ -997,13 +1213,18 @@ OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session,
  *   OEMCrypto_ERROR_KEY_EXPIRED
  *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *   OEMCrypto_ERROR_KEY_EXPIRED
+ *   OEMCrypto_ERROR_ANALOG_OUTPUT
+ *   OEMCrypto_ERROR_INSUFFICIENT_HDCP
+ *   OEMCrypto_KEY_NOT_LOADED
  *
  * Version:
- *   This method changed in API version 8.
+ *   This method changed in API version 14.
  */
 OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
-                                    const uint8_t* key_id,
-                                    size_t key_id_length);
+                                    const uint8_t* content_key_id,
+                                    size_t content_key_id_length,
+                                    OEMCryptoCipherMode cipher_mode);
 
 /*
  * OEMCrypto_DecryptCENC
@@ -1063,7 +1284,7 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *   change the status to "active" and set the time_of_first_decrypt.
  *
  *   The decryption mode, either OEMCrypto_CipherMode_CTR or
- *   OEMCrypto_CipherMode_CBC, was specified in the call to OEMCrypto_LoadKeys.
+ *   OEMCrypto_CipherMode_CBC, was specified in the call to OEMCrypto_SelectKey.
  *   The encryption pattern is specified by the fields in the parameter
  *   pattern. A description of partial encryption patterns can be found in the
  *   document Draft International Standard ISO/IEC DIS 23001-7. Search for the
@@ -1089,6 +1310,10 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *   subsample has a length that is not a multiple of 16, the final partial
  *   block will be in the clear.
  *
+ *   A sample may be broken up into a mix of clear and encrypted subsamples. In
+ *   order to support the VP9 standard, the breakup of a subsample into clear
+ *   and encrypted subsamples is not always in pairs.
+ *
  * Verification:
  *   The following checks should be performed if is_encrypted is true. If any
  *   check fails, an error is returned, and no decryption is performed.
@@ -1101,9 +1326,14 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *   the API shall verify that the output buffer is secure or direct. If not,
  *   return OEMCrypto_ERROR_DECRYPT_FAILED.
  *
- *   3. If the current key’s control block has the HDCP bit set, then the API
+ *   3. If the current key control block has the bit Disable_Analog_Output set,
+ *   then the device should disable analog video output.  If the device has
+ *   analog output that cannot be disabled, then the key is not selected, and
+ *   OEMCrypto_ERROR_ANALOG_OUTPUT is returned.
+ *
+ *   4. If the current key’s control block has the HDCP bit set, then the API
  *   shall verify that the buffer will be output using HDCP only. If not,
- *   return OEMCrypto_ERROR_DECRYPT_FAILED.
+ *   return OEMCrypto_ERROR_INSUFFICIENT_HDCP.
  *
  *   4. If the current key’s control block has a nonzero value for
  *   HDCP_Version, then the current version of HDCP for the device and the
@@ -1111,8 +1341,9 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *   control block. If the current version is not at least as high as that in
  *   the control block, then return OEMCrypto_ERROR_INSUFFICIENT_HDCP.
  *
- *   5. If the current session has an entry in the Usage Table, and the status
- *   of that entry is "inactive", then return OEMCrypto_ERROR_INVALID_SESSION.
+ *   5.  If the current session has an entry in the Usage Table, and the status
+ *   of that entry is either kInactiveUsed or kInactiveUnused, then return the
+ *   error OEMCrypto_ERROR_LICENSE_INACTIVE.
  *
  *   If the flag is_encrypted is false, then no verification is performed. This
  *   call shall copy clear data even when there are no keys loaded, or there is
@@ -1160,9 +1391,11 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *   OEMCrypto_ERROR_DECRYPT_FAILED
  *   OEMCrypto_ERROR_KEY_EXPIRED
  *   OEMCrypto_ERROR_INSUFFICIENT_HDCP
+ *   OEMCrypto_ERROR_ANALOG_OUTPUT
  *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
  *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *   OEMCrypto_ERROR_LICENSE_INACTIVE
  *
  * Buffer Sizes
  *  OEMCrypto shall support subsample sizes (i.e. data_length) of at least
@@ -1171,10 +1404,11 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
  *  larger than the supported size. If OEMCrypto returns
  *  OEMCrypto_ERROR_BUFFER_TOO_LARGE, the calling function must break the buffer
  *  into smaller chunks. For high performance devices, OEMCrypto should handle
- *  larger buffers.
+ *  larger buffers.  We encourage OEMCrypto implementers to not artificially
+ *  restrict the maximum buffer size.
  *
  * Version:
- *   This method changed in API version 11.
+ *   This method changed in API version 13.
  *   This method changed its name in API version 11.
  */
 OEMCryptoResult OEMCrypto_DecryptCENC(
@@ -1245,12 +1479,13 @@ OEMCryptoResult OEMCrypto_DecryptCENC(
  *  larger than the supported size. If OEMCrypto returns
  *  OEMCrypto_ERROR_BUFFER_TOO_LARGE, the calling function must break the buffer
  *  into smaller chunks. For high performance devices, OEMCrypto should handle
- *  larger buffers.
+ *  larger buffers. We encourage OEMCrypto implementers to not artificially
+ *  restrict the maximum buffer size.
  *
  * Threading
  *   This function may be called simultaneously with any other functions.
  * Version
- *   This method is added in API version 10.
+ *   This method changed in API version 12.
  */
 OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t* data_addr,
                                      size_t data_length,
@@ -1419,7 +1654,8 @@ OEMCryptoResult OEMCrypto_GetOEMPublicCertificate(OEMCrypto_SESSION session,
  *   The test keybox can be found in the reference implementation.
  *
  * Parameters
- *   none
+ *  buffer (in) - pointer to memory containing test keybox, in binary form.
+ *  length (in) - length of the buffer, in bytes.
  *
  * Returns
  *   OEMCrypto_SUCCESS success
@@ -1432,7 +1668,7 @@ OEMCryptoResult OEMCrypto_GetOEMPublicCertificate(OEMCrypto_SESSION session,
  * Version
  *   This method is added in API version 10.
  */
-OEMCryptoResult OEMCrypto_LoadTestKeybox();
+OEMCryptoResult OEMCrypto_LoadTestKeybox(const uint8_t *buffer, size_t length);
 
 /*
  * OEMCrypto_IsKeyboxValid
@@ -1589,7 +1825,7 @@ OEMCryptoResult OEMCrypto_GetRandom(uint8_t* randomData, size_t dataLength);
  *  2. Verify that the nonce matches one generated by a previous call to
  *   OEMCrypto_GenerateNonce(). The matching nonce shall be removed from the
  *   nonce table. If there is no matching nonce, return
- *   OEMCRYPTO_ERROR_INVALID_NONCE.
+ *   OEMCrypto_ERROR_INVALID_NONCE.
  *  3. Decrypt encrypted_message_key with the OEM certificate’s private RSA key
  *   using RSA-OAEP into the buffer message_key. This message key is a 128 bit
  *   AES key used only in step 4. This message_key should be kept in secure
@@ -1626,7 +1862,9 @@ OEMCryptoResult OEMCrypto_GetRandom(uint8_t* randomData, size_t dataLength);
  *
  * Parameters:
  *   session (in)            - crypto session identifier.
- *   nonce (in)              - The nonce provided in the provisioning response.
+ *   unaligned_nonce (in)    - The nonce provided in the provisioning
+ *                           - response. This points to an uint32_t that might
+ *                           - not be aligned to a word boundary.
  *   encrypted_message_key (in) - message_key encrypted by private key
  *                           - from OEM cert.
  *   encrypted_message_key_length (in) - length of encrypted_message_key in
@@ -1669,7 +1907,7 @@ OEMCryptoResult OEMCrypto_GetRandom(uint8_t* randomData, size_t dataLength);
  *   This method is new in API version 12.
  */
 OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
-    OEMCrypto_SESSION session, const uint32_t* nonce,
+    OEMCrypto_SESSION session, const uint32_t* unaligned_nonce,
     const uint8_t* encrypted_message_key, size_t encrypted_message_key_length,
     const uint8_t* enc_rsa_key, size_t enc_rsa_key_length,
     const uint8_t* enc_rsa_key_iv, uint8_t* wrapped_rsa_key,
@@ -1716,7 +1954,7 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
  * 3. Verify that the nonce matches one generated by a previous call to
  *   OEMCrypto_GenerateNonce(). The matching nonce shall be removed from the
  *   nonce table. If there is no matching nonce, return
- *   OEMCRYPTO_ERROR_INVALID_NONCE.
+ *   OEMCrypto_ERROR_INVALID_NONCE.
  * 4. Verify the message signature, using the derived signing key
  *   (mac_key[server]) from a previous call to OEMCrypto_GenerateDerivedKeys.
  * 5. Decrypt enc_rsa_key in the buffer rsa_key using the derived encryption
@@ -1759,7 +1997,9 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
  *                           - signature for message, received from the
  *                           - provisioning server.
  *   signature_length (in)   - length of the signature, in bytes.
- *   nonce (in)              - The nonce provided in the provisioning response.
+ *   unaligned_nonce (in)    - The nonce provided in the provisioning
+ *                           - response. This points to an uint32_t that might
+ *                           - not be aligned to a word boundary.
  *   enc_rsa_key (in)        - Encrypted device private RSA key received from
  *                           - the provisioning server. Format is PKCS#8
  *                           - binary DER encoded, encrypted with the derived
@@ -1800,10 +2040,10 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
 
 OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey(
     OEMCrypto_SESSION session, const uint8_t* message, size_t message_length,
-    const uint8_t* signature, size_t signature_length, const uint32_t* nonce,
-    const uint8_t* enc_rsa_key, size_t enc_rsa_key_length,
-    const uint8_t* enc_rsa_key_iv, uint8_t* wrapped_rsa_key,
-    size_t* wrapped_rsa_key_length);
+    const uint8_t* signature, size_t signature_length,
+    const uint32_t* unaligned_nonce, const uint8_t* enc_rsa_key,
+    size_t enc_rsa_key_length, const uint8_t* enc_rsa_key_iv,
+    uint8_t* wrapped_rsa_key, size_t* wrapped_rsa_key_length);
 
 /*
  * OEMCrypto_LoadDeviceRSAKey
@@ -2185,7 +2425,7 @@ bool OEMCrypto_SupportsUsageTable();
 bool OEMCrypto_IsAntiRollbackHwPresent();
 
 /*
- * OEMCRYPTO_GetNumberOfOpenSessions()
+ * OEMCrypto_GetNumberOfOpenSessions()
  *
  * Description:
  *   Returns the current number of open OEMCrypto sessions. The CDM and
@@ -2208,7 +2448,7 @@ bool OEMCrypto_IsAntiRollbackHwPresent();
 OEMCryptoResult OEMCrypto_GetNumberOfOpenSessions(size_t* count);
 
 /*
- * OEMCRYPTO_GetMaxNumberOfSessions()
+ * OEMCrypto_GetMaxNumberOfSessions()
  *
  * Description:
  *   Returns the maximum number of concurrent OEMCrypto sessions supported by
@@ -2236,6 +2476,47 @@ OEMCryptoResult OEMCrypto_GetNumberOfOpenSessions(size_t* count);
  *   This method is added in API version 10.
  */
 OEMCryptoResult OEMCrypto_GetMaxNumberOfSessions(size_t* max);
+
+/*
+ * OEMCrypto_SupportedCertificates()
+ *
+ * Description:
+ *   Returns the type of certificates keys that this device supports. With very
+ *   few exceptions, all devices should support at least 2048 bit RSA keys.
+ *   High end devices should also support 3072 bit RSA keys.  Devices that are
+ *   cast receivers should also support RSA cast receiver certificates.
+ *
+ *   Beginning with OEMCrypto v14, the provisioning server may deliver to the
+ *   device an RSA key that uses the Carmichael totient.  This does not change
+ *   the RSA algorithm -- however the product of the private and public keys is
+ *   not necessarily the Euler number phi.  OEMCrypto should not reject such
+ *   keys.
+ *
+ * Parameters: none
+ *
+ * Threading:
+ *   This function may be called simultaneously with any other functions.
+ *
+ * Returns:
+ *   Returns the bitwise or of the following flags.   It is likely that high
+ *   end devices will support both 2048 and 3072 bit keys while the widevine
+ *   servers transition to new key sizes.
+ *
+ *   0x1 = OEMCrypto_Supports_RSA_2048bit - the device can load a DRM
+ *   certificate with a 2048 bit RSA key.
+ *
+ *   0x2 = OEMCrypto_Supports_RSA_3072bit - the device can load a DRM
+ *   certificate with a 3072 bit RSA key.
+ *
+ *   0x10 = OEMCrypto_Supports_RSA_CAST - the device can load a CAST
+ *   certificate.  These certificate are used with
+ *   OEMCrypto_GenerateRSASignature with padding type set to 0x2, PKCS1 with
+ *   block type 1 padding.
+ *
+ * Version:
+ *   This method is added in API version 13.
+ */
+uint32_t OEMCrypto_SupportedCertificates();
 
 /*
  * OEMCrypto_Generic_Encrypt
@@ -2402,6 +2683,7 @@ OEMCryptoResult OEMCrypto_Generic_Decrypt(
  *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
  *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
  *
  * Buffer Sizes
  *   OEMCrypto shall support buffer sizes of at least 100 KiB for generic
@@ -2467,6 +2749,7 @@ OEMCryptoResult OEMCrypto_Generic_Sign(OEMCrypto_SESSION session,
  *   OEMCrypto_ERROR_INSUFFICIENT_RESOURCES
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
  *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
  *
  * Buffer Sizes
  *   OEMCrypto shall support buffer sizes of at least 100 KiB for generic
@@ -2485,50 +2768,22 @@ OEMCryptoResult OEMCrypto_Generic_Verify(OEMCrypto_SESSION session,
                                          size_t signature_length);
 
 /*
- * OEMCrypto_UpdateUsageTable
- *
- * Description:
- *   OEMCrypto should propagate values from all open sessions to the Session
- *   Usage Table. If any values have changed, increment the generation number,
- *   sign, and save the table. During playback, this function will be called
- *   approximately once per minute.
- *
- *   Devices that do not implement a Session Usage Table may return
- *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
- *
- * Parameters:
- *   none
- *
- * Threading:
- *   This function will not be called simultaneously with any session functions.
- *
- * Returns:
- *   OEMCrypto_SUCCESS success
- *   OEMCrypto_ERROR_NOT_IMPLEMENTED
- *   OEMCrypto_ERROR_UNKNOWN_FAILURE
- *
- * Version:
- *   This method changed in API version 9.
- */
-OEMCryptoResult OEMCrypto_UpdateUsageTable();
-
-/*
  * OEMCrypto_DeactivateUsageEntry
  *
  * Description:
- *   Find the entry in the Usage Table with a matching PST. Mark the status of
- *   that entry as "inactive". If it corresponds to an open session, the status
- *   of that session will also be marked as "inactive". Then OEMCrypto will
- *   increment Usage Table’s generation number, sign, encrypt, and save the
- *   Usage Table.
- *
- *   If no entry in the Usage Table has a matching PST, return the error
- *   OEMCrypto_ERROR_INVALID_CONTEXT.
+ *   This deactivates the usage entry associated with the current session. This
+ *   means that the state of the usage entry is changed to InactiveUsed if it
+ *   was Active, or InactiveUnused if it was Unused.  This also increments the
+ *   entry's generation number, and the header's master generation number.  The
+ *   entry's flag ForbidReport will be set.  This flag prevents an application
+ *   from generating a report of a deactivated license without first saving the
+ *   entry.
  *
  *   Devices that do not implement a Session Usage Table may return
  *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
  *
  * Parameters:
+ *   session (in): handle for the session to be used.
  *   pst (in) - pointer to memory containing Provider Session Token.
  *   pst_length (in) - length of the pst, in bytes.
  *
@@ -2548,9 +2803,11 @@ OEMCryptoResult OEMCrypto_UpdateUsageTable();
  *   too large.
  *
  * Version:
- *   This method changed in API version 9.
+ *   This method changed in API version 13.
+ *
  */
-OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t* pst,
+OEMCryptoResult OEMCrypto_DeactivateUsageEntry(OEMCrypto_SESSION session,
+                                               const uint8_t* pst,
                                                size_t pst_length);
 
 /*
@@ -2560,23 +2817,29 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t* pst,
  *   If the buffer_length is not sufficient to hold a report structure, set
  *   buffer_length and return OEMCrypto_ERROR_SHORT_BUFFER.
  *
- *   If no entry in the Usage Table has a matching PST, return the error
+ *   If the an entry was not loaded or created with
+ *   OEMCrypto_CreateNewUsageEntry or OEMCrypto_LoadUsageEntry, or if the pst
+ *   does not match that in the entry, return the error
  *   OEMCrypto_ERROR_INVALID_CONTEXT.
  *
- *   OEMCrypto will increment Usage Table’s generation number, sign, encrypt,
- *   and save the Usage Table. This is done, even though the table has not
- *   changed, so that a single rollback cannot undo a call to
- *   DeactivateUsageEntry and still report that license as inactive.
+ *   If the usage entry’s flag ForbidReport is set, indicating the entry has
+ *   not been saved since the entry was deactivated, then the error
+ *   OEMCrypto_ERROR_ENTRY_NEEDS_UPDATE is returned and a report is not
+ *   generated.  Similarly, if any key in the session has been used since the
+ *   last call to OEMCrypto_UpdateUsageEntry, then the report is not generated,
+ *   and OEMCrypto returns  the error OEMCrypto_ERROR_ENTRY_NEEDS_UPDATE.
  *
- *   The pst_report is filled out by subtracting the times un the Usage Table
- *   from the current time on the secure clock. This is done in case the secure
- *   clock is not using UTC time, but is instead using something like seconds
- *   since clock installed.
+ *   The pst_report is filled out by subtracting the times in the Usage Entry
+ *   from the current time on the secure clock.  This is done in case the
+ *   secure clock is not using UTC time, but is instead using something like
+ *   seconds since clock installed.
  *
  *   Valid values for status are:
  *     0 = kUnused -- the keys have not been used to decrypt.
  *     1 = kActive -- the keys have been used, and have not been deactivated.
- *     2 = kInactive -- the keys have been marked inactive.
+ *     2 = kInactive -- deprecated.  Use kInactiveUsed or kInactiveUnused.
+ *     3 = kInactiveUsed -- the keys have been marked inactive after a decrypt.
+ *     4 = kInactiveUnused -- the keys have been marked inactive, no decrypt.
  *
  *   The clock_security_level is reported as follows:
  *     0 = Insecure Clock - clock just uses system time.
@@ -2619,12 +2882,14 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t* pst,
  * Returns:
  *   OEMCrypto_SUCCESS success
  *   OEMCrypto_ERROR_SHORT_BUFFER if report buffer is not large enough to hold
- *   the output signature.
+ *   the output report.
  *   OEMCrypto_ERROR_INVALID_SESSION no open session with that id.
- *   OEMCrypto_ERROR_INVALID_CONTEXT - no entry has matching PST.
  *   OEMCrypto_ERROR_NOT_IMPLEMENTED
- *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *   OEMCrypto_ERROR_INVALID_CONTEXT
+ *   OEMCrypto_ERROR_ENTRY_NEEDS_UPDATE - if no call to UpdateUsageEntry since
+ *   last call to Deactivate or since key use.
  *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *   OEMCrypto_ERROR_WRONG_PST - report asked for wrong pst.
  *
  * Buffer Sizes
  *   OEMCrypto shall support pst sizes of at least 255 bytes.
@@ -2632,131 +2897,26 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t* pst,
  *   too large.
  *
  * Version:
- *   This method changed in API version 9.
+ *   This method changed in API version 13.
  */
 OEMCryptoResult OEMCrypto_ReportUsage(OEMCrypto_SESSION session,
                                       const uint8_t* pst, size_t pst_length,
-                                      OEMCrypto_PST_Report* buffer,
+                                      uint8_t* buffer,
                                       size_t* buffer_length);
 
 /*
- * OEMCrypto_DeleteUsageEntry
+ * OEMCrypto_DeleteOldUsageTable
  *
  * Description:
- *   This function verifies the signature of the given message using the
- *   sessions mac_key[server] and the algorithm HMAC-SHA256, and then deletes
- *   an entry from the session table. The session should already be associated
- *   with the given entry, from a previous call to OEMCrypto_ReportUsage.
+ *   This function will delete the old usage table, if possible, freeing any
+ *   nonvolatile secure memory.  This may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED if the device did not support pre-v13
+ *   usage tables.
  *
- *   After performing all verification listed below, and deleting the entry
- *   from the Usage Table, OEMCrypto will increment Usage Table’s generation
- *   number, and then sign, encrypt, and save the Usage Table.
- *
- *   The signature verification shall use a constant-time algorithm (a signature
- *   mismatch will always take the same time as a successful comparison).
- *
- *   Devices that do not implement a Session Usage Table may return
- *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
- *
- *   Verification:
- *   The following checks should be performed. If any check fails, an error is
- *   returned.
- *   1. The pointer pst is not null, and points inside the message. If not,
- *   return OEMCrypto_ERROR_UNKNOWN_FAILURE.
- *   2. The signature of the message shall be computed, and the API shall
- *   verify the computed signature matches the signature passed in. The
- *   signature will be computed using HMAC-SHA256 and the mac_key_server. If
- *   they do not match, return OEMCrypto_ERROR_SIGNATURE_FAILURE.
- *   3. If the session is not associated with an entry in the Usage Table,
- *   return OEMCrypto_ERROR_UNKNOWN_FAILURE.
- *   4. If the pst passed in as a parameter does not match that in the Usage
- *   Table, return OEMCrypto_ERROR_UNKNOWN_FAILURE.
- *
- * Parameters:
- *   session (in) - handle for the session to be used.
- *   pst (in) - pointer to memory containing Provider Session Token.
- *   pst_length (in) - length of the pst, in bytes.
- *   message (in) - pointer to memory containing message to be verified.
- *   message_length (in) - length of the message, in bytes.
- *   signature (in) - pointer to memory containing the signature.
- *   signature_length (in) - length of the signature, in bytes.
- *
- * Threading:
- *   This function will not be called simultaneously with any session functions.
- *
- * Returns:
- *   OEMCrypto_SUCCESS success
- *   OEMCrypto_ERROR_INVALID_SESSION no open session with that id.
- *   OEMCrypto_ERROR_SIGNATURE_FAILURE
- *   OEMCrypto_ERROR_NOT_IMPLEMENTED
- *   OEMCrypto_ERROR_UNKNOWN_FAILURE
- *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
- *
- * Buffer Sizes
- *   OEMCrypto shall support pst sizes of at least 255 bytes.
- *   OEMCrypto shall return OEMCrypto_ERROR_BUFFER_TOO_LARGE if the buffer is
- *   too large.
- *
- * Version:
- *   This method changed in API version 9.
- */
-OEMCryptoResult OEMCrypto_DeleteUsageEntry(
-    OEMCrypto_SESSION session, const uint8_t* pst, size_t pst_length,
-    const uint8_t* message, size_t message_length, const uint8_t* signature,
-    size_t signature_length);
-
-/*
- * OEMCrypto_ForceDeleteUsageEntry
- *
- * Description:
- * This function deletes an entry from the session usage table. This will be
- * used for stale entries without a signed request from the server.
- *
- * After performing all verification listed below, and deleting the entry from
- * the Usage Table, OEMCrypto will increment the Usage Table’s generation
- * number, and then sign, encrypt, and save the Usage Table.
- *
- * Devices that do not implement a Session Usage Table may return
- * OEMCrypto_ERROR_NOT_IMPLEMENTED.
- *
- * Verification
- *   The following checks should be performed. If any check fails, an error is
- *   returned.
- *   1) The pointer pst is not null. If not, return
- *      OEMCrypto_ERROR_UNKNOWN_FAILURE.
- *
- * Parameters
- *   pst (in) - pointer to memory containing Provider Session Token.
- *   pst_length (in) - length of the pst, in bytes.
- *
- * Returns
- *   OEMCrypto_SUCCESS success
- *   OEMCrypto_ERROR_NOT_IMPLEMENTED
- *   OEMCrypto_ERROR_UNKNOWN_FAILURE
- *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
- *
- * Buffer Sizes
- *   OEMCrypto shall support pst sizes of at least 255 bytes.
- *   OEMCrypto shall return OEMCrypto_ERROR_BUFFER_TOO_LARGE if the buffer is
- *   too large.
- *
- * Threading
- *   This function will not be called simultaneously with any session functions.
- *
- * Version
- *   This method changed in API version 10.
- */
-OEMCryptoResult OEMCrypto_ForceDeleteUsageEntry(const uint8_t* pst,
-                                                size_t pst_length);
-
-/*
- * OEMCrypto_DeleteUsageTable
- *
- * Description:
- *   This is called when the CDM system believes there are major problems or
- *   resource issues. The entire table should be cleaned and a new table should
- *   be created.  This is the same as calling ForceDeleteUsageEntry on all
- *   entries.
+ *   This is only needed for devices that are upgrading from a previous version
+ *   of OEMCrypto to v13.  Devices that have an existing usage table with
+ *   customer’s offline licenses will use this method to move entries from the
+ *   old table to the new one.
  *
  * Parameters:
  *   none
@@ -2770,9 +2930,532 @@ OEMCryptoResult OEMCrypto_ForceDeleteUsageEntry(const uint8_t* pst,
  *   OEMCrypto_ERROR_UNKNOWN_FAILURE
  *
  * Version:
- *   This method changed in API version 9.
+ *   This method changed in API version 13.
  */
-OEMCryptoResult OEMCrypto_DeleteUsageTable();
+OEMCryptoResult OEMCrypto_DeleteOldUsageTable();
+
+/*
+ * OEMCrypto_CreateOldUsageEntry
+ *
+ * Description:
+ *   This forces the creation of an entry in the old usage table in order to
+ *   test OEMCrypto_CopyOldUsageTable. OEMCrypto will create a new entry, set
+ *   the status and compute the times at license receive, first decrypt and
+ *   last decrypt.  The mac keys will be copied to the entry.  The mac keys are
+ *   not encrypted, but will only correspond to a test license.
+ *
+ *   Devices that have do not support usage tables, or devices that are will
+ *   not be field upgraded to OEMCrypto v13 may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method changed in API version 13.
+ */
+OEMCryptoResult OEMCrypto_CreateOldUsageEntry(uint64_t time_since_license_received,
+                                              uint64_t time_since_first_decrypt,
+                                              uint64_t time_since_last_decrypt,
+                                              OEMCrypto_Usage_Entry_Status status,
+                                              uint8_t *server_mac_key,
+                                              uint8_t *client_mac_key,
+                                              const uint8_t* pst,
+                                              size_t pst_length);
+
+/*
+ * OEMCrypto_IsSRMUpdateSupported
+ *
+ * Description:
+ *   Returns true if the device supports SRM files and the file can be updated
+ *   via the function OEMCrypto_LoadSRM.  This also returns false for devices
+ *   that do not support an SRM file, devices that do not support HDCP, and
+ *   devices that have no external display support.
+ *
+ * Parameters:
+ *   none
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   true - if LoadSRM is supported.
+ *   false - otherwise.
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+bool OEMCrypto_IsSRMUpdateSupported();
+
+/*
+ * OEMCrypto_GetCurrentSRMVersion
+ *
+ * Description:
+ *   Returns the version number of the current SRM file.  If the device does
+ *   not support SRM files, this will return OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *   If the device only supports local displays, it would return
+ *   OEMCrypto_LOCAL_DISPLAY_ONLY.  If the device has an SRM, but cannot use
+ *   OEMCrypto to update the SRM, then this function would set version to be
+ *   the current version number, and return OEMCrypto_SUCCESS, but it would
+ *   return false from OEMCrypto_IsSRMUpdateSupported.
+ *
+ * Parameters:
+ *   version (out): current SRM version number.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_SUCCESS
+ *   OEMCrypto_LOCAL_DISPLAY_ONLY - to indicate version was not set, and is not
+ *   needed.
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_GetCurrentSRMVersion(uint16_t* version);
+
+
+/*
+ * OEMCrypto_LoadSRM
+ *
+ * Description:
+ *   Verify and install a new SRM file.  The device shall install the new file
+ *   only if verification passes.  If verification fails, the existing SRM will
+ *   be left in place.  Verification is defined by DCP, and includes
+ *   verification of the SRM’s signature and verification that the SRM version
+ *   number will not be decreased.   See the section HDCP SRM Update above for
+ *   more details about the SRM. This function is for devices that support HDCP
+ *   v2.2 or higher and wish to receive 4k content.
+ *
+ * Parameters:
+ *   bufer (in): buffer containing the SRM
+ *   buffer_length (in): length of the SRM, in bytes.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS - if the file was valid and was installed.
+ *   OEMCrypto_ERROR_INVALID_CONTEXT - if the SRM version is too low, or the
+ *   file is corrupted.
+ *   OEMCrypto_ERROR_SIGNATURE_FAILURE - If the signature is invalid.
+ *   OEMCrypto_ERROR_BUFFER_TOO_LARGE - if the buffer is too large for the device.
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_LoadSRM(const uint8_t* buffer,
+                                  size_t buffer_length);
+
+/*
+ * OEMCrypto_RemoveSRM
+ *
+ * Description:
+ *   Delete the current SRM.  Any valid SRM, regardless of version number, will
+ *   be installable after this via OEMCrypto_LoadSRM.
+ *
+ *   This function should not be implemented on production devices, and will
+ *   only be used to verify unit tests on a test device.
+ *
+ * Parameters:
+ *   none
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_SUCCESS
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_RemoveSRM();
+
+/*
+ * OEMCrypto_CreateUsageTableHeader
+ *
+ * Description:
+ *   This creates a new Usage Table Header with no entries.  If there is
+ *   already a generation number stored in secure storage, it will be
+ *   incremented by 1 and used as the new Master Generation Number.  This will
+ *   only be called if the CDM layer finds no existing usage table on the file
+ *   system.  OEMCrypto will encrypt and sign the new, empty, header and return
+ *   it in the provided buffer.
+ *
+ *   Devices that do not implement a Session Usage Table may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *
+ * Parameters:
+ *   [out] header_buffer: pointer to memory where encrypted usage table header
+ *   is written.
+ *   [in/out] header_buffer_length: (in) length of the header_buffer, in bytes.
+ *                                  (out) actual length of the header_buffer
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_SHORT_BUFFER - if header_buffer_length is too small.
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_CreateUsageTableHeader(uint8_t* header_buffer,
+                                                 size_t* header_buffer_length);
+
+/*
+ * OEMCrypto_LoadUsageTableHeader
+ *
+ * Description:
+ *   This loads the Usage Table Header.  The buffer’s signature is verified and
+ *   the buffer is decrypted.  OEMCrypto will verify the verification
+ *   string. If the Master Generation Number is more than 1 off, the table is
+ *   considered bad, the headers are NOT loaded, and the error
+ *   OEMCrypto_ERROR_GENERATION_SKEW is returned.   If the generation number is
+ *   off by 1, the warning OEMCrypto_WARNING_GENERATION_SKEW is returned but
+ *   the header is still loaded.  This warning may be logged by the CDM layer.
+ *
+ *
+ * Parameters:
+ *   [in] buffer: pointer to memory containing encrypted usage table header.
+ *   [in] buffert_length: length of the buffer, in bytes.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_SHORT_BUFFER
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED - some devices do not implement usage
+ *   tables.
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *   OEMCrypto_WARNING_GENERATION_SKEW - if the generation number is off by
+ *   exactly 1.
+ *   OEMCrypto_ERROR_GENERATION_SKEW - if the generation number is off by more
+ *   than 1.
+ *   OEMCrypto_ERROR_SIGNATURE_FAILURE - if the signature failed.
+ *   OEMCrypto_ERROR_BAD_MAGIC - verification string does not match.
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_LoadUsageTableHeader(const uint8_t* buffer,
+                                               size_t buffer_length);
+
+/*
+ * OEMCrypto_CreateNewUsageEntry
+ *
+ * Description:
+ *   This creates a new usage entry.  The size of the header will be increased
+ *   by 8 bytes, and secure volatile memory will be allocated for it. The new
+ *   entry will be associated with the given session. The status of the new
+ *   entry will be set to “unused”. OEMCrypto will set *usage_entry_number to
+ *   be the index of the new entry.  The first entry created will have index 0.
+ *   The new entry will be initialized with a generation number equal to the
+ *   master generation number, which will also be stored in the header’s new
+ *   slot.  Then the master generation number will be incremented.  Since each
+ *   entry’s generation number is less than the master generation number, the
+ *   new entry will have a generation number that is larger than all other
+ *   entries and larger than all previously deleted entries.  This helps
+ *   prevent a rogue application from deleting an entry and then loading an old
+ *   version of it.
+ *
+ * Parameters:
+ * [in] session: handle for the session to be used.
+ * [out] usage_entry_number: index of new usage entry.
+ *
+ * Threading:
+ *   This function may be called simultaneously with functions on other
+ *   sessions, but not with other functions on this session.
+ *
+ * Returns:
+ *  OEMCrypto_SUCCESS success
+ *  OEMCrypto_ERROR_NOT_IMPLEMENTED - some devices do not implement usage tables.
+ *  OEMCrypto_ERROR_INSUFFICIENT_RESOURCES - if there is no room in memory to
+ *  increase the size of the usage table header.  The CDM layer can delete some
+ *  entries and then try again, or it can pass the error up to the
+ *  application.
+ *  OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_CreateNewUsageEntry(OEMCrypto_SESSION session,
+                                              uint32_t* usage_entry_number);
+
+/*
+ * OEMCrypto_LoadUsageEntry
+ *
+ * Description:
+ *   This loads a usage table saved previously by UpdateUsageEntry.   The
+ *   signature at the beginning of the buffer is verified and the buffer will
+ *   be decrypted.  Then the verification field in the entry will be verified.
+ *   The index in the entry must match the index passed in.  The generation
+ *   number in the entry will be compared against that in the header.  If it is
+ *   off by 1, a warning is returned, but the entry is still loaded.  This
+ *   warning may be logged by the CDM layer.  If the generation number is off
+ *   by more than 1, an error is returned and the entry is not loaded.
+ *
+ *   If the entry is already loaded into another session, then this fails and
+ *   returns OEMCrypto_ERROR_INVALID_SESSION.
+ *
+ * Parameters:
+ *  [in] session: handle for the session to be used.
+ *  [in] usage_entry_number: index of existing usage entry.
+ *  [in] buffer: pointer to memory containing encrypted usage table entry.
+ *  [in] buffer_length: length of the buffer, in bytes.
+ *
+ * Threading:
+ *   This function may be called simultaneously with functions on other
+ *   sessions, but not with other functions on this session.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_SHORT_BUFFER
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED - some devices do not implement usage
+ *   tables.
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE - index beyond end of table.
+ *   OEMCrypto_ERROR_INVALID_SESSION - entry associated with another session or
+ *   the index is wrong.
+ *   OEMCrypto_WARNING_GENERATION_SKEW - if the generation number is off by
+ *   exactly 1.
+ *   OEMCrypto_ERROR_GENERATION_SKEW - if the generation number is off by more
+ *   than 1.
+ *   OEMCrypto_ERROR_SIGNATURE_FAILURE - if the signature failed.
+ *   OEMCrypto_ERROR_BAD_MAGIC - verification string does not match.
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_LoadUsageEntry(OEMCrypto_SESSION session,
+                                         uint32_t index,
+                                         const uint8_t* buffer,
+                                         size_t buffer_size);
+
+/*
+ * OEMCrypto_UpdateUsageEntry
+ *
+ * Description:
+ *   Updates the session’s usage entry and fills buffers with the encrypted and
+ *   signed entry and usage table header.  OEMCrypto will update all time and
+ *   status values in the entry, and then increment the entry’s generation
+ *   number.  The corresponding generation number in the usage table header is
+ *   also incremented so that it matches the one in the entry.  The master
+ *   generation number in the usage table header is incremented and is copied
+ *   to secure persistent storage.  OEMCrypto will encrypt and sign the entry
+ *   into the entry_buffer, and it will encrypt and sign the usage table header
+ *   into the header_buffer.  Some actions, such as the first decrypt and
+ *   deactivating an entry, will also increment the entry’s generation number
+ *   as well as changing the entry’s status and time fields.   As in OEMCrypto
+ *   v12, the first decryption will change the status from Inactive to Active,
+ *   and it will set the time stamp "first decrypt".
+ *
+ *   If the usage entry has the flag ForbidReport set, then the flag is
+ *   cleared.  It is the responsibility of the CDM layer to call this function
+ *   and save the usage table before the next call to ReportUsage and before
+ *   the CDM is terminated.  Failure to do so will result in generation number
+ *   skew, which will invalidate all of the usage table.
+ *
+ *   If either buffer_length is not large enough, they are set to the needed
+ *   size, and OEMCrypto_ERROR_SHORT_BUFFER.  In this case, the entry is not
+ *   updated, ForbidReport is not cleared, generation numbers are not
+ *   incremented, and no other work is done.
+ *
+ * Parameters:
+ *  [in] session: handle for the session to be used.
+ *  [out] header_buffer: pointer to memory where encrypted usage table header
+ *  is written.
+ *  [in/out] header_buffer_length: (in) length of the header_buffer, in bytes.
+ *                                 (out) actual length of the header_buffer
+ *  [out] entry_buffer: pointer to memory where encrypted usage table entry is
+ *  written.
+ *  [in/out] buffer_length: (in) length of the entry_buffer, in bytes.
+ *                          (out) actual length of the entry_buffer
+ *
+ * Threading:
+ *   This function may be called simultaneously with functions on other
+ *   sessions, but not with other functions on this session.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_SHORT_BUFFER
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED - some devices do not implement usage tables.
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_UpdateUsageEntry(OEMCrypto_SESSION session,
+                                           uint8_t* header_buffer,
+                                           size_t* header_buffer_length,
+                                           uint8_t* entry_buffer,
+                                           size_t* entry_buffer_length);
+
+/*
+ * OEMCrypto_ShrinkUsageTableHeader
+ *
+ * Description:
+ *   This shrinks the usage table and the header.  This function is used by the
+ *   CDM layer after it has  defragmented the usage table and can delete unused
+ *   entries.  It is an error if any open session is associated with an entry
+ *   that will be erased.   If new_table_size is larger than the current size,
+ *   then the header is not changed and the error is returned.  If the header
+ *   has not been previously loaded, then an error is returned.  OEMCrypto will
+ *   increment the master generation number in the header and store the new
+ *   value in secure persistent storage.  Then, OEMCrypto will encrypt and sign
+ *   the header into the provided buffer.  The generation numbers of all
+ *   remaining entries will remain unchanged. The next time
+ *   OEMCrypto_CreateNewUsageEntry is called, the new entry will have an index
+ *   of new_table_size.
+ *
+ *   Devices that do not implement a Session Usage Table may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *
+ *   If header_buffer_length is not large enough to hold the new table, it is
+ *   set to the needed value, the generation number is not  incremented, and
+ *   OEMCrypto_ERROR_SHORT_BUFFER is returned.
+ *
+ * Parameters:
+ *  [in] new_entry_count: number of entries in the to be in the header.
+ *  [out] header_buffer: pointer to memory where encrypted usage table header
+ *  is written.
+ *  [in/out] header_buffer_length: (in) length of the header_buffer, in bytes.
+ *                                 (out) actual length of the header_buffer
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_SHORT_BUFFER
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_ShrinkUsageTableHeader(uint32_t new_entry_count,
+                                                 uint8_t* header_buffer,
+                                                 size_t* header_buffer_length);
+
+/*
+ * OEMCrypto_MoveEntry
+ *
+ * Description: Moves the entry associated with the current session from one
+ *   location in the usage table header to another.  This function is used by
+ *   the CDM layer to defragment the usage table. This does not modify any data
+ *   in the entry, except the index and the generation number.  The index in
+ *   the session’s usage entry will be changed to new_index.  The generation
+ *   number in session’s usage entry and in the header for new_index will be
+ *   increased to the master generation number, and then the master generation
+ *   number is incremented. If there was an existing entry at the new location,
+ *   it will be overwritten.  It is an error to call this when the entry that
+ *   was at new_index is associated with a currently open session.  In this
+ *   case, the error code OEMCrypto_ERROR_ENTRY_IN_USE is returned. It is the
+ *   CDM layer’s responsibility to call UpdateUsageEntry after moving an entry.
+ *   It is an error for new_index to be beyond the end of the existing usage
+ *   table header.
+ *
+ *   Devices that do not implement a Session Usage Table may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *
+ * Parameters:
+ *   [in] session: handle for the session to be used.
+ *   [in] new_index: new index to be used for the session’s usage entry
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *   OEMCrypto_ERROR_BUFFER_TOO_LARGE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_MoveEntry(OEMCrypto_SESSION session,
+                                    uint32_t new_index);
+
+/*
+ * OEMCrypto_CopyOldUsageEntry
+ *
+ * Description:
+ *   This function copies an entry from the old v12 table to the new table.
+ *   The new entry will already have been loaded by CreateNewUsageEntry.  If
+ *   the device did not support pre-v13 usage tables, this may return
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED.
+ *
+ *   This is only needed for devices that are upgrading from a previous version
+ *   of OEMCrypto to v13.  Devices that have an existing usage table with
+ *   customer’s offline licenses will use this method to move entries from the
+ *   old table to the new one.
+ *
+ * Parameters:
+ *  [in] session: handle for the session to be used.
+ *  [in] pst: pointer to memory containing Provider Session Token.
+ *  [in] pst_length: length of the pst, in bytes.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_UNKNOWN_FAILURE
+ *
+ * Version:
+ *   This method is new in API version 13.
+ */
+OEMCryptoResult OEMCrypto_CopyOldUsageEntry(OEMCrypto_SESSION session,
+                                            const uint8_t*pst,
+                                            size_t pst_length);
+
+/*
+ * OEMCrypto_GetAnalogOutputFlags
+ *
+ * Description:
+ *   Returns whether the device supports analog output or not.  This
+ *   information will be sent to the license server, and may be used to
+ *   determine the type of license allowed.  This function is for reporting
+ *   only.  It is paired with the key control block flags Disable_Analog_Output
+ *   and CGMS.
+ *
+ * Parameters:
+ *   none.
+ *
+ * Threading:
+ *   This function will not be called simultaneously with any session functions.
+ *
+ * Returns:
+ *    Returns a bitwise OR of the following flags.
+ *      0x0 = OEMCrypto_No_Analog_Output -- the device has no analog output.
+ *      0x1 = OEMCrypto_Supports_Analog_Output - the device does have analog
+ *            output.
+ *      0x2 = OEMCrypto_Can_Disable_Analog_Ouptput - the device does have analog
+ *            output, but it will disable analog output if required by the key
+ *            control block.
+ *      0x4 = OEMCrypto_Supports_CGMS_A - the device supports signaling 2-bit
+ *            CGMS-A, if required by the key control block
+ *
+ * Version:
+ *   This method is new in API version 14.
+ */
+uint32_t OEMCrypto_GetAnalogOutputFlags();
 
 #ifdef __cplusplus
 }

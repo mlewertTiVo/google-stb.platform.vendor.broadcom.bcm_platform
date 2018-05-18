@@ -54,7 +54,7 @@
 #define KEY_SIZE  16
 #define MAC_KEY_SIZE  32
 
-#define OEMCRYPTO_API_VERSION 12
+#define OEMCRYPTO_API_VERSION 14
 
 typedef struct {
   uint8_t signature[MAC_KEY_SIZE];
@@ -270,63 +270,6 @@ bool RangeCheck(const uint8_t* message, uint32_t message_length,
     return true;
 }
 
-OEMCryptoResult OEMCrypto_LoadKeys(OEMCrypto_SESSION session,
-    const uint8_t* message, size_t message_length, const uint8_t* signature,
-    size_t signature_length, const uint8_t* enc_mac_key_iv,
-    const uint8_t* enc_mac_keys, size_t num_keys,
-    const OEMCrypto_KeyObject* key_array, const uint8_t* pst, size_t pst_length)
-{
-    OEMCryptoResult wvRc= OEMCrypto_SUCCESS;
-    unsigned int i;
-
-    ALOGV("%s entered", __FUNCTION__);
-
-    if (message == NULL || message_length == 0 ||
-        signature == NULL || signature_length == 0 ||
-        key_array == NULL || num_keys == 0)
-    {
-        ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_INVALID_CONTEXT]");
-        return OEMCrypto_ERROR_INVALID_CONTEXT;
-    }
-
-    /* Range check*/
-    if (!RangeCheck(message, message_length, enc_mac_keys, 2*MAC_KEY_SIZE, true) ||
-        !RangeCheck(message, message_length, enc_mac_key_iv, KEY_IV_SIZE, true)||
-        !RangeCheck(message, message_length, pst, pst_length, true))
-    {
-        ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_SIGNATURE_FAILURE - range check (pst included).]");
-        return OEMCrypto_ERROR_SIGNATURE_FAILURE;
-    }
-
-    for (i = 0; i < num_keys; i++)
-    {
-        if (!RangeCheck(message, message_length, key_array[i].key_id,
-            key_array[i].key_id_length, false) ||
-            !RangeCheck(message, message_length, key_array[i].key_data,
-            key_array[i].key_data_length, false) ||
-            !RangeCheck(message, message_length, key_array[i].key_data_iv,
-            KEY_IV_SIZE, false) ||
-            !RangeCheck(message, message_length, key_array[i].key_control,
-            KEY_CONTROL_SIZE, false) ||
-            !RangeCheck(message, message_length, key_array[i].key_control_iv,
-            KEY_IV_SIZE, false))
-        {
-            ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_SIGNATURE_FAILURE -range check %d]", i);
-            return OEMCrypto_ERROR_SIGNATURE_FAILURE;
-        }
-    }
-
-    if (drm_WVOemCrypto_LoadKeys_V11_or_V12(session, message, message_length,
-        signature, signature_length, enc_mac_key_iv, enc_mac_keys, num_keys,
-        (void*)key_array, pst, pst_length, (int *)&wvRc) != Drm_Success)
-    {
-        ALOGE("[OEMCrypto_Loadkeys(SID=%08X): failed]", session);
-        return wvRc;
-    }
-
-    return OEMCrypto_SUCCESS;
-}
-
 OEMCryptoResult OEMCrypto_RefreshKeys(OEMCrypto_SESSION session,
     const uint8_t* message, size_t message_length, const uint8_t* signature,
     size_t signature_length, size_t num_keys,
@@ -388,22 +331,6 @@ OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session, const uint8
     dump_hex("key_ctrl_box", key_control_block, *key_control_block_length);
     return wvRc;
 
-}
-
-
-OEMCryptoResult OEMCrypto_SelectKey(const OEMCrypto_SESSION session,
-    const uint8_t* key_id, size_t key_id_length)
-{
-    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
-
-    if (drm_WVOemCrypto_SelectKey_V13(session, key_id, key_id_length, (int*)&wvRc) != Drm_Success)
-    {
-        ALOGV("[OEMCrypto_SelectKeys(SID=%08X): failed]", session);
-        return wvRc;
-    }
-
-    ALOGV("[OEMCrypto_selectKeys(SID=%08X): passed]", session);
-    return OEMCrypto_SUCCESS;
 }
 
 /*WV v10 changes*/
@@ -892,11 +819,13 @@ OEMCryptoResult OEMCrypto_UpdateUsageTable()
  * Version:
  *   This method changed in API version 9.
  */
-OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t *pst, size_t pst_length)
+OEMCryptoResult OEMCrypto_DeactivateUsageEntry(OEMCrypto_SESSION session, const uint8_t *pst, size_t pst_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
-    if (DRM_WVOemCrypto_DeactivateUsageEntry_V12((uint8_t *)pst, pst_length, (int*)&wvRc) != Drm_Success)
+    (void)session;
+
+    if (DRM_WVOemCrypto_Deactivate_Usage_Entry(session, (uint8_t *)pst, pst_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("[%s(): call FAILED (%d)]", __FUNCTION__, wvRc);
     }
@@ -979,7 +908,7 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t *pst, size_t pst_le
  *   This method changed in API version 9.
  */
 OEMCryptoResult OEMCrypto_ReportUsage(OEMCrypto_SESSION session,
-    const uint8_t *pst, size_t pst_length, OEMCrypto_PST_Report* buffer,
+    const uint8_t *pst, size_t pst_length, uint8_t* buffer,
     size_t *buffer_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
@@ -1068,7 +997,7 @@ OEMCryptoResult OEMCrypto_DeleteUsageEntry(OEMCrypto_SESSION session,
 }
 
 /*
- * OEMCrypto_DeleteUsageTable
+ * OEMCrypto_DeleteOldUsageTable
  *
  * Description:
  *   This is called when the CDM system believes there are major problems or
@@ -1089,7 +1018,7 @@ OEMCryptoResult OEMCrypto_DeleteUsageEntry(OEMCrypto_SESSION session,
  * Version:
  *   This method changed in API version 9.
  */
-OEMCryptoResult OEMCrypto_DeleteUsageTable()
+OEMCryptoResult OEMCrypto_DeleteOldUsageTable()
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
@@ -1156,7 +1085,7 @@ OEMCryptoResult OEMCrypto_GetMaxNumberOfSessions(size_t* maximum)
 
 bool OEMCrypto_IsAntiRollbackHwPresent()
 {
-    return false;
+    return DRM_WVOemCrypto_IsAntiRollbackHwPresent();
 }
 
 OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t *data_addr,
@@ -1217,20 +1146,6 @@ OEMCryptoResult OEMCrypto_InstallKeybox(const uint8_t* keybox, size_t keyBoxLeng
 }
 
 //WV v10
-OEMCryptoResult OEMCrypto_LoadTestKeybox()
-{
-  OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
-  ALOGV("-- OEMCryptoResult OEMCrypto_LoadTestKeybox()\n");
-
- /* if ((drm_WVOemCrypto_LoadTestKeybox((int*)&wvRc) != Drm_Success) || (wvRc !=0) )
-    {
-        return wvRc;
-    }*/
-    ALOGE("[OEMCrypto_LoadTestKeybox(): OEMCrypto_LoadTestKeybox  rc=%d]",wvRc);
-    return OEMCrypto_SUCCESS;
-
-}
-
 OEMCryptoResult OEMCrypto_ForceDeleteUsageEntry(const uint8_t* pst,
                                                 size_t pst_length)
 {
@@ -1359,3 +1274,295 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
     return OEMCrypto_ERROR_NOT_IMPLEMENTED;
 }
 
+/*
+ * OEMCrypto_RewrapDeviceRSAKey30
+ *
+ * Introduced in version 13
+ */
+uint32_t OEMCrypto_SupportedCertificates()
+{
+    return OEMCrypto_Supports_RSA_2048bit | OEMCrypto_Supports_RSA_CAST;
+}
+
+bool OEMCrypto_IsSRMUpdateSupported()
+{
+    return false;
+}
+
+OEMCryptoResult OEMCrypto_GetCurrentSRMVersion(uint16_t* version)
+{
+    (void)version;
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
+}
+
+OEMCryptoResult OEMCrypto_LoadSRM(const uint8_t* buffer,
+                                  size_t buffer_length)
+{
+    (void)buffer;
+    (void)buffer_length;
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
+}
+
+OEMCryptoResult OEMCrypto_RemoveSRM()
+{
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
+}
+
+OEMCryptoResult OEMCrypto_CreateUsageTableHeader(uint8_t* header_buffer,
+                                                 size_t* header_buffer_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Create_Usage_Table_Header(header_buffer, (uint32_t *)header_buffer_length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_LoadUsageTableHeader(const uint8_t* buffer,
+                                               size_t buffer_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Load_Usage_Table_Header(buffer, (uint32_t)buffer_length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_CreateNewUsageEntry(OEMCrypto_SESSION session,
+                                              uint32_t* usage_entry_number)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Create_New_Usage_Entry(session, usage_entry_number, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_LoadUsageEntry(OEMCrypto_SESSION session,
+                                         uint32_t index,
+                                         const uint8_t* buffer,
+                                         size_t buffer_size)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Load_Usage_Entry(session, index, buffer, (uint32_t)buffer_size, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_UpdateUsageEntry(OEMCrypto_SESSION session,
+                                           uint8_t* header_buffer,
+                                           size_t* header_buffer_length,
+                                           uint8_t* entry_buffer,
+                                           size_t* entry_buffer_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Update_Usage_Entry(session, header_buffer, (uint32_t *)header_buffer_length, entry_buffer,
+        (uint32_t *)entry_buffer_length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_ShrinkUsageTableHeader(uint32_t new_entry_count,
+                                                 uint8_t* header_buffer,
+                                                 size_t* header_buffer_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Shrink_Usage_Table_Header(new_entry_count, header_buffer, (uint32_t *)header_buffer_length,
+        (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_MoveEntry(OEMCrypto_SESSION session,
+                                    uint32_t new_index)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Move_Entry(session, new_index, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_CopyOldUsageEntry(OEMCrypto_SESSION session,
+                                            const uint8_t*pst,
+                                            size_t pst_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Copy_Old_Usage_Entry(session, pst, (uint32_t)pst_length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_CreateOldUsageEntry(uint64_t time_since_license_received,
+                                              uint64_t time_since_first_decrypt,
+                                              uint64_t time_since_last_decrypt,
+                                              OEMCrypto_Usage_Entry_Status status,
+                                              uint8_t *server_mac_key,
+                                              uint8_t *client_mac_key,
+                                              const uint8_t* pst,
+                                              size_t pst_length)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (DRM_WVOemCrypto_Create_Old_Usage_Entry(time_since_license_received, time_since_first_decrypt,
+        time_since_last_decrypt, status, server_mac_key, client_mac_key, pst, (uint32_t)pst_length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
+    }
+
+    return wvRc;
+}
+
+uint32_t OEMCrypto_GetAnalogOutputFlags()
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    uint32_t analog_output_flags = 0;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if(DRM_WVOemCrypto_GetAnalogOutputFlags(&analog_output_flags, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGV("%s: failed with error %d",__FUNCTION__, wvRc);
+        return 0;
+    }
+
+    return analog_output_flags;
+}
+
+OEMCryptoResult OEMCrypto_LoadTestKeybox(const uint8_t *buffer, size_t length)
+{
+  OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+  (void)buffer;
+  (void)length;
+  ALOGV("-- OEMCryptoResult OEMCrypto_LoadTestKeybox()\n");
+  ALOGE("[OEMCrypto_LoadTestKeybox(): OEMCrypto_LoadTestKeybox  rc=%d]",wvRc);
+  return OEMCrypto_SUCCESS;
+}
+
+OEMCryptoResult OEMCrypto_LoadEntitledContentKeys(OEMCrypto_SESSION session,
+                                                  size_t num_keys,
+                                                  const OEMCrypto_EntitledContentKeyObject* key_array)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    ALOGV("%s entered", __FUNCTION__);
+
+    if(DRM_WVOemCrypto_LoadEntitledContentKeys(session, num_keys, (void*)key_array, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("[DRM_WVOemCrypto_LoadEntitledContentKeys(SID=%08X): failed]", session);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
+                                    const uint8_t* content_key_id,
+                                    size_t content_key_id_length,
+                                    OEMCryptoCipherMode cipher_mode)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    if (drm_WVOemCrypto_SelectKey(session, content_key_id, content_key_id_length, cipher_mode, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGV("[OEMCrypto_SelectKey(SID=%08X): failed]", session);
+        return wvRc;
+    }
+
+    ALOGV("[OEMCrypto_selectKey(SID=%08X): passed]", session);
+    return OEMCrypto_SUCCESS;
+}
+
+OEMCryptoResult OEMCrypto_LoadKeys(
+    OEMCrypto_SESSION session, const uint8_t* message, size_t message_length,
+    const uint8_t* signature, size_t signature_length,
+    const uint8_t* enc_mac_keys_iv, const uint8_t* enc_mac_keys,
+    size_t num_keys, const OEMCrypto_KeyObject* key_array, const uint8_t* pst,
+    size_t pst_length, const uint8_t* srm_requirement,
+    OEMCrypto_LicenseType license_type)
+{
+    OEMCryptoResult wvRc= OEMCrypto_SUCCESS;
+    unsigned int i;
+
+    ALOGV("%s entered", __FUNCTION__);
+
+    if (message == NULL || message_length == 0 ||
+        signature == NULL || signature_length == 0 ||
+        key_array == NULL || num_keys == 0)
+    {
+        ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_INVALID_CONTEXT]");
+        return OEMCrypto_ERROR_INVALID_CONTEXT;
+    }
+
+    /* Range check*/
+    if (!RangeCheck(message, message_length, enc_mac_keys, 2*MAC_KEY_SIZE, true) ||
+        !RangeCheck(message, message_length, enc_mac_keys_iv, KEY_IV_SIZE, true)||
+        !RangeCheck(message, message_length, pst, pst_length, true))
+    {
+        ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_SIGNATURE_FAILURE - range check (pst included).]");
+        return OEMCrypto_ERROR_SIGNATURE_FAILURE;
+    }
+
+    for (i = 0; i < num_keys; i++)
+    {
+        if (!RangeCheck(message, message_length, key_array[i].key_id,
+            key_array[i].key_id_length, false) ||
+            !RangeCheck(message, message_length, key_array[i].key_data,
+            key_array[i].key_data_length, false) ||
+            !RangeCheck(message, message_length, key_array[i].key_data_iv,
+            KEY_IV_SIZE, false) ||
+            !RangeCheck(message, message_length, key_array[i].key_control,
+            KEY_CONTROL_SIZE, false) ||
+            !RangeCheck(message, message_length, key_array[i].key_control_iv,
+            KEY_IV_SIZE, false))
+        {
+            ALOGE("[OEMCrypto_LoadKeys(): OEMCrypto_ERROR_SIGNATURE_FAILURE -range check %d]", i);
+            return OEMCrypto_ERROR_SIGNATURE_FAILURE;
+        }
+    }
+
+    if (drm_WVOemCrypto_LoadKeys(session, message, message_length,
+        signature, signature_length, enc_mac_keys_iv, enc_mac_keys, num_keys,
+        (void*)key_array, pst, pst_length, srm_requirement, license_type, (int *)&wvRc) != Drm_Success)
+    {
+        ALOGE("[OEMCrypto_Loadkeys(SID=%08X): failed]", session);
+        return wvRc;
+    }
+
+    return OEMCrypto_SUCCESS;
+}
