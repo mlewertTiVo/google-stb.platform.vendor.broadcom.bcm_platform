@@ -1487,13 +1487,15 @@ uint32_t OEMCrypto_GetAnalogOutputFlags()
 
 OEMCryptoResult OEMCrypto_LoadTestKeybox(const uint8_t *buffer, size_t length)
 {
-  OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
-  (void)buffer;
-  (void)length;
-  ALOGV("-- OEMCryptoResult OEMCrypto_LoadTestKeybox()\n");
-  ALOGE("[OEMCrypto_LoadTestKeybox(): OEMCrypto_LoadTestKeybox  rc=%d]",wvRc);
-  return OEMCrypto_SUCCESS;
+    if(drm_WVOemCrypto_LoadTestKeybox((uint8_t *)buffer, (uint32_t)length, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("%s: failed with error %d",__FUNCTION__, wvRc);
+        return OEMCrypto_ERROR_WRITE_KEYBOX;
+    }
+
+    return wvRc;
 }
 
 OEMCryptoResult OEMCrypto_LoadEntitledContentKeys(OEMCrypto_SESSION session,
