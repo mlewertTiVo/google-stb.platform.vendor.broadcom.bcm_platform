@@ -165,6 +165,9 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
         audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = left * 100;
         audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+    } else {
+        // Netflix requirement: mute passthrough when volume is 0
+        brcm_audio_set_mute_state(left == 0.0 && right == 0.0);
     }
 
     return 0;

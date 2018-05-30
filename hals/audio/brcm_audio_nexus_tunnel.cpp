@@ -138,6 +138,9 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
     if (!bout->dolbyMs) {
         ALOGV("%s: No dolby MS support, changing master volume", __FUNCTION__);
         brcm_audio_set_audio_volume(left, right);
+
+        // Netflix requirement: mute passthrough when volume is 0
+        brcm_audio_set_mute_state(left == 0.0 && right == 0.0);
         return 0;
     }
     else {
