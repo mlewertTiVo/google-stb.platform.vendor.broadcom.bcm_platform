@@ -261,6 +261,7 @@ struct brcm_stream_out {
                     NxClient_AudioOutputMode savedHDMIOutputMode;
                     NxClient_AudioOutputMode savedSPDIFOutputMode;
                     bool priming;
+                    unsigned fadeLevel;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
@@ -284,6 +285,7 @@ struct brcm_stream_out {
                     unsigned audioblocks_per_frame;
                     unsigned frame_multiplier;
                     FILE *pes_debug;
+                    unsigned fadeLevel;
                 } tunnel;
             };
             BKNI_EventHandle event;

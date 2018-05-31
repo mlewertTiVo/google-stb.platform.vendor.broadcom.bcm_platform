@@ -159,12 +159,16 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
 
 
     if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
-        NEXUS_SimpleAudioDecoderSettings audioSettings;
-        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
-        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, (int)(left * 100));
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = left * 100;
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
-        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+        if (bout->nexus.direct.fadeLevel != (unsigned)(left * 100)) {
+            NEXUS_SimpleAudioDecoderSettings audioSettings;
+            NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
+            bout->nexus.direct.fadeLevel = (unsigned)(left * 100);
+            ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
+            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
+                bout->nexus.direct.fadeLevel;
+            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
+            NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+        }
     } else {
         // Netflix requirement: mute passthrough when volume is 0
         brcm_audio_set_mute_state(left == 0.0 && right == 0.0);
@@ -1139,6 +1143,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        bout->nexus.direct.fadeLevel = 100;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
