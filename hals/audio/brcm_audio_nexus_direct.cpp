@@ -944,7 +944,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             NEXUS_PlaypumpHandle prev_playpump = playpump;
 
             pthread_mutex_unlock(&bout->lock);
-            ret = BKNI_WaitForEvent(event, 500);
+            ret = BKNI_WaitForEvent(event, 750);
             pthread_mutex_lock(&bout->lock);
 
             // Sanity check when relocking
