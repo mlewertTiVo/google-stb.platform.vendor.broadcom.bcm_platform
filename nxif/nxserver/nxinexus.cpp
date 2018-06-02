@@ -593,6 +593,10 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
             settings.hdmiPreferences.colorSpace = limitedColorSpace;
             update = true;
          }
+         if (settings.dropFrame == NEXUS_TristateEnable_eNotSet) {
+            settings.dropFrame = NEXUS_TristateEnable_eEnable;
+            update = true;
+         }
       }
 #if ANDROID_ENABLE_HDMI_HDCP
       // check if we need  to re-enable hdcp.

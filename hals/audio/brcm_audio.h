@@ -165,6 +165,7 @@ struct brcm_device {
     audio_devices_t out_devices;
     audio_devices_t in_devices;
     bool mic_mute;
+    bool master_mute;
 
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
@@ -260,6 +261,7 @@ struct brcm_stream_out {
                     NxClient_AudioOutputMode savedHDMIOutputMode;
                     NxClient_AudioOutputMode savedSPDIFOutputMode;
                     bool priming;
+                    unsigned fadeLevel;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
@@ -283,6 +285,7 @@ struct brcm_stream_out {
                     unsigned audioblocks_per_frame;
                     unsigned frame_multiplier;
                     FILE *pes_debug;
+                    unsigned fadeLevel;
                 } tunnel;
             };
             BKNI_EventHandle event;

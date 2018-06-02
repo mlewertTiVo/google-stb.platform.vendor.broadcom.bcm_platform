@@ -138,6 +138,9 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
     if (!bout->dolbyMs) {
         ALOGV("%s: No dolby MS support, changing master volume", __FUNCTION__);
         brcm_audio_set_audio_volume(left, right);
+
+        // Netflix requirement: mute passthrough when volume is 0
+        brcm_audio_set_mute_state(left == 0.0 && right == 0.0);
         return 0;
     }
     else {
@@ -150,12 +153,16 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
             return 0;
         }
 
-        NEXUS_SimpleAudioDecoderSettings audioSettings;
-        NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &audioSettings);
-        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, (int)(left * 100));
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = left * 100;
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
-        NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &audioSettings);
+        if (bout->nexus.tunnel.fadeLevel != (unsigned)(left * 100)) {
+            NEXUS_SimpleAudioDecoderSettings audioSettings;
+            NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &audioSettings);
+            bout->nexus.tunnel.fadeLevel = (unsigned)(left * 100);
+            ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
+            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
+                bout->nexus.tunnel.fadeLevel;
+            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
+            NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &audioSettings);
+        }
     }
 
     return 0;
@@ -1026,6 +1033,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &settings);
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        bout->nexus.tunnel.fadeLevel = 100;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
         NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &settings);
     }

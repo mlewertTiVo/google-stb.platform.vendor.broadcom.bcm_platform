@@ -64,7 +64,7 @@ float BrcmAudioPolicyManager::computeVolume(audio_stream_type_t stream,
     (void)stream;
     (void)index;
     (void)device;
-    return 1.0;
+    return 0.0; // dB
 }
 
 status_t BrcmAudioPolicyManager::setDeviceConnectionState(audio_devices_t device,

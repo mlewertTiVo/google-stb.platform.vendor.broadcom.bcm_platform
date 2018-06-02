@@ -1315,7 +1315,8 @@ static nxserver_t init_nxserver(void)
     /* With MS12, SPDIF output needs to be clocked from different PLL to avoid conflict
      * with the DSP mixer.
      */
-    if (settings.session[0].dolbyMs == nxserverlib_dolby_ms_type_ms12) {
+    if (settings.session[0].dolbyMs == nxserverlib_dolby_ms_type_ms11 ||
+        settings.session[0].dolbyMs == nxserverlib_dolby_ms_type_ms12) {
        NEXUS_PlatformConfiguration platformConfig;
        NEXUS_AudioOutputSettings outputSettings;
 
