@@ -1,0 +1,9 @@
+package bcm.hardware.tvisvcext@1.0;
+
+enum TviSvcExtTunerType : uint32_t {
+    UNKNOWN,
+    CABLE,
+    SATELLITE,
+    TERRESTRIAL,
+};
+

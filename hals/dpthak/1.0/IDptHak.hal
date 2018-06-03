@@ -1,0 +1,17 @@
+package bcm.hardware.dpthak@1.0;
+
+interface IDptHak {
+    /**
+     * setup ethernet coalesce value.
+     *
+     */
+    netcoal(string v) generates (int32_t s);
+
+    /**
+     * setup high frame rate video mode.
+     *
+     */
+    hfrvideo(DptHakHfrMode m) generates (int32_t s);
+};
+
+

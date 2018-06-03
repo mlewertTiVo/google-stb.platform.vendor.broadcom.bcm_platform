@@ -1,0 +1,4 @@
+service bp3-hal-1-0 /vendor/bin/hw/bcm.hardware.bp3@1.0-service
+    class hal
+    user system
+    group system

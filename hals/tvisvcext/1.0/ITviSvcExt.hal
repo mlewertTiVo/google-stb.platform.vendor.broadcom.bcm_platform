@@ -1,0 +1,52 @@
+package bcm.hardware.tvisvcext@1.0;
+
+interface ITviSvcExt {
+    /**
+     * acquire a tuner resource; returns < 0 on error or a >= 0 tuner handle to be used for
+     * subsequent calls involving the acquired resource.
+     *
+     */
+    tunerAcquire() generates (int32_t t);
+
+    /**
+     * release a previously acquired a tuner ('t') resource; returns < 0 on error, 0 on success.
+     *
+     */
+    tunerRelease(int32_t t) generates (int32_t e);
+
+    /**
+     * issue a "tune" request to the tuner 't' (acquired before from the tunerAcquire call), on
+     * frequency 'f'; returns < 0 on error, 0 on success.
+     *
+     */
+    tunerTune(int32_t t, uint32_t f) generates (int32_t e);
+
+    /**
+     * queries the state of the tuner 't' locked to frequecy 'f' as requested in a "tunerTune" call;
+     * returns < 0 on error, 0 on success.
+     *
+     */
+    tunerStatus(int32_t t) generates (int32_t e);
+
+    /**
+     * queries the type of tuner ('t') resource; see also TviSvcExtTunerType.
+     *
+     */
+    tunerType(int32_t t) generates (TviSvcExtTunerType e);
+
+    /**
+     * queries the signal strength for tuner ('t') at frequency locked requested in a "tunerTune" call;
+     * returns < 0 on error, ?? otherwise.
+     *
+     */
+    tunerSigStrength(int32_t t) generates (int32_t e);
+
+    /**
+     * queries the signal quality for tuner ('t') at frequency locked requested in a "tunerTune" call;
+     * returns < 0 on error, ?? otherwise.
+     *
+     */
+    tunerSigQuality(int32_t t) generates (int32_t e);
+};
+
+

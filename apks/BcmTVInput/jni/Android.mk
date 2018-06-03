@@ -27,21 +27,27 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus libnxclient libbinder
+LOCAL_SHARED_LIBRARIES :=  \
+    libcutils \
+    liblog \
+    libutils \
+    libnexus \
+    libnxclient \
+    libbinder \
+    libandroid \
+    bcm.hardware.dspsvcext@1.0
 
 LOCAL_SRC_FILES := \
     bcmtuner.cpp \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_decode.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/binput.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_source.c \
     $(PREFIX_RELATIVE_PATH)refsw/nexus/utils/namevalue.c \
-    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/bgui.c \
+    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_decode.c \
+    $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/live_source.c \
     $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/tspsimgr3.c \
 
 LOCAL_MODULE := libbcmtuner
 LOCAL_MODULE_TAGS := optional
-#LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_SHARED_LIBRARY)

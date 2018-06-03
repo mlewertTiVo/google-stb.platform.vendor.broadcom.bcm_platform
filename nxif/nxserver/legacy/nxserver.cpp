@@ -288,10 +288,9 @@ static void nx_wdog_midpoint(void *context, int param)
    NX_SERVER_T *nx_server = (NX_SERVER_T *)context;
    BSTD_UNUSED(param);
 
-   if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-      NEXUS_Watchdog_StartTimer();
-      BKNI_ReleaseMutex(nx_server->wdog.lock);
-   }
+   BKNI_AcquireMutex(nx_server->wdog.lock);
+   NEXUS_Watchdog_StartTimer();
+   BKNI_ReleaseMutex(nx_server->wdog.lock);
 }
 
 static void *standby_monitor_task(void *argv)
@@ -307,30 +306,27 @@ static void *standby_monitor_task(void *argv)
     ALOG_ASSERT(!rc);
 
     do {
-       if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
-          rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
-          if (rc == NEXUS_SUCCESS) {
-             if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
-                ALOGD("nxserver: ack state %d\n", nx_server->standbyState.settings.mode);
-                NxClient_AcknowledgeStandby(nx_server->standbyId);
-                if (nx_server->wdog.nx != NULL) {
-                   NEXUS_Watchdog_StopTimer();
-                   nx_server->wdog.inStandby = true;
-                }
+       BKNI_AcquireMutex(nx_server->standby_lock);
+       rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
+       if (rc == NEXUS_SUCCESS) {
+          if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
+             ALOGD("nxserver: ack state %d\n", nx_server->standbyState.settings.mode);
+             NxClient_AcknowledgeStandby(nx_server->standbyId);
+             if (nx_server->wdog.nx != NULL) {
+                NEXUS_Watchdog_StopTimer();
+                nx_server->wdog.inStandby = true;
              }
-             else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
-                      prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
-                      nx_server->wdog.nx != NULL) {
-                if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-                   nx_server->wdog.inStandby = false;
-                   NEXUS_Watchdog_StartTimer();
-                   BKNI_ReleaseMutex(nx_server->wdog.lock);
-                }
-            }
-            prevStatus = nx_server->standbyState;
+          } else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
+             prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
+             nx_server->wdog.nx != NULL) {
+             BKNI_AcquireMutex(nx_server->wdog.lock);
+             nx_server->wdog.inStandby = false;
+             NEXUS_Watchdog_StartTimer();
+             BKNI_ReleaseMutex(nx_server->wdog.lock);
           }
-          BKNI_ReleaseMutex(nx_server->standby_lock);
+          prevStatus = nx_server->standbyState;
        }
+       BKNI_ReleaseMutex(nx_server->standby_lock);
        BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
 
     } while(nx_server->standby_monitor.running);
@@ -377,9 +373,7 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     *candidate = NX_INVALID;
     selected = NX_INVALID;
 
-    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
-        goto out;
-    }
+    BKNI_AcquireMutex(g_app.clients_lock);
 
     pip = open("/dev/bcmpip", O_RDWR);
     nxm = open("/dev/ion", O_RDWR);
@@ -560,40 +554,39 @@ static void *proactive_runner_task(void *argv)
         }
 
         if (gfx_heap_grow_size) {
-           if (BKNI_AcquireMutex(g_app.standby_lock) == BERR_SUCCESS) {
-              if (g_app.standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
-                 NEXUS_PlatformConfiguration platformConfig;
-                 NEXUS_MemoryStatus heapStatus;
-                 NEXUS_Platform_GetConfiguration(&platformConfig);
-                 NEXUS_Heap_GetStatus(platformConfig.heap[g_app.dcma_index], &heapStatus);
+           BKNI_AcquireMutex(g_app.standby_lock);
+           if (g_app.standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+              NEXUS_PlatformConfiguration platformConfig;
+              NEXUS_MemoryStatus heapStatus;
+              NEXUS_Platform_GetConfiguration(&platformConfig);
+              NEXUS_Heap_GetStatus(platformConfig.heap[g_app.dcma_index], &heapStatus);
 
-                 ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
-                 needs_growth = false;
-                 if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
-                    needs_growth = true;
-                 }
+              ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+              needs_growth = false;
+              if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
+                 needs_growth = true;
+              }
 
-                 if (active_gc) {
-                    if (++gc_tick > RUNNER_GC_THRESHOLD) {
-                       gc_tick = 0;
-                       if (!needs_growth) {
-                          NEXUS_Platform_ShrinkHeap(
-                             platformConfig.heap[g_app.dcma_index],
-                             (size_t)gfx_heap_grow_size,
-                             (size_t)gfx_heap_shrink_threshold);
-                       }
+              if (active_gc) {
+                 if (++gc_tick > RUNNER_GC_THRESHOLD) {
+                    gc_tick = 0;
+                    if (!needs_growth) {
+                       NEXUS_Platform_ShrinkHeap(
+                          platformConfig.heap[g_app.dcma_index],
+                          (size_t)gfx_heap_grow_size,
+                          (size_t)gfx_heap_shrink_threshold);
                     }
                  }
-
-                 if (active_gs && needs_growth) {
-                    ALOGV("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-                    NEXUS_Platform_GrowHeap(
-                       platformConfig.heap[g_app.dcma_index],
-                       (size_t)gfx_heap_grow_size);
-                 }
               }
-              BKNI_ReleaseMutex(g_app.standby_lock);
+
+              if (active_gs && needs_growth) {
+                 ALOGV("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+                 NEXUS_Platform_GrowHeap(
+                    platformConfig.heap[g_app.dcma_index],
+                    (size_t)gfx_heap_grow_size);
+              }
            }
+           BKNI_ReleaseMutex(g_app.standby_lock);
         }
 
         if (!g_app.wdog.init) {
@@ -664,10 +657,9 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     if (!strncmp(pJoinSettings->name, NX_NOGRAB_MAGIC, 4)) {
        pconnect_settings->allow_grab = false;
     }
-    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
-        ALOGE("failed to add nx-client %p", client);
-        goto out;
-    }
+
+    BKNI_AcquireMutex(g_app.clients_lock);
+
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client &&
             g_app.clients[i].client == client) {
@@ -708,10 +700,8 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
 {
     unsigned i;
     BSTD_UNUSED(pJoinSettings);
-    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
-        ALOGE("failed to remove client %p", client);
-        goto out;
-    }
+    BKNI_AcquireMutex(g_app.clients_lock);
+
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
             ALOGI_IF(NX_CLIENT_USAGE_LOG,

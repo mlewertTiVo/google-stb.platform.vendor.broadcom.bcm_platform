@@ -201,8 +201,8 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     SRAI_Settings sraiSettings;
     BSAGElib_InOutContainer *container = NULL;
     int rpmb = 1;
-    bool rpmb_format = property_get_bool(SSD_FORMAT_PROP_RPMB, 1);
-    bool vfs_format = property_get_bool(SSD_FORMAT_PROP_VFS, 1);
+    bool rpmb_format = property_get_bool(SSD_FORMAT_PROP_RPMB, 0);
+    bool vfs_format = property_get_bool(SSD_FORMAT_PROP_VFS, 0);
 
     ALOGD("Initialising SSD TA\n");
 
@@ -360,7 +360,16 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     hasInit = true;
 
 errorExit:
-    SRAI_Container_Free(container);
+    if (container != NULL) {
+        SRAI_Container_Free(container);
+    }
+
+    if (!hasInit) {
+        // clean up any allocated resources
+        ALOGW("%s - Error Exit cleanup\n", BSTD_FUNCTION);
+        SSDTl_Uninit();
+    }
+
     return rc;
 }
 

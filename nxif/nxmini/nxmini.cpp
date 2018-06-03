@@ -127,10 +127,9 @@ static void nx_wdog_midpoint(void *context, int param)
    NX_SERVER_T *nx_server = (NX_SERVER_T *)context;
    BSTD_UNUSED(param);
 
-   if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-      NEXUS_Watchdog_StartTimer();
-      BKNI_ReleaseMutex(nx_server->wdog.lock);
-   }
+   BKNI_AcquireMutex(nx_server->wdog.lock);
+   NEXUS_Watchdog_StartTimer();
+   BKNI_ReleaseMutex(nx_server->wdog.lock);
 }
 
 static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)

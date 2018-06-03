@@ -44,8 +44,8 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
-ifneq ($(TARGET_BUILD_TYPE),debug)
-# Enable error logs for non debug build
+ifeq ($(TARGET_BUILD_VARIANT),user)
+# Disable warning logs for user build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 

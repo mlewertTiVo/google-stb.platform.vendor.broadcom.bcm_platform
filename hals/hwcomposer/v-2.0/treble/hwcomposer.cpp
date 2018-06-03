@@ -279,6 +279,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_hdp0:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.hpd0", 0);
    break;
+   case hwc2_tweak_odv_alpha_hole:
+      r = !!HWC2_ODV;
+   break;
    default:
    break;
    }
@@ -5953,6 +5956,7 @@ static void hwc2_ext_cmp_frame(
    int blt, vl = 0;
    size_t ccli = 0;
    NEXUS_Rect pah = {0,0,0,0};
+   NEXUS_Rect odv = {0,0,0,0};
    enum hwc2_seeding_e ms = hwc2_seeding_none;
    uint32_t aw = 0;
    uint32_t ah = 0;
@@ -6222,23 +6226,33 @@ static void hwc2_ext_cmp_frame(
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
-            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole) ||
+                hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
+               NEXUS_Rect cr, p;
+               cr = {(int16_t)lyr->crp.left,
+                     (int16_t)lyr->crp.top,
+                     (uint16_t)(lyr->crp.right - lyr->crp.left),
+                     (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               p = {(int16_t)lyr->fr.left,
+                    (int16_t)lyr->fr.top,
+                    (uint16_t)(lyr->fr.right - lyr->fr.left),
+                    (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               hwc2_lyr_adj(dsp, &cr, &p, NULL);
                if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                    (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  NEXUS_Rect c, p;
-                  c = {(int16_t)lyr->crp.left,
-                       (int16_t)lyr->crp.top,
-                       (uint16_t)(lyr->crp.right - lyr->crp.left),
-                       (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
-                  p = {(int16_t)lyr->fr.left,
-                       (int16_t)lyr->fr.top,
-                       (uint16_t)(lyr->fr.right - lyr->fr.left),
-                       (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
-                  hwc2_lyr_adj(dsp, &c, &p, NULL);
                   pah = p;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                            "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
                            dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
+               } else if (c && hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
+                  odv = p;
+                  pah.width = 0;
+                  pah.height = 0;
+                  ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                           "[ext]:[odv-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                           dsp->pres, dsp->post, odv.x, odv.y, odv.width, odv.height);
+                  hwc2_pah(hwc2, d, &odv);
+                  hwc2_chkpt(hwc2);
                }
             }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -6280,16 +6294,16 @@ static void hwc2_ext_cmp_frame(
          if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
             if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                 (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-               NEXUS_Rect c, p;
-               c = {(int16_t)lyr->crp.left,
-                    (int16_t)lyr->crp.top,
-                    (uint16_t)(lyr->crp.right - lyr->crp.left),
-                    (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               NEXUS_Rect cr, p;
+               cr = {(int16_t)lyr->crp.left,
+                     (int16_t)lyr->crp.top,
+                     (uint16_t)(lyr->crp.right - lyr->crp.left),
+                     (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
                p = {(int16_t)lyr->fr.left,
                     (int16_t)lyr->fr.top,
                     (uint16_t)(lyr->fr.right - lyr->fr.left),
                     (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
-               hwc2_lyr_adj(dsp, &c, &p, NULL);
+               hwc2_lyr_adj(dsp, &cr, &p, NULL);
                pah = p;
                ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                         "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",

@@ -1,0 +1,4 @@
+service tviscvext-hal-1-0 /vendor/bin/hw/bcm.hardware.tvisvcext@1.0-service
+    class hal
+    user system
+    group system

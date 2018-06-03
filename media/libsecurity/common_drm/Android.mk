@@ -21,6 +21,7 @@ include $(CLEAR_VARS)
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 include $(LOCAL_PATH)/drm/common/common.inc
+include $(LOCAL_PATH)/../common_crypto/common_crypto.inc
 LOCAL_SRC_FILES := ${COMMON_SOURCES}
 
 LOCAL_C_INCLUDES := \
@@ -41,7 +42,8 @@ endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
-ifneq ($(TARGET_BUILD_TYPE),debug)
+ifeq ($(TARGET_BUILD_VARIANT),user)
+# Disable warning logs for user build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
@@ -123,8 +125,8 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
-ifneq ($(TARGET_BUILD_TYPE),debug)
-# Enable error logs for non debug build
+ifeq ($(TARGET_BUILD_VARIANT),user)
+# Disable warning logs for user build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
@@ -156,10 +158,14 @@ include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 # Go through all <DRM>_SAGE variables from config.inc and include those
 # <drm>.inc files
 #vvvv#####################vvvvvvvvvvvvvvvvvvvvvvv#####################vvvv##
-ifeq ($(findstring $(BCHP_CHIP), 7271 7445 7366 7439 7364), $(BCHP_CHIP))
+ifeq ($(findstring $(BCHP_CHIP), 7260 7268 7271 7445 7366 7439 7364), $(BCHP_CHIP))
 include $(LOCAL_PATH)/config/config_zeus4x.inc
 else ifeq ($(findstring $(BCHP_CHIP), 7435), $(BCHP_CHIP))
 include $(LOCAL_PATH)/config/config_zeus30.inc
+else ifeq ($(findstring $(BCHP_CHIP), 7278), $(BCHP_CHIP))
+include $(LOCAL_PATH)/config/config_zeus5x.inc
+else
+$(error Missing zeus config inc)
 endif
 
 include $(LOCAL_PATH)/drm_tl/common_tl/common_tl.inc
@@ -227,8 +233,8 @@ endif
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
-ifneq ($(TARGET_BUILD_TYPE),debug)
-# Enable error logs for non debug build
+ifeq ($(TARGET_BUILD_VARIANT),user)
+# Disable warning logs for user build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 

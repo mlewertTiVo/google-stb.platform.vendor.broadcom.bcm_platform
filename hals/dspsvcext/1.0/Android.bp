@@ -56,7 +56,7 @@ cc_library_shared {
     generated_sources: ["bcm.hardware.dspsvcext@1.0_genc++"],
     generated_headers: ["bcm.hardware.dspsvcext@1.0_genc++_headers"],
     export_generated_headers: ["bcm.hardware.dspsvcext@1.0_genc++_headers"],
-    vendor: true,
+    vendor_available: true,
     shared_libs: [
         "libhidlbase",
         "libhidltransport",

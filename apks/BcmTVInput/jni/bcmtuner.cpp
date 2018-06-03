@@ -1,23 +1,53 @@
-/*
- * Copyright 2016-2017 The Android Open Source Project
+/******************************************************************************
+ * (c) 2018 Broadcom
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This program is the proprietary software of Broadcom and/or its licensors,
+ * and may only be used, duplicated, modified or distributed pursuant to the terms and
+ * conditions of a separate, written license agreement executed between you and Broadcom
+ * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
+ * no license (express or implied), right to use, or waiver of any kind with respect to the
+ * Software, and Broadcom expressly reserves all rights in and to the Software and all
+ * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+ * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * Except as expressly set forth in the Authorized License,
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-#include <jni.h>
-#include <android/log.h>
+ * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
+ * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
+ * and to use this information only in connection with your use of Broadcom integrated circuit products.
+ *
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
+ * USE OR PERFORMANCE OF THE SOFTWARE.
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
+ * ANY LIMITED REMEDY.
+ *
+ *****************************************************************************/
+//#define LOG_NDEBUG 0
+#define LOG_TAG "BcmTVInput-JNI"
 
-#include "nxclient.h"
+#include <nativehelper/JNIHelp.h>
+#include <utils/Log.h>
+#include <system/window.h>
+#include <android/native_window_jni.h>
+#include <utils/Mutex.h>
+
+// TODO: Replace by HIDL soon....
 #include "nexus_frontend.h"
+
 #include "nexus_surface_client.h"
 #include "nexus_platform.h"
 #include "nexus_simple_video_decoder.h"
@@ -28,8 +58,8 @@
 #include "tspsimgr3.h"
 #include <namevalue.h>
 #include "blst_queue.h"
-#include "binput.h"
-#include "bgui.h"
+
+#include <bcm/hardware/dspsvcext/1.0/IDspSvcExt.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -37,37 +67,73 @@
 #include <pthread.h>
 #include <sstream>
 #include <iomanip>
-
-// Android log function wrappers
-static const char* TAG = "bcmtuner";
-#define ALOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__))
-#define ALOGV(...) ((void)__android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__))
-#define ALOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__))
-#define ALOGD(...) ((void)__android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__))
-
-static NxClient_JoinSettings joinSettings;
-static NEXUS_Error rc;
-static NxClient_AllocResults allocResults;
-static struct decoder *d;
-static live_decode_t decode;
-static struct frontend *frontend;
-static binput_t input;
-static NxClient_AllocSettings allocSettings;
-static NEXUS_SurfaceClientHandle surfaceClient, video_sc;
-static struct binput_settings input_settings;
-static struct b_pig_inc pig_inc;
-static struct btune_settings tune_settings;
-static NEXUS_VideoWindowContentMode contentMode = NEXUS_VideoWindowContentMode_eMax;
-static struct channel_map *map = NULL;
-static unsigned num_decodes = 1;
-
-enum gui {gui_no_alpha_hole, gui_on, gui_constellation};
-static int gui_init(NEXUS_FrontendHandle frontend, NEXUS_SurfaceClientHandle surfaceClient, enum gui gui);
-static void gui_uninit(void);
-
-static enum gui gui = gui_on;
-
 #include <sys/time.h>
+
+using namespace android;
+using namespace android::hardware;
+using namespace bcm::hardware::dspsvcext::V1_0;
+
+typedef void(*sb_geometry_cb)(void *context, unsigned int x, unsigned int y,
+                                    unsigned int width, unsigned int height);
+
+static Mutex svclock;
+#define ATTEMPT_PAUSE_USEC 500000
+#define MAX_ATTEMPT_COUNT  4
+static const sp<IDspSvcExt> idse(void) {
+   static sp<IDspSvcExt> idse = NULL;
+   Mutex::Autolock _l(svclock);
+   int c = 0;
+
+   if (idse != NULL) {
+      return idse;
+   }
+
+   do {
+      idse = IDspSvcExt::getService();
+      if (idse != NULL) {
+         return idse;
+      }
+      usleep(ATTEMPT_PAUSE_USEC);
+      c++;
+   }
+   while(c < MAX_ATTEMPT_COUNT);
+   // can't get interface.
+   return NULL;
+}
+
+#define NUM_DECODES 1
+#define INVALID_PID 0x1FFFF
+#define INVALID_HANDLE 0xdeadbeef
+
+class SdbGeomCb : public IDspSvcExtSdbGeomCb {
+public:
+   SdbGeomCb(sb_geometry_cb cb, void *cb_data): geom_cb(cb), geom_ctx(cb_data) {};
+   sb_geometry_cb geom_cb;
+   void *geom_ctx;
+   Return<void> onGeom(int32_t i, const DspSvcExtGeom& geom);
+};
+
+static sp<SdbGeomCb> gSdbGeomCb = NULL;
+static ANativeWindow *native_window = NULL;
+static native_handle_t *native_handle = NULL;
+static live_decode_t gDecode;
+static NEXUS_SurfaceClientHandle gSurfaceClient, gVideo_sc;
+static struct btune_settings gTuneSettings;
+static unsigned int gSurfaceId;
+static unsigned g_totalChannels;
+static bool gScanInProgress = false;
+
+Return<void> SdbGeomCb::onGeom(int32_t i, const DspSvcExtGeom& geom) {
+   if (geom_cb) {
+      if (i != 0) {
+         ALOGW("SdbGeomCb::onGeom(%d), but registered for 0", i);
+      } else {
+         geom_cb(NULL, geom.geom_x, geom.geom_y, geom.geom_w, geom.geom_h);
+      }
+   }
+   return Void();
+}
+
 static unsigned b_get_time(void)
 {
     struct timeval tv;
@@ -75,28 +141,28 @@ static unsigned b_get_time(void)
     return tv.tv_sec*1000 + tv.tv_usec/1000;
 }
 
-struct channel_map {
-    BLST_Q_ENTRY(channel_map) link;
+struct Channel_map {
+    BLST_Q_ENTRY(Channel_map) link;
     char name[32];
     struct btune_settings tune;
     bchannel_scan_t scan;
-    enum { scan_state_pending, scan_state_started, scan_state_done } scan_state;
-    tspsimgr_scan_results scan_results;
-    unsigned scan_start;
+    enum { SCAN_STATE_PENDING, SCAN_STATE_STARTED, SCAN_STATE_DONE } scanState;
+    tspsimgr_scan_results scanResults;
+    unsigned scanStart;
 };
-static BLST_Q_HEAD(channellist_t, channel_map) g_channel_map = BLST_Q_INITIALIZER(g_channel_map);
-static unsigned g_total_channels;
+static BLST_Q_HEAD(channellist_t, Channel_map) g_channelMap = BLST_Q_INITIALIZER(g_channelMap);
 
-struct frontend {
-    BLST_Q_ENTRY(frontend) link;
+struct Frontend {
+    BLST_Q_ENTRY(Frontend) link;
     NEXUS_FrontendHandle frontend;
-    struct channel_map *map;
+    struct Channel_map *map;
     unsigned refcnt;
+    bool ofdm, qam, sat;
 };
-static BLST_Q_HEAD(frontendlist_t, frontend) g_frontends;
+static BLST_Q_HEAD(frontendlist_t, Frontend) g_frontends;
 
-struct decoder {
-    BLST_Q_ENTRY(decoder) link;
+struct Decoder {
+    BLST_Q_ENTRY(Decoder) link;
     NEXUS_ParserBand parserBand;
     live_decode_channel_t channel;
     live_decode_start_settings start_settings;
@@ -105,66 +171,65 @@ struct decoder {
     NEXUS_AudioCodec audio_type;
 
     unsigned chNum; /* global number */
-    struct frontend *frontend;
-    struct channel_map *map;
+    struct Frontend *frontend;
+    struct Channel_map *map;
     unsigned program; /* relative to map */
 };
-static BLST_Q_HEAD(decoderlist_t, decoder) g_decoders;
+static BLST_Q_HEAD(decoderlist_t, Decoder) g_decoders;
 static bool g_quiet = false;
 
-static struct {
-    bool done;
-    pthread_t thread;
-    NEXUS_SurfaceClientHandle surfaceClient;
-    NEXUS_SurfaceHandle surface;
-    NEXUS_SurfaceCreateSettings createSettings;
-    NEXUS_FrontendHandle frontend;
-    BKNI_EventHandle displayedEvent;
-} g_constellation;
 
 struct client_state
 {
     bool done;
 };
 
-static void complete2(void *data, int param)
+static void insertChannel(const struct btune_settings *tune)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-    BSTD_UNUSED(param);
-    /* race condition between unsetting the callback and destroying the event, so protect with a global */
-    if (g_constellation.done) return;
-    BKNI_SetEvent((BKNI_EventHandle)data);
-}
-
-static void insert_channel(const struct btune_settings *tune)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct channel_map *c = (channel_map *)BKNI_Malloc(sizeof(*c));
+    bool addChannel = true;
+    struct Channel_map *map;
+    struct Channel_map *c = (Channel_map *)BKNI_Malloc(sizeof(*c));
     BKNI_Memset(c, 0, sizeof(*c));
     c->tune = *tune;
-    bchannel_source_print(c->name, sizeof(c->name), tune);
-    BLST_Q_INSERT_TAIL(&g_channel_map, c, link);
+    c->scanState = Channel_map::SCAN_STATE_PENDING;
+
+    for (map = BLST_Q_FIRST(&g_channelMap); map && addChannel; map = BLST_Q_NEXT(map, link)) {
+        if (map->tune.freq == c->tune.freq) {
+            ALOGD("Ignoring duplicated frequency: %d map: %p",c->tune.freq, (void *)map);
+            //map->scanState = Channel_map::SCAN_STATE_PENDING;
+            addChannel = false;
+            BKNI_Free(c);
+        }
+    }
+
+    if (addChannel) {
+        bchannel_source_print(c->name, sizeof(c->name), tune);
+        BLST_Q_INSERT_TAIL(&g_channelMap, c, link);
+        ALOGD("<> %s() %s scanState:%s map:%p", __FUNCTION__, c->name,
+            c->scanState==Channel_map::SCAN_STATE_PENDING?"Pending":
+            c->scanState==Channel_map::SCAN_STATE_STARTED?"Started":"Done",(void *)c);
+    }
 }
 
 static void uninit_channels(void)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct channel_map *map;
-    while ((map = BLST_Q_FIRST(&g_channel_map))) {
-        BLST_Q_REMOVE(&g_channel_map, map, link);
+    ALOGD("<>%s()", __FUNCTION__);
+    struct Channel_map *map;
+    while ((map = BLST_Q_FIRST(&g_channelMap))) {
+        BLST_Q_REMOVE(&g_channelMap, map, link);
         BKNI_Free(map);
     }
 }
 
-static void parse_channels(const struct btune_settings *tune, const char *freq_list)
+static void parseChannels(const struct btune_settings *tune, const char *freq_list)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
+    ALOGD("> %s()", __FUNCTION__);
 #if NEXUS_HAS_FRONTEND
     unsigned first_channel = 0, last_channel = 0;
     const unsigned _mhz = 1000000;
 #endif
     if (tune->source == channel_source_streamer) {
-        insert_channel(tune);
+        insertChannel(tune);
         return;
     }
 #if NEXUS_HAS_FRONTEND
@@ -183,6 +248,7 @@ static void parse_channels(const struct btune_settings *tune, const char *freq_l
             last_channel = 602 * _mhz;
         }
         else {
+            ALOGD("< %s()", __FUNCTION__);
             return;
         }
     }
@@ -212,7 +278,7 @@ static void parse_channels(const struct btune_settings *tune, const char *freq_l
         if (freq) {
             struct btune_settings t = *tune;
             t.freq = freq;
-            insert_channel(&t);
+            insertChannel(&t);
         }
         if (!first_channel) {
             freq_list = strchr(freq_list, ',');
@@ -222,14 +288,17 @@ static void parse_channels(const struct btune_settings *tune, const char *freq_l
 #else
     BSTD_UNUSED(freq_list);
 #endif
+    ALOGD("< %s()", __FUNCTION__);
 }
 
-static void stop_decode(struct decoder *d)
+static void stopDecode(struct Decoder *d)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
     if (!d->channel) return;
 
-    ALOGV("stop_decode(%p) %p frontend=%p(%d) map=%p program=%d", (void*)d, (void*)d->channel, d->frontend?(void*)d->frontend->frontend:NULL, d->frontend?d->frontend->refcnt:0, (void*)d->map, d->program);
+    ALOGD("> %s() decoder: %p channel: %p frontend: %p(refcnt:%d) map: %p program: %i",
+        __FUNCTION__,(void*)d, (void*)d->channel,
+        d->frontend?(void*)d->frontend->frontend:NULL, d->frontend?d->frontend->refcnt:0,
+        (void*)d->map, d->program);
     live_decode_stop_channel(d->channel);
     if (d->frontend) {
         BDBG_ASSERT(d->frontend->map);
@@ -239,35 +308,38 @@ static void stop_decode(struct decoder *d)
         }
         d->frontend = NULL;
     }
+    ALOGD("< %s()", __FUNCTION__);
 }
 
-static int set_channel(struct decoder *d, unsigned chNum)
+static int setChannel(struct Decoder *d, unsigned chNum)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct channel_map *map;
-    if (chNum >= g_total_channels && g_total_channels) {
-        chNum = chNum % g_total_channels;
+    ALOGD("> %s( decoder: %p chNum: %i )", __FUNCTION__, (void *)d, chNum);
+    struct Channel_map *map;
+    if (chNum >= g_totalChannels && g_totalChannels) {
+        ALOGE("%s() Channel number is outside of total channels %i > %i",__FUNCTION__, chNum, g_totalChannels);
+        chNum = chNum % g_totalChannels;
     }
     d->chNum = chNum;
-    for (map = BLST_Q_FIRST(&g_channel_map); map; map = BLST_Q_NEXT(map, link)) {
-        if (chNum < map->scan_results.num_programs) break;
-        chNum -= map->scan_results.num_programs;
+    for (map = BLST_Q_FIRST(&g_channelMap); map; map = BLST_Q_NEXT(map, link)) {
+        if (chNum < map->scanResults.num_programs) break;
+        chNum -= map->scanResults.num_programs;
     }
     if (!map) {
         d->map = NULL;
+        ALOGE("< %s() No channel map found!", __FUNCTION__);
         return -1;
     }
     d->map = map;
     d->program = chNum;
-    ALOGV("set_channel(%p,%d) %p %d", (void*)d, chNum, (void*)d->map, d->program);
+    ALOGD("< setChannel(decoder:%p, chNum:%d) map:%p program:%d", (void*)d, chNum, (void*)d->map, d->program);
     return 0;
 }
 
-static int start_priming(struct decoder *d)
+static int startPriming(struct Decoder *d)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct channel_map *map;
-    struct frontend *frontend;
+    ALOGD("> %s()", __FUNCTION__);
+    struct Channel_map *map;
+    struct Frontend *frontend;
     int rc;
 
     if (!d->channel || !d->map) {
@@ -306,47 +378,49 @@ static int start_priming(struct decoder *d)
     frontend->refcnt++;
 
     d->start_settings.parserBand = d->parserBand;
-    if (d->video_pid != 0x1fff) {
+    if (d->video_pid != INVALID_PID) {
         d->start_settings.video.pid = d->video_pid;
         d->start_settings.video.codec = d->video_type;
     }
     else {
-        d->start_settings.video.pid = map->scan_results.program_info[d->program].video_pids[0].pid;
-        d->start_settings.video.codec = map->scan_results.program_info[d->program].video_pids[0].codec;
+        d->start_settings.video.pid = map->scanResults.program_info[d->program].video_pids[0].pid;
+        d->start_settings.video.codec = map->scanResults.program_info[d->program].video_pids[0].codec;
     }
-    if (d->audio_pid != 0x1fff) {
+    if (d->audio_pid != INVALID_PID) {
         d->start_settings.audio.pid = d->audio_pid;
         d->start_settings.audio.codec = d->audio_type;
     }
     else {
-        d->start_settings.audio.pid = map->scan_results.program_info[d->program].audio_pids[0].pid;
-        d->start_settings.audio.codec = map->scan_results.program_info[d->program].audio_pids[0].codec;
+        d->start_settings.audio.pid = map->scanResults.program_info[d->program].audio_pids[0].pid;
+        d->start_settings.audio.codec = map->scanResults.program_info[d->program].audio_pids[0].codec;
     }
-    d->start_settings.pcr_pid = map->scan_results.program_info[d->program].pcr_pid;
+    d->start_settings.pcr_pid = map->scanResults.program_info[d->program].pcr_pid;
     rc = live_decode_start_channel(d->channel, &d->start_settings);
     if (rc) return BERR_TRACE(rc);
 
-    ALOGV("start_priming(%p) %p frontend=%p(%d) parserBand=%p, map=%p program=%d", (void*)d, (void*)d->channel, (void*)d->frontend->frontend, d->frontend->refcnt, (void*)d->parserBand, (void*)d->map, d->program);
+    ALOGD("%s: v:%i a:%i", __FUNCTION__, d->start_settings.video.pid, d->start_settings.audio.pid);
+    ALOGD("< startPriming(%p) %p frontend:%p(%d) parserBand:%p, map:%p program:%d", (void*)d, (void*)d->channel, (void*)d->frontend->frontend, d->frontend->refcnt, (void*)d->parserBand, (void*)d->map, d->program);
 
     return 0;
 }
 
 static void jumpToChannel(int tsid, int programNum){
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct decoder *d;
-    struct channel_map *map;
+    struct Decoder *d;
+    struct Channel_map *map;
     int channelNumber = 0;
 
+    ALOGD("> %s() tsid=%i, pNum=%i", __FUNCTION__, tsid, programNum);
+
     for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
-        stop_decode(d);
+        stopDecode(d);
     }
 
     //Find the channel number matching tsid and programNum
-    for (map = BLST_Q_FIRST(&g_channel_map); map; map = BLST_Q_NEXT(map, link)) {
-        if (map->scan_state == channel_map::scan_state_done) {
-            if (tsid == map->scan_results.transport_stream_id) {
-                for (int c = 0; c < map->scan_results.num_programs; c++) {
-                    if (programNum == (unsigned short)(map->scan_results.program_info[c].program_number)) {
+    for (map = BLST_Q_FIRST(&g_channelMap); map; map = BLST_Q_NEXT(map, link)) {
+        if (map->scanState == Channel_map::SCAN_STATE_DONE) {
+            if (tsid == map->scanResults.transport_stream_id) {
+                for (int c = 0; c < map->scanResults.num_programs; c++) {
+                    if (programNum == (unsigned short)(map->scanResults.program_info[c].program_number)) {
                         channelNumber = c;
                         break;
                     }
@@ -356,172 +430,141 @@ static void jumpToChannel(int tsid, int programNum){
     }
 
     for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
-        set_channel(d, channelNumber);
-        start_priming(d);
+        setChannel(d, channelNumber);
+        startPriming(d);
     }
 
     d = BLST_Q_FIRST(&g_decoders);
     if (d->channel && d->map) {
-        ALOGV("activate(%p)", (void*)d);
+        ALOGD("%s() activate: %p", __FUNCTION__, (void*)d);
         live_decode_activate(d->channel);
     }
+
+    ALOGD("< %s()", __FUNCTION__);
 }
 
-static void change_channels(int dir)
+static int aquireTuner(void)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct decoder *d;
+    struct Frontend *frontend;
+    ALOGD("> %s()", __FUNCTION__);
 
-    if (dir > 0) {
-        struct decoder *prev_d;
-        d = BLST_Q_FIRST(&g_decoders);
-        if (!d) return;
-
-        stop_decode(d);
-
-        /* if we're priming, the channel change happens in the next prime */
-        BLST_Q_REMOVE_HEAD(&g_decoders, link);
-        BLST_Q_INSERT_TAIL(&g_decoders, d, link);
-
-        /* start priming the last */
-        d = BLST_Q_LAST(&g_decoders);
-        prev_d = BLST_Q_PREV(d, link);
-        if (!prev_d) prev_d = d; /* no primers */
-        set_channel(d, prev_d->chNum+1);
-        start_priming(d);
-
-        /* start decoding the first */
-        d = BLST_Q_FIRST(&g_decoders);
-        if (d->channel && d->map) {
-            ALOGV("activate(%p)", (void*)d);
-            live_decode_activate(d->channel);
-        }
+    if (gTuneSettings.source == channel_source_streamer) {
+        frontend = (struct Frontend *)BKNI_Malloc(sizeof(*frontend));
+        memset(frontend, 0, sizeof(*frontend));
+        BLST_Q_INSERT_TAIL(&g_frontends, frontend, link);
     }
+#if NEXUS_HAS_FRONTEND
     else {
-        struct decoder *first_d;
+        // Check if a frontend has already been aquired.
+        frontend = BLST_Q_FIRST(&g_frontends);
+        if( frontend ) {
+            ALOGV("%s(): Frontend of type [%s] already aquired.", __FUNCTION__,
+                frontend->ofdm?"OFDM":frontend->qam?"QAM":"SAT");
+        }
+        else {
+            for (unsigned int i=0;i<NUM_DECODES;i++) {
+                NEXUS_FrontendAcquireSettings settings;
 
-        /* start priming the first */
-        first_d = BLST_Q_FIRST(&g_decoders);
-        stop_decode(first_d);
-        start_priming(first_d);
+                frontend = (struct Frontend *)BKNI_Malloc(sizeof(*frontend));
+                memset(frontend, 0, sizeof(*frontend));
 
-        /* stop priming the last and use it to decode */
-        d = BLST_Q_LAST(&g_decoders);
-        if (!d) return;
-        BLST_Q_REMOVE(&g_decoders, d, link);
-        BLST_Q_INSERT_HEAD(&g_decoders, d, link);
-        stop_decode(d);
+                NEXUS_Frontend_GetDefaultAcquireSettings(&settings);
+                frontend->qam  = settings.capabilities.qam = (gTuneSettings.source == channel_source_qam);
+                frontend->ofdm = settings.capabilities.ofdm = (gTuneSettings.source == channel_source_ofdm);
+                frontend->sat  = settings.capabilities.satellite = (gTuneSettings.source == channel_source_sat);
+                frontend->frontend = NEXUS_Frontend_Acquire(&settings);
+                if (!frontend->frontend) {
+                    ALOGE("%s() No Frontend!!", __FUNCTION__);
+                    BKNI_Free(frontend);
+                    break;
+                }
 
-        /* start decoding the first */
-        if (!set_channel(d, first_d->chNum == 0 ? g_total_channels-1: first_d->chNum-1)) {
-            ALOGV("activate(%p)", (void*)d);
-            start_priming(d);
-            live_decode_activate(d->channel);
+                if (frontend->ofdm) {
+                    gTuneSettings.mode = NEXUS_FrontendOfdmMode_eDvbt;
+                } else if (frontend->qam) {
+                    gTuneSettings.mode = NEXUS_FrontendOfdmMode_eDvbc2;
+                }
+
+                ALOGV("%s(): Frontend of type [%s] aquired.", __FUNCTION__,
+                    frontend->ofdm?"OFDM":frontend->qam?"QAM":"SAT");
+
+                BLST_Q_INSERT_TAIL(&g_frontends, frontend, link);
+            }
         }
     }
+#endif
+
+    frontend = BLST_Q_FIRST(&g_frontends);
+    if (!frontend) {
+        ALOGE("Unable to find capable frontend");
+        return -1;
+    }
+
+    ALOGD("< %s()", __FUNCTION__);
+    return 0;
 }
 
-static void init_decoders(unsigned ch)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct decoder *d;
-
-    for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
-        stop_decode(d);
-    }
-
-    for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
-        set_channel(d, ch++);
-        start_priming(d);
-    }
-
-    d = BLST_Q_FIRST(&g_decoders);
-    if (d->channel && d->map) {
-        ALOGV("activate(%p)", (void*)d);
-        live_decode_activate(d->channel);
-    }
-}
-
-static void print_status(void)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    struct decoder *d;
-    for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
-        NEXUS_VideoDecoderStatus status;
-        ALOGV("%s: calling NEXUS_SimpleVideoDecoder_GetStatus", __FUNCTION__);
-        NEXUS_SimpleVideoDecoder_GetStatus(live_decode_get_video_decoder(d->channel), &status);
-        ALOGV("%s %p: %d/%d %d%%, pts %#x, diff %d",
-            d == BLST_Q_FIRST(&g_decoders) ? "decode":"primer",
-            (void*)d, status.fifoDepth, status.fifoSize, status.fifoSize ? status.fifoDepth * 100 / status.fifoSize : 0,
-            status.pts, status.ptsStcDifference);
-    }
-}
 
 static int tuneToChannel(int tsid, int programNum)
 {
-    ALOGI("%s: Enter", __FUNCTION__);
-
-    int curarg = 1;
-
     live_decode_create_settings create_settings;
     live_decode_start_settings start_settings;
-    unsigned video_pid = 0x1fff, audio_pid = 0x1fff;
     NEXUS_VideoCodec video_type = NEXUS_VideoCodec_eMpeg2;
     NEXUS_AudioCodec audio_type = NEXUS_AudioCodec_eAc3;
-
-    bool prompt = false;
     struct client_state client_state;
-    unsigned program = 0;
-    unsigned timeout = 0, starttime;
 #if B_REFSW_TR69C_SUPPORT
     b_tr69c_t tr69c;
 #endif
 
-    int n;
+    ALOGD("> %s()", __FUNCTION__);
 
-    memset(&pig_inc, 0, sizeof(pig_inc));
     memset(&client_state, 0, sizeof(client_state));
+
+    aquireTuner();
+
     live_decode_get_default_create_settings(&create_settings);
     live_decode_get_default_start_settings(&start_settings);
-    binput_get_default_settings(&input_settings);
-
-    tune_settings.source = channel_source_ofdm;
-    tune_settings.mode = NEXUS_FrontendOfdmMode_eDvbt;
 
     start_settings.video.maxWidth = 1920;
     start_settings.video.maxHeight = 1080;
 
     create_settings.primed = false;
-    ALOGV("%s: surfaceClientId=%d", __FUNCTION__, allocResults.surfaceClient[0].id);
-    create_settings.window.surfaceClientId = allocResults.surfaceClient[0].id;
-    decode = live_decode_create(&create_settings);
-    for (unsigned int i=0; i<num_decodes; i++) {
-        struct decoder *dt = (struct decoder *)BKNI_Malloc(sizeof(*dt));
-        NEXUS_SimpleVideoDecoderHandle videoDecoder;
-        memset(dt, 0, sizeof(*dt));
-        ALOGV("%s: calling NEXUS_ParserBand_Open", __FUNCTION__);
-        dt->parserBand = NEXUS_ParserBand_Open(NEXUS_ANY_ID);
-        if (!dt->parserBand) {
-            BKNI_Free(dt);
-            continue;
-        }
-        dt->start_settings = start_settings;
-        dt->video_pid = video_pid;
-        dt->video_type = video_type;
-        dt->audio_pid = audio_pid;
-        dt->audio_type = audio_type;
-        dt->channel = live_decode_create_channel(decode);
-        BDBG_ASSERT(dt->channel);
-        BLST_Q_INSERT_TAIL(&g_decoders, dt, link);
-        ALOGV("decoder %d = %p", i, (void*)dt);
 
-        videoDecoder = live_decode_get_video_decoder(dt->channel);
+    ALOGD("%s() surfaceClientId: %d", __FUNCTION__, gSurfaceId);
+    create_settings.window.surfaceClientId = gSurfaceId;
+    create_settings.window.id = 0;
 
+    if (!gDecode) {
+        gDecode = live_decode_create(&create_settings);
     }
-    d = BLST_Q_FIRST(&g_decoders);
-    if( !d ) {
-        ALOGE("Unable to obtain parser band");
-        return -1;
+
+    for (unsigned int i=0; i<NUM_DECODES; i++) {
+        struct Decoder *dt = NULL;
+
+        dt = BLST_Q_FIRST(&g_decoders);
+
+        if( dt == NULL ) {
+            // TODO: Re-use parserband
+            dt = (struct Decoder *)BKNI_Malloc(sizeof(*dt));
+            memset(dt, 0, sizeof(*dt));
+            dt->parserBand = NEXUS_ParserBand_Open(NEXUS_ANY_ID);
+            if (!dt->parserBand) {
+                BKNI_Free(dt);
+                ALOGE("%s() Failed to obtain parser band.", __FUNCTION__);
+                continue;
+            }
+
+            dt->start_settings = start_settings;
+            dt->video_pid = INVALID_PID;
+            dt->video_type = video_type;
+            dt->audio_pid = INVALID_PID;
+            dt->audio_type = audio_type;
+            dt->channel = live_decode_create_channel(gDecode);
+            BDBG_ASSERT(dt->channel);
+            BLST_Q_INSERT_TAIL(&g_decoders, dt, link);
+        }
+        ALOGV("%s() decoder[%d]: %p parserBand: %p videoDecoder: %p",__FUNCTION__, i,
+            (void*)dt, (void*)dt->parserBand, (void *)live_decode_get_video_decoder(dt->channel));
     }
 
     jumpToChannel(tsid, programNum);
@@ -530,148 +573,39 @@ static int tuneToChannel(int tsid, int programNum)
     tr69c = b_tr69c_init(live_decode_get_set_tr69c_info, BLST_Q_FIRST(&g_decoders)->channel);
 #endif
 
-    starttime = b_get_time();
-    if (!g_total_channels) {
-        if (!g_quiet) ALOGV("No channels found.");
-    }
-    else if (prompt) {
-        if (!g_quiet) ALOGV("Press ENTER to change channel.");
+    ALOGD("< %s()", __FUNCTION__);
+    return 0;
+}
+
+static void sbGeometryUpdate(void * cntx, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+{
+    NEXUS_SurfaceComposition comp;
+    ALOGD("> %s (%p,%d,%d,%d,%d)", __FUNCTION__,cntx,x,y,w,h);
+
+    ALOGD("<> surfaceClient: %p id: %d",gVideo_sc, gSurfaceId);
+
+    if (gVideo_sc) {
+        NxClient_GetSurfaceClientComposition(gSurfaceId, &comp);
+        if (comp.position.x != (int)x || comp.position.y != (int)y ||
+            comp.position.width != w  || comp.position.height != h) {
+
+            comp.position.x = x;
+            comp.position.y = y;
+            comp.position.width = w;
+            comp.position.height = h;
+            NEXUS_Error rc;
+            rc = NxClient_SetSurfaceClientComposition(gSurfaceId, &comp);
+            if (rc) {
+                ALOGE("Failed to apply new composition (%d)", rc);
+                return;
+            }
+        }
     }
     else {
-        if (!g_quiet) ALOGV("Use remote control to change channel. \"Stop\" or \"Clear\" will exit the app.");
+        ALOGD("Video surface client has not been created yet.");
     }
 
-    return 0;
-}
-
-#if NEXUS_HAS_FRONTEND
-static void *gui_thread(void *context)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    NEXUS_SurfaceMemory mem;
-    unsigned count = 0;
-    NEXUS_Rect rect = {0,0,0,0};
-
-    BSTD_UNUSED(context);
-    NEXUS_Surface_GetMemory(g_constellation.surface, &mem);
-
-    memset(mem.buffer, 0, mem.pitch * g_constellation.createSettings.height);
-    rect.width = g_constellation.createSettings.width/2;
-    rect.height = g_constellation.createSettings.height/2;
-    rect.y = 0;
-    rect.x = rect.width;
-
-    while (!g_constellation.done) {
-#define MAX_SOFTDEC 32
-        NEXUS_FrontendSoftDecision softdec[MAX_SOFTDEC];
-        size_t num;
-        int rc;
-
-        if (!count) {
-            int x, y;
-            for (y=rect.y;y<rect.y+rect.height;y++) {
-                uint32_t *ptr = (uint32_t *)((uint8_t*)mem.buffer + mem.pitch*y);
-                for (x=rect.x;x<rect.x+rect.width;x++) {
-                    ptr[x] = 0xAA888888;
-                }
-            }
-        }
-        rc = NEXUS_Frontend_ReadSoftDecisions(g_constellation.frontend, softdec, MAX_SOFTDEC, &num);
-        if (!rc) {
-            unsigned i;
-            for (i=0;i<num;i++) {
-                unsigned x = rect.x + (rect.width * (softdec[i].i+32768)) / 65536;
-                unsigned y = rect.y + (rect.height * (softdec[i].q+32768)) / 65536;
-                uint32_t *ptr = (uint32_t *)((uint8_t*)mem.buffer + mem.pitch*y);
-
-                ptr = &ptr[x];
-                ptr[0] = ptr[1] = 0xFFBBBBBB;
-                ptr = (uint32_t *)((uint8_t*)ptr + mem.pitch);
-                ptr[0] = ptr[1] = 0xFFBBBBBB;
-                count++;
-            }
-            NEXUS_Surface_Flush(g_constellation.surface);
-
-            rc = NEXUS_SurfaceClient_SetSurface(g_constellation.surfaceClient, g_constellation.surface);
-            BDBG_ASSERT(!rc);
-            rc = BKNI_WaitForEvent(g_constellation.displayedEvent, 5000);
-            BDBG_ASSERT(!rc);
-
-            if (count > 4000) count = 0;
-        }
-    }
-    return NULL;
-}
-#endif
-
-static int gui_init(NEXUS_FrontendHandle frontend, NEXUS_SurfaceClientHandle surfaceClient, enum gui gui)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    int rc;
-    NEXUS_SurfaceClientSettings client_settings;
-    NEXUS_SurfaceMemory mem;
-
-    memset(&g_constellation, 0, sizeof(g_constellation));
-    g_constellation.frontend = frontend;
-    g_constellation.surfaceClient = surfaceClient;
-
-    BKNI_CreateEvent(&g_constellation.displayedEvent);
-
-    NEXUS_SurfaceClient_GetSettings(g_constellation.surfaceClient, &client_settings);
-    client_settings.displayed.callback = complete2;
-    client_settings.displayed.context = g_constellation.displayedEvent;
-    client_settings.windowMoved.callback = complete2;
-    client_settings.windowMoved.context = g_constellation.displayedEvent;
-    rc = NEXUS_SurfaceClient_SetSettings(g_constellation.surfaceClient, &client_settings);
-    BDBG_ASSERT(!rc);
-
-    if (gui > gui_no_alpha_hole) {
-        ALOGE("%s: NEXUS_Surface_Create", __FUNCTION__);
-        NEXUS_Surface_GetDefaultCreateSettings(&g_constellation.createSettings);
-        g_constellation.createSettings.pixelFormat = NEXUS_PixelFormat_eA8_R8_G8_B8;
-        g_constellation.createSettings.width = 720;
-        g_constellation.createSettings.height = 480;
-        g_constellation.surface = NEXUS_Surface_Create(&g_constellation.createSettings);
-
-        /* black screen, even if no constellation */
-        NEXUS_Surface_GetMemory(g_constellation.surface, &mem);
-        memset(mem.buffer, 0, mem.pitch * g_constellation.createSettings.height);
-        NEXUS_Surface_Flush(g_constellation.surface);
-        rc = NEXUS_SurfaceClient_SetSurface(g_constellation.surfaceClient, g_constellation.surface);
-        BDBG_ASSERT(!rc);
-        rc = BKNI_WaitForEvent(g_constellation.displayedEvent, 5000);
-        BDBG_ASSERT(!rc);
-
-#if NEXUS_HAS_FRONTEND
-        if (gui == gui_constellation && frontend) {
-            rc = pthread_create(&g_constellation.thread, NULL, gui_thread, NULL);
-            BDBG_ASSERT(!rc);
-        }
-#endif
-    }
-
-    return 0;
-}
-
-static void gui_uninit(void)
-{
-    ALOGI("%s: Enter", __FUNCTION__);
-    NEXUS_SurfaceClientSettings client_settings;
-    g_constellation.done = true;
-#if NEXUS_HAS_FRONTEND
-    if (g_constellation.thread) {
-        pthread_join(g_constellation.thread, NULL);
-    }
-#endif
-    if (g_constellation.surface) {
-        NEXUS_Surface_Destroy(g_constellation.surface);
-    }
-    NEXUS_SurfaceClient_GetSettings(g_constellation.surfaceClient, &client_settings);
-    client_settings.displayed.callback = NULL;
-    client_settings.windowMoved.callback = NULL;
-    NEXUS_SurfaceClient_SetSettings(g_constellation.surfaceClient, &client_settings);
-
-    BKNI_DestroyEvent(g_constellation.displayedEvent);
+    ALOGD("< %s()", __FUNCTION__);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -680,163 +614,137 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 {
     JNIEnv* env;
 
+    (void)reserved;
+
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
         return -1;
     }
 
     //TODO register native methods
-
-    ALOGE("LOADING FROM JNI!!");
-
+    ALOGD("LOADING FROM JNI!!");
 
     return JNI_VERSION_1_6;
 }
 
 extern "C" {
 JNIEXPORT jint JNICALL
-Java_com_broadcom_tvinput_BcmTunerJniBridge_initializeTuner(JNIEnv *env, jobject caller) {
-    ALOGI("Initalizing tuner hardware");
-    const char *freq_list = "618";
+Java_com_broadcom_tvinput_BcmTunerJniBridge_servicesScan(JNIEnv *env, jobject caller) {
+    NEXUS_Error rc;
+    struct Channel_map *map;
+    // const char *ofdm_dvbt_t2_freq_list = "570,690,698,714,722,738,770";
+    const char *freq_list = "570"; // Bristol live transponder
 
-    NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "%s", TAG);
-    ALOGV("%s: faking NxClient_Join", __FUNCTION__);
+    // TODO: UI configurable
+    gTuneSettings.source = channel_source_ofdm;
+    gTuneSettings.mode = NEXUS_FrontendOfdmMode_eDvbt;
 
-    //init frontend
-    ALOGV("%s: calling NEXUS_Platform_InitFrontend", __FUNCTION__);
-	rc = NEXUS_Platform_InitFrontend();
-	if ( rc != BERR_SUCCESS ) {
-		return -1;
-	}
+    (void)env;
+    (void)caller;
 
-    ALOGV("%s: calling NxClient_GetDefaultAllocSettings", __FUNCTION__);
-    NxClient_GetDefaultAllocSettings(&allocSettings);
-    allocSettings.surfaceClient = 1;
-    ALOGV("%s: calling NxClient_Alloc", __FUNCTION__);
-    rc = NxClient_Alloc(&allocSettings, &allocResults);
-    if (rc) return BERR_TRACE(rc);
-    ALOGV("%s: calling NEXUS_SurfaceClient_Acquire surfaceClientId=%d", __FUNCTION__, allocResults.surfaceClient[0].id);
-    surfaceClient = NEXUS_SurfaceClient_Acquire(allocResults.surfaceClient[0].id);
-    if (surfaceClient) {
-        ALOGV("%s: calling NEXUS_SurfaceClient_AcquireVideoWindow", __FUNCTION__);
-        video_sc = NEXUS_SurfaceClient_AcquireVideoWindow(surfaceClient, 0);
-        if (contentMode != NEXUS_VideoWindowContentMode_eMax) {
-            NEXUS_SurfaceClientSettings settings;
-            NEXUS_SurfaceClient_GetSettings(video_sc, &settings);
-            settings.composition.contentMode = contentMode;
-            NEXUS_SurfaceClient_SetSettings(video_sc, &settings);
-        }
-        if (pig_inc.x) {
-            b_pig_init(video_sc);
-        }
+    if (gScanInProgress) {
+        ALOGD("<> A service scan is already in progress....");
     }
 
-    input = binput_open(&input_settings);
+    ALOGD("> servicesScan()");
+    gScanInProgress = true;
 
-    get_default_channels(&tune_settings, &freq_list);
-    parse_channels(&tune_settings, freq_list);
+    // Don't aquire the tuner at this point, as the bchannel_* API's require the ability
+    // to aquire a tuner.
+
+    parseChannels(&gTuneSettings, freq_list);
 
     {
-        unsigned scanning = 0;
-        bool waiting = false;
-        /* start scanning as many as possible */
-        while (1) {
-            bool done = true;
-            for (map = BLST_Q_FIRST(&g_channel_map); map; map = BLST_Q_NEXT(map, link)) {
-                struct channel_map *nextmap;
-                if (map->scan_state == channel_map::scan_state_done) {
+        ALOGI("servicesScan() Start scanning....");
+        bool done = false;
+
+        while (!done) {
+            done = true;
+
+            for (map = BLST_Q_FIRST(&g_channelMap); map; map = BLST_Q_NEXT(map, link)) {
+                int scanAttempts = 0;
+                int lastProgCnt = 0;
+                bool continueSearch = false;
+
+                if (!g_quiet) ALOGV("servicesScan() Scan settings to be used: %s.", map->name);
+                if (map->scanState == Channel_map::SCAN_STATE_DONE) {
+                    ALOGV("servicesScan() Scan done for %s, map: %p ...", map->name, (void *)map);
                     continue;
                 }
                 done = false;
-                if (map->scan_state == channel_map::scan_state_pending && !waiting) {
-                    bchannel_scan_start_settings scan_settings;
-                    bchannel_scan_get_default_start_settings(&scan_settings);
-                    scan_settings.tune = map->tune;
+                if (map->scanState == Channel_map::SCAN_STATE_PENDING) {
+                    bchannel_scan_start_settings scanSettings;
+                    bchannel_scan_get_default_start_settings(&scanSettings);
+                    scanSettings.tune = map->tune;
                     if (!map->scan) {
-                        map->scan = bchannel_scan_start(&scan_settings);
+                        ALOGV("servicesScan() Attach frontend and start scan.");
+                        map->scan = bchannel_scan_start(&scanSettings);
                         if (!map->scan) {
-                            /* start fails if there are no resources.
-                            if there's no scan going, there's no reason to expect new resources.
-                            if there's a scan going, don't try again until one scan has finished. */
-                            if (!scanning) {
-                                map->scan_state = channel_map::scan_state_done;
-                            }
-                            else {
-                                waiting = true;
-                            }
+                            ALOGD("servicesScan() Channel scan failed.");
+                            continue;
                         }
                     }
                     else {
-                        bchannel_scan_restart(map->scan, &scan_settings);
+                        bchannel_scan_restart(map->scan, &scanSettings);
                     }
 
                     if (map->scan) {
-                        if (!g_quiet) ALOGV("Scanning %s...", map->name);
-                        map->scan_state = channel_map::scan_state_started;
-                        map->scan_start = b_get_time();
-                        scanning++;
+                        if (!g_quiet) ALOGV("servicesScan() Scanning: %s...", map->name);
+                        map->scanState = Channel_map::SCAN_STATE_STARTED;
+                        map->scanStart = b_get_time();
                     }
-
                 }
+
                 if (!map->scan) {
+                    ALOGV("JNI servicesScan() No scanner found for %s.", map->name);
                     continue;
                 }
 
-                rc = bchannel_scan_get_results(map->scan, &map->scan_results);
-                if (rc == NEXUS_NOT_AVAILABLE) {
-                    if (b_get_time() - map->scan_start < 7500) {
-                        continue;
-                    }
-                }
-
-                map->scan_state = channel_map::scan_state_done;
-                waiting = false;
-                scanning--;
-                if (!g_quiet) ALOGV("%d programs found on %s", map->scan_results.num_programs, map->name);
+                // TODO: Can callback be used for scan results, instead of polling the scanner.
+                do {
+                    BKNI_Sleep(500); // Wait a while before checking for results.
+                    continueSearch = false;
 #if NEXUS_HAS_FRONTEND
-                if (!map->scan_results.num_programs && map->tune.source != channel_source_streamer) {
-                    NEXUS_FrontendHandle frontend;
-                    NEXUS_ParserBand parserBand;
-                    NEXUS_FrontendFastStatus status;
-                    bchannel_scan_get_resources(map->scan, &frontend, &parserBand);
-                    //ALOGV("%s: calling NEXUS_Frontend_GetFastStatus", __FUNCTION__);
-                    rc = NEXUS_Frontend_GetFastStatus(frontend, &status);
-                    if (rc) {
-                        BERR_TRACE(rc);
+                    if (!map->scanResults.num_programs && map->tune.source != channel_source_streamer) {
+                        NEXUS_FrontendHandle frontend;
+                        NEXUS_ParserBand parserBand;
+                        NEXUS_FrontendFastStatus status;
+                        bchannel_scan_get_resources(map->scan, &frontend, &parserBand);
+                        rc = NEXUS_Frontend_GetFastStatus(frontend, &status);
+                        if (!rc) {
+                            const char *lockstr[NEXUS_FrontendLockStatus_eMax] = {"unknown", "unlocked", "locked", "no signal"};
+                            if (!g_quiet) ALOGV("servicesScan() frontend lock status: %s", lockstr[status.lockStatus]);
+                        }
                     }
-                    else {
-                        const char *lockstr[NEXUS_FrontendLockStatus_eMax] = {"unknown", "unlocked", "locked", "no signal"};
-                        if (!g_quiet) ALOGV("  frontend lock status: %s", lockstr[status.lockStatus]);
-                    }
-                }
 #endif
+                    rc = bchannel_scan_get_results(map->scan, &map->scanResults);
+                    ALOGV("Polling for scan results progs:%d rc:%i",map->scanResults.num_programs, rc);
 
-                g_total_channels += map->scan_results.num_programs;
-
-                /* give this scan to another if possible */
-                for (nextmap = BLST_Q_NEXT(map, link); nextmap; nextmap = BLST_Q_NEXT(nextmap, link)) {
-                    if (!nextmap->scan && !map->scan_state == channel_map::scan_state_pending) {
-                        nextmap->scan = map->scan;
-                        map->scan = NULL;
-                        break;
+                    // Obtain all the possible services on this mux
+                    if (rc == NEXUS_NOT_AVAILABLE && map->scanResults.num_programs != lastProgCnt) {
+                        lastProgCnt = map->scanResults.num_programs;
+                        continueSearch = true;
                     }
-                }
-                if (!nextmap) {
-                    /* no longer needed */
-                    bchannel_scan_stop(map->scan);
-                    map->scan = NULL;
-                }
-            }
-            if (done) break;
-        }
 
-        for (map = BLST_Q_FIRST(&g_channel_map); map; map = BLST_Q_NEXT(map, link)) {
-            if (map->scan) {
+                    // Allow a maximum scan time of 4s.
+                    ++scanAttempts;
+                    if (rc == NEXUS_NOT_AVAILABLE && scanAttempts < 8 && lastProgCnt == 0) {
+                        continueSearch = true;
+                    }
+                } while (continueSearch);
+                ALOGV("%s scan time %i ms", map->name, b_get_time() - map->scanStart);
+
+                ALOGV("servicesScan() Release frontend and stop scan.");
                 bchannel_scan_stop(map->scan);
+                map->scanState = Channel_map::SCAN_STATE_DONE;
                 map->scan = NULL;
+
+                if (!g_quiet) ALOGV("servicesScan() %d programs found on %s", map->scanResults.num_programs, map->name);
+                g_totalChannels += map->scanResults.num_programs;
             }
         }
     }
+    gScanInProgress = false;
+    ALOGD("< servicesScan() Scan complete, channels found: %i", g_totalChannels);
     return 0;
 }
 }
@@ -844,67 +752,71 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_initializeTuner(JNIEnv *env, jobject
 extern "C" {
 JNIEXPORT jstring JNICALL
 Java_com_broadcom_tvinput_BcmTunerJniBridge_getScanResults(JNIEnv *env, jobject caller) {
-    ALOGI("%s: Enter", __FUNCTION__);
+    ALOGD("<> getScanResults() total channels:%d",g_totalChannels);
     unsigned int channelNumber = 0;
+    struct Channel_map *map;
     std::stringstream ss;
 
-    if (g_total_channels > 0) {
-        ss << "[";
-        for (map = BLST_Q_FIRST(&g_channel_map); map; map = BLST_Q_NEXT(map, link)) {
+    (void)env;
+    (void)caller;
 
-            if (map->scan_state == channel_map::scan_state_done) {
-                channel_map *data = map;
-                if (data->scan_results.num_programs > 0) {
+    if (g_totalChannels > 0) {
+        ss << "[";
+        for (map = BLST_Q_FIRST(&g_channelMap); map; map = BLST_Q_NEXT(map, link)) {
+
+            if (map->scanState == Channel_map::SCAN_STATE_DONE) {
+                Channel_map *data = map;
+                if (data->scanResults.num_programs > 0) {
                     ss << "{";
                     ss << "\"name\":" << "\"" << data->name << "\"";
                     ss << ",\"freq\":" << data->tune.freq;
-                    ss << ",\"version\":" << (short)(data->scan_results.version); //unint8
-                    ss << ",\"tsid\":" << (unsigned short)data->scan_results.transport_stream_id; //uint16_t
+                    ss << ",\"version\":" << (short)(data->scanResults.version); //unint8
+                    ss << ",\"tsid\":" << (unsigned short)data->scanResults.transport_stream_id; //uint16_t
 
                     ss << ",\"program_list\":[";
-                    for (int c = 0; c < data->scan_results.num_programs; c++) {
+                    for (int c = 0; c < data->scanResults.num_programs; c++) {
                         ss << "{";
                         ss << "\"channel_number\":" << channelNumber;
-                        ss << ",\"program_number\":" << (unsigned short)(data->scan_results.program_info[c].program_number); //uint16_t
-                        ss << ",\"program_pid\":" << (unsigned short)data->scan_results.program_info[c].map_pid; //uint16_t
-                        ss << ",\"program_version\":" << (short)(data->scan_results.program_info[c].version); //uint8_t
-                        ss << ",\"pcr_pid\":" << (unsigned short)data->scan_results.program_info[c].pcr_pid; //uint16_t
-                        ss << ",\"ca_pid\":" << (unsigned short)(data->scan_results.program_info[c].ca_pid); //uint16_t
+                        ss << ",\"program_number\":" << (unsigned short)(data->scanResults.program_info[c].program_number); //uint16_t
+                        ss << ",\"program_pid\":" << (unsigned short)data->scanResults.program_info[c].map_pid; //uint16_t
+                        ss << ",\"program_version\":" << (short)(data->scanResults.program_info[c].version); //uint8_t
+                        ss << ",\"pcr_pid\":" << (unsigned short)data->scanResults.program_info[c].pcr_pid; //uint16_t
+                        ss << ",\"ca_pid\":" << (unsigned short)(data->scanResults.program_info[c].ca_pid); //uint16_t
 
                         ss << ",\"video_pids\":[";
-                        for (int vid = 0; vid < data->scan_results.program_info[c].num_video_pids; vid++) {
+                        for (int vid = 0; vid < data->scanResults.program_info[c].num_video_pids; vid++) {
                             ss << "{";
-                            ss << "\"pid\":" << (unsigned short)(data->scan_results.program_info[c].video_pids[vid].pid); //uint16_t
-                            ss << ",\"codec\":\"" << lookup_name(g_videoCodecStrs, data->scan_results.program_info[c].video_pids[vid].codec) << "\""; //NEXUS_VideoCodec
-                            ss << ",\"ca_pid\":" << (unsigned short)(data->scan_results.program_info[c].video_pids[vid].ca_pid); //uint16_t
+                            ss << "\"pid\":" << (unsigned short)(data->scanResults.program_info[c].video_pids[vid].pid); //uint16_t
+                            ss << ",\"codec\":\"" << lookup_name(g_videoCodecStrs, data->scanResults.program_info[c].video_pids[vid].codec) << "\""; //NEXUS_VideoCodec
+                            ss << ",\"ca_pid\":" << (unsigned short)(data->scanResults.program_info[c].video_pids[vid].ca_pid); //uint16_t
                             ss << "}";
-                            if (vid + 1 < data->scan_results.program_info[c].num_video_pids) ss << ",";
+                            if (vid + 1 < data->scanResults.program_info[c].num_video_pids) ss << ",";
                         }
                         ss << "]";
 
                         ss << ",\"audio_pids\":[";
-                        for (int aid = 0; aid < data->scan_results.program_info[c].num_audio_pids; aid++) {
+                        for (int aid = 0; aid < data->scanResults.program_info[c].num_audio_pids; aid++) {
                             ss << "{";
-                            ss << "\"pid\":" << (unsigned short)(data->scan_results.program_info[c].audio_pids[aid].pid); //uint16_t
-                            ss << ",\"codec\":\"" << lookup_name(g_audioCodecStrs, data->scan_results.program_info[c].audio_pids[aid].codec) << "\""; //NEXUS_AudioCodec
-                            ss << ",\"ca_pid\":" << (unsigned short)(data->scan_results.program_info[c].audio_pids[aid].ca_pid); //uint16_t
+                            ss << "\"pid\":" << (unsigned short)(data->scanResults.program_info[c].audio_pids[aid].pid); //uint16_t
+                            ss << ",\"codec\":\"" << lookup_name(g_audioCodecStrs, data->scanResults.program_info[c].audio_pids[aid].codec) << "\""; //NEXUS_AudioCodec
+                            ss << ",\"ca_pid\":" << (unsigned short)(data->scanResults.program_info[c].audio_pids[aid].ca_pid); //uint16_t
                             ss << "}";
-                            if (aid + 1 < data->scan_results.program_info[c].num_audio_pids) ss << ",";
+                            if (aid + 1 < data->scanResults.program_info[c].num_audio_pids) ss << ",";
                         }
                         ss << "]";
 
                         ss << ",\"other_pids\":[";
-                        for (int oid = 0; oid < data->scan_results.program_info[c].num_other_pids; oid++) {
+                        for (int oid = 0; oid < data->scanResults.program_info[c].num_other_pids; oid++) {
                             ss << "{";
-                            ss << ",\"pid\":" << (unsigned short)(data->scan_results.program_info[c].other_pids[oid].pid); //uint16_t
-                            ss << ",\"stream_type\":" << (unsigned int)(data->scan_results.program_info[c].other_pids[oid].stream_type); //unsigned
-                            ss << ",\"ca_pid\":" << (unsigned short)(data->scan_results.program_info[c].other_pids[oid].ca_pid); //uint16_t
+                            ss << "\"pid\":" << (unsigned short)(data->scanResults.program_info[c].other_pids[oid].pid); //uint16_t
+                            ss << ",\"stream_type\":" << (unsigned int)(data->scanResults.program_info[c].other_pids[oid].stream_type); //unsigned
+                            ss << ",\"ca_pid\":" << (unsigned short)(data->scanResults.program_info[c].other_pids[oid].ca_pid); //uint16_t
                             ss << "}";
-                            if (oid + 1 < data->scan_results.program_info[c].num_other_pids) ss << ",";
+                            if (oid + 1 < data->scanResults.program_info[c].num_other_pids) ss << ",";
                         }
                         ss << "]";
                         ss << "}";
-                        if (c + 1 < data->scan_results.num_programs) ss << ",";
+                        if (c + 1 < data->scanResults.num_programs) ss << ",";
 
                         channelNumber++;
                     }
@@ -917,8 +829,25 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_getScanResults(JNIEnv *env, jobject 
         ss << "]";
     }
 
-    ALOGV("channelData=%s",ss.str().c_str());
     return  env->NewStringUTF(ss.str().c_str());
+}
+}
+
+extern "C" {
+JNIEXPORT jint JNICALL
+Java_com_broadcom_tvinput_BcmTunerJniBridge_servicesAvailable(JNIEnv *env, jobject caller) {
+    struct Channel_map *map;
+
+    (void)env;
+    (void)caller;
+
+    g_totalChannels = 0;
+    for (map = BLST_Q_FIRST(&g_channelMap); map; map = BLST_Q_NEXT(map, link)) {
+        g_totalChannels += map->scanResults.num_programs;
+    }
+
+    ALOGD("<> servicesAvailable(): %d",g_totalChannels);
+    return g_totalChannels>0?1:0;
 }
 }
 
@@ -926,8 +855,10 @@ extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_broadcom_tvinput_BcmTunerJniBridge_getMsgFromJni(JNIEnv *env, jobject caller) {
 
-    // TODO
-    ALOGI("RECEIVED call from JAVA");
+    (void)caller;
+
+    // TODO:
+    ALOGD("<> getMsgFromJni() RECEIVED call from JAVA");
 
     jclass javaBridge = env->FindClass("com/broadcom/tvinput/BcmTunerJniBridge");
     if(javaBridge == NULL) {
@@ -945,77 +876,135 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_getMsgFromJni(JNIEnv *env, jobject c
 extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_broadcom_tvinput_BcmTunerJniBridge_tune(JNIEnv *env, jobject caller, jint tsid, jint pNum) {
-    ALOGI("%s: Enter tsid=%d, pNum=%d", __FUNCTION__, (int)tsid, (int)pNum);
-    return tuneToChannel((int)tsid, (int)pNum);
-    ALOGE("%s: Exit", __FUNCTION__);
+    int rc;
+    ALOGD("> tune() tsid=%i, pNum=%i", (int)tsid, (int)pNum);
 
-    return 0;
+    (void)env;
+    (void)caller;
+
+    // TODO: UI configurable
+    gTuneSettings.source = channel_source_ofdm;
+    gTuneSettings.mode = NEXUS_FrontendOfdmMode_eDvbt;
+
+    rc = tuneToChannel((int)tsid, (int)pNum);
+
+    ALOGD("< tune()");
+    return rc;
 }
 }
 
 extern "C" {
 JNIEXPORT jint JNICALL
-Java_com_broadcom_tvinput_BcmTunerJniBridge_initGUI(JNIEnv *env, jobject caller) {
-    ALOGI("%s: Enter", __FUNCTION__);
+Java_com_broadcom_tvinput_BcmTunerJniBridge_releaseSdb(JNIEnv *env, jobject caller) {
+   ALOGD("> releaseSdb()");
 
-    if (tune_settings.source == channel_source_streamer) {
-        frontend = (struct frontend *)BKNI_Malloc(sizeof(*frontend));
-        memset(frontend, 0, sizeof(*frontend));
-        BLST_Q_INSERT_TAIL(&g_frontends, frontend, link);
-    }
-#if NEXUS_HAS_FRONTEND
-    else {
-        for (unsigned int i=0;i<num_decodes;i++) {
-            NEXUS_FrontendAcquireSettings settings;
-            struct frontend *frontend;
+   (void)env;
+   (void)caller;
 
-            frontend = (struct frontend *)BKNI_Malloc(sizeof(*frontend));
-            memset(frontend, 0, sizeof(*frontend));
+   if (native_window)
+      native_window_set_sideband_stream(native_window, NULL);
+   native_handle_delete(native_handle);
+   gSdbGeomCb = NULL;
 
-            ALOGV("%s: calling NEXUS_Frontend_GetDefaultAcquireSettings", __FUNCTION__);
-            NEXUS_Frontend_GetDefaultAcquireSettings(&settings);
-            settings.capabilities.qam = (tune_settings.source == channel_source_qam);
-            settings.capabilities.ofdm = (tune_settings.source == channel_source_ofdm);
-            settings.capabilities.satellite = (tune_settings.source == channel_source_sat);
-            ALOGV("%s: calling NEXUS_Frontend_Acquire", __FUNCTION__);
-            frontend->frontend = NEXUS_Frontend_Acquire(&settings);
-            if (!frontend->frontend) {
-                BKNI_Free(frontend);
-                //num_decodes = i; /* reduce number of decodes to number of frontends for simpler app logic */
-                break;
-            }
-            BLST_Q_INSERT_TAIL(&g_frontends, frontend, link);
+   ALOGD("< releaseSdb()");
+   return 0;
+}
+}
+
+extern "C" {
+JNIEXPORT jint JNICALL
+Java_com_broadcom_tvinput_BcmTunerJniBridge_initialiseSdb(JNIEnv *env, jobject caller, jobject jsurface) {
+   NEXUS_Error rc;
+   uint32_t context;
+
+   ALOGD("> initialiseSdb()");
+
+   (void)caller;
+
+   native_window = ANativeWindow_fromSurface(env,  jsurface);
+   if (idse() != NULL) {
+      gSdbGeomCb = new SdbGeomCb(&sbGeometryUpdate, NULL);
+      context = idse()->regSdbCb(0, NULL);
+      context = idse()->regSdbCb(0, gSdbGeomCb);
+   }
+   native_handle = native_handle_create(0, 2);
+   if (!native_handle) {
+      gSdbGeomCb = NULL;
+      ALOGE("failed to allocate native handle");
+      return JNI_FALSE;
+   }
+   native_handle->data[0] = 1;
+   native_handle->data[1] = context;
+   native_window_set_sideband_stream(native_window, native_handle);
+
+   if (gSurfaceClient == NULL) {
+      NxClient_AllocSettings allocSettings;
+      NxClient_AllocResults allocResults;
+      NxClient_GetDefaultAllocSettings(&allocSettings);
+      allocSettings.surfaceClient = 1; /* surface client required for video window */
+      rc = NxClient_Alloc(&allocSettings, &allocResults);
+
+      gSurfaceClient = NEXUS_SurfaceClient_Acquire(allocResults.surfaceClient[0].id);
+      if (gSurfaceClient) {
+          /* creating the video window is necessary, so that SurfaceCompositor can resize the video window */
+          gVideo_sc = NEXUS_SurfaceClient_AcquireVideoWindow(gSurfaceClient, 0);
+      }
+      gSurfaceId = allocResults.surfaceClient[0].id;
+      ALOGD("%s() aquired surfaceClientId: %d", __FUNCTION__, gSurfaceId);
+   }
+
+   ALOGD("< initialiseSdb()");
+   return 0;
+}
+}
+
+
+
+extern "C" {
+JNIEXPORT jint JNICALL
+Java_com_broadcom_tvinput_BcmTunerJniBridge_closeSession(JNIEnv *env, jobject caller) {
+    struct Frontend *frontend;
+    struct Decoder *d;
+    ALOGD("> closeSession()");
+
+    (void)env;
+    (void)caller;
+
+    while ((d = BLST_Q_FIRST(&g_decoders))) {
+        stopDecode(d);
+        if (d->channel) {
+            live_decode_destroy_channel(d->channel);
+            d->channel = NULL;
         }
+        ALOGD("JNI closeSession: calling NEXUS_ParserBand_Close()");
+        NEXUS_ParserBand_Close(d->parserBand);
+        BLST_Q_REMOVE(&g_decoders, d, link);
+        BKNI_Free(d);
     }
-#endif
 
-    frontend = BLST_Q_FIRST(&g_frontends);
-    if (!frontend) {
-        ALOGE("Unable to find capable frontend");
-        return -1;
+    if (gDecode) {
+        live_decode_destroy(gDecode);
+        gDecode = NULL;
     }
-    gui_init(frontend->frontend, surfaceClient, gui);
 
-    ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
-}
-}
-
-extern "C" {
-JNIEXPORT jint JNICALL
-Java_com_broadcom_tvinput_BcmTunerJniBridge_uninitGUI(JNIEnv *env, jobject caller) {
-    ALOGI("%s: Enter", __FUNCTION__);
-
-    gui_uninit();
     while ((frontend = BLST_Q_FIRST(&g_frontends))) {
         if (frontend->frontend) {
-            ALOGV("%s: calling NEXUS_Frontend_Release", __FUNCTION__);
+            ALOGD("JNI closeSession: calling NEXUS_Frontend_Release()");
             NEXUS_Frontend_Release(frontend->frontend);
+            frontend->frontend = NULL;
         }
         BLST_Q_REMOVE(&g_frontends, frontend, link);
         BKNI_Free(frontend);
     }
-    ALOGE("%s: Exit", __FUNCTION__);
+
+    if (gSurfaceClient) {
+        NEXUS_SurfaceClient_Release(gSurfaceClient);
+        NEXUS_SurfaceClient_ReleaseVideoWindow(gVideo_sc);
+        gSurfaceId = 0;
+        gSurfaceClient = gVideo_sc = NULL;
+    }
+
+    ALOGD("< closeSession()");
     return 0;
 }
 }
@@ -1023,21 +1012,17 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_uninitGUI(JNIEnv *env, jobject calle
 extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_broadcom_tvinput_BcmTunerJniBridge_stop(JNIEnv *env, jobject caller) {
-    ALOGI("%s: Enter", __FUNCTION__);
+    struct Decoder *d;
+    ALOGD("> stop()");
 
-    while ((d = BLST_Q_FIRST(&g_decoders))) {
-        stop_decode(d);
-        if (d->channel) {
-            live_decode_destroy_channel(d->channel);
-        }
-        ALOGV("%s: calling NEXUS_ParserBand_Close", __FUNCTION__);
-        NEXUS_ParserBand_Close(d->parserBand);
-        BLST_Q_REMOVE(&g_decoders, d, link);
-        BKNI_Free(d);
+    (void)env;
+    (void)caller;
+
+    for (d = BLST_Q_FIRST(&g_decoders); d; d = BLST_Q_NEXT(d, link)) {
+        stopDecode(d);
     }
-    live_decode_destroy(decode);
 
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("< stop()");
     return 0;
 }
 }
@@ -1045,7 +1030,11 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_stop(JNIEnv *env, jobject caller) {
 extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_broadcom_tvinput_BcmTunerJniBridge_uninitializeTuner(JNIEnv *env, jobject caller) {
-    ALOGI("%s: Enter", __FUNCTION__);
+
+    (void)env;
+    (void)caller;
+
+    ALOGD("> uninitializeTuner()");
 
     uninit_channels();
 
@@ -1053,10 +1042,7 @@ Java_com_broadcom_tvinput_BcmTunerJniBridge_uninitializeTuner(JNIEnv *env, jobje
         b_tr69c_uninit(tr69c);
 #endif
 
-    NxClient_Free(&allocResults);
-    binput_close(input);
-
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("< uninitializeTuner()");
     return 0;
 }
 }

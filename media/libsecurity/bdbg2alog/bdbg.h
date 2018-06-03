@@ -119,8 +119,14 @@ const char *BDBG_P_Int64DecArg(int64_t x, char *buf, size_t buf_size);
 #else
 #define BDBG_LOG(x) BDBG2ALOG_DEBUG x
 #define BDBG2ALOG_DEBUG(...) ((void)LOG_PRI(ANDROID_LOG_DEBUG, alog_module, __VA_ARGS__))
+/* Suppress BDBG_ENTER and BDBG_LEAVE logs unless explicitly enable */
+#if BDBG2ALOG_ENABLE_BDBG_ENTER_LEAVE_LOGS
 #define BDBG_ENTER(function) ((void)LOG_PRI(ANDROID_LOG_VERBOSE, alog_module, "Enter... %s", #function ))
 #define BDBG_LEAVE(function) ((void)LOG_PRI(ANDROID_LOG_VERBOSE, alog_module, "Leave... %s", #function ))
+#else
+#define BDBG_ENTER(function) BDBG_NOP()
+#define BDBG_LEAVE(function) BDBG_NOP()
+#endif
 #endif
 
 #if BDBG_NO_MSG

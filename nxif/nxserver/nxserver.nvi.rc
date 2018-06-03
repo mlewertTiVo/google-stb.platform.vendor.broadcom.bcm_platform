@@ -1,7 +1,7 @@
 service nxserver /system/vendor/bin/nxserver
    class core
    user root
-   group system
+   group system inet
    socket nxserver stream 0666 root system
    critical
 

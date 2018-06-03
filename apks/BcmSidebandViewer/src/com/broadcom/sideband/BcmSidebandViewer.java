@@ -22,7 +22,7 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     private static final String TAG = BcmSidebandViewer.class.getSimpleName();
 
     // Please include your own video file and make sure to set ownership, group, and permission flags
-    private static String mFilePathDefault = "/data/data/com.broadcom.sideband/video.mp4";
+    private static String mFilePathDefault = "/data/vendor/nexus/sdbhak/video.mp4";
 
     private SurfaceView mSurfaceView; // Sideband surface
     private CompoundButton mButtonFullscreen;

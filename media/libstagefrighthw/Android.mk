@@ -170,6 +170,7 @@ LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 LOCAL_SHARED_LIBRARIES += \
         bcm.hardware.nexus@1.0 \
         bcm.hardware.dspsvcext@1.0 \
+        bcm.hardware.dpthak@1.0 \
         libhidlbase \
         libhidltransport
 else

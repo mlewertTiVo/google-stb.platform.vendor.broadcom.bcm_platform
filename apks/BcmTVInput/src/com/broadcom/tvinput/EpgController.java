@@ -22,7 +22,9 @@ import android.os.AsyncTask;
 import android.util.Log;
 import android.util.LongSparseArray;
 
+
 import java.util.List;
+
 
 public class EpgController {
     public static String BCM_TVINPUT_ID = "com.broadcom.tvinput/.BcmTvTunerService";
@@ -31,10 +33,12 @@ public class EpgController {
 
     public EpgController(Context context) {
         this.mContext = context;
+        Log.i("EpgController", "EpgController()");
     }
 
     public void updateEpgData(String tunerChannelData){
         this.tunerChannelData = tunerChannelData;
+        Log.i("EpgController", "updateEpgData() tunerChannelData size: " + tunerChannelData.length());
         UpdateChannelAndProgramTask job = new UpdateChannelAndProgramTask(mContext);
         job.execute();
     }
@@ -44,13 +48,32 @@ public class EpgController {
 
         public UpdateChannelAndProgramTask(Context c) {
             context = c;
+            Log.i("EpgController", "UpdateChannelAndProgramTask()");
         }
 
         @Override
         public Void doInBackground(Void... params) {
             //Update Channels
+            Log.i("EpgController", "doInBackground() tunerChannelData size: " + tunerChannelData.length());
+
+            // TODO: Fix how the tuner data is cached to avoid the need for a scan.
+            if (tunerChannelData.length() == 0) {
+                Log.i("EpgController", "Initiating a search for services.");
+                BcmTunerJniBridge.getInstance().servicesScan();
+
+                tunerChannelData = BcmTunerJniBridge.getInstance().getScanResults();
+
+                if (tunerChannelData.length() == 0) {
+                    Log.i("EpgController", "Failed to find any services.");
+                    return null;
+                 }
+            }
+
             List<Channel> tvChannels = EpgDataUtil.getChannelsFromEpgSource(tunerChannelData);
+            Log.i("EpgController", "tvChannels size: " + tvChannels.size());
+
             EpgDataUtil.updateChannels(context, EpgController.BCM_TVINPUT_ID, tvChannels);
+
             LongSparseArray<Channel> channelMap = EpgDataUtil.buildChannelMap(context.getContentResolver(), EpgController.BCM_TVINPUT_ID);
 
             if (channelMap == null) {
@@ -60,6 +83,7 @@ public class EpgController {
             long startMs = System.currentTimeMillis();
             long endMs = startMs + 7200000;
 
+            Log.d("EpgController","Program updates required: " + channelMap.size() );
             for (int i = 0; i < channelMap.size(); ++i) {
                 Uri channelUri = TvContract.buildChannelUri(channelMap.keyAt(i));
                 List<Program> programs = EpgDataService.getEpgProgramsData(channelMap.valueAt(i), startMs, endMs);
@@ -70,8 +94,6 @@ public class EpgController {
                         programs.set(index, new Program.Builder(programs.get(index)).setChannelId(channelMap.valueAt(i).getId()).build());
                     }
                 }
-
-                if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, programs.toString());
                 EpgDataUtil.updatePrograms(context.getContentResolver(), channelUri, EpgDataUtil.getPrograms(channelMap.valueAt(i), programs, startMs, endMs));
             }
             return null;

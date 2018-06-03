@@ -1,0 +1,4 @@
+service sdbhak-hal-1-0 /vendor/bin/hw/bcm.hardware.sdbhak@1.0-service
+    class hal
+    user system
+    group system

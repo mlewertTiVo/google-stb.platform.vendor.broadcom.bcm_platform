@@ -24,9 +24,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
 # unclassified.
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/libsmt/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 
@@ -35,7 +33,8 @@ BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
-#include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
+include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
+#include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 

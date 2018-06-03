@@ -1,0 +1,10 @@
+package bcm.hardware.dpthak@1.0;
+
+enum DptHakHfrMode : uint32_t {
+    VIDEO,
+    VIDEO_DEFAULT,
+    TUNNEL,
+    TUNNEL_DEFAULT,
+    INVALID
+};
+

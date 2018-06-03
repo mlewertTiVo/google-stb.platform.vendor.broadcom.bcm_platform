@@ -485,6 +485,7 @@ protected:
     void PollDecodedFrames();
     void ReturnDecodedFrames();
     bool GraphicsCheckpoint();
+    void CopyAlignedSurfaceToClient(uint8_t *pClientMemory, const uint8_t *pSurfaceMemory, uint16_t height, unsigned int pitch, OMX_S32 stride);
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
