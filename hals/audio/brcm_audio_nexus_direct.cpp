@@ -295,6 +295,13 @@ static char *nexus_direct_bout_get_parameters (struct brcm_stream_out *bout, con
 
     /* supported sample formats */
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS)) {
+        if (formats_str.contains("AUDIO_FORMAT_AC3") && !formats_str.contains("AUDIO_FORMAT_E_AC3")) {
+            NEXUS_AudioCapabilities audioCaps;
+            NEXUS_GetAudioCapabilities(&audioCaps);
+            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+                formats_str.append("|AUDIO_FORMAT_E_AC3");
+            }
+        }
         str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
                           formats_str.isEmpty()?"AUDIO_FORMAT_PCM_16_BIT":formats_str.string());
     }
