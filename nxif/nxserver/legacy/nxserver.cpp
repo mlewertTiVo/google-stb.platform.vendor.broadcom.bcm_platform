@@ -161,7 +161,7 @@
 #define NX_INVALID                     -1
 #define NX_NOGRAB_MAGIC                "AWnG"
 
-#define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
+#define NX_ANDROID_BOOTCOMPLETE        "ro.nx.boot_completed"
 #define NX_STATE                       "dyn.nx.state"
 
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
@@ -596,7 +596,7 @@ static void *proactive_runner_task(void *argv)
                     int wdog_timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
                     g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
                     if (g_app.wdog.fd >= 0 && wdog_timeout) {
-                       ALOGI("sys.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
+                       ALOGI("ro.nx.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
                        NEXUS_Error rc;
                        NEXUS_WatchdogCallbackSettings wdogSettings;
                        watchdogWrite(WATCHDOG_TERMINATE);
@@ -617,7 +617,7 @@ static void *proactive_runner_task(void *argv)
                        }
                        g_app.wdog.init = true;
                     } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
-                       ALOGI("wdog disabled on sys.boot_completed");
+                       ALOGI("wdog disabled on ro.nx.boot_completed");
                        watchdogWrite(WATCHDOG_TERMINATE);
                        close(g_app.wdog.fd);
                        g_app.wdog.fd = NX_INVALID;

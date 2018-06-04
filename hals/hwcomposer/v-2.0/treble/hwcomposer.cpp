@@ -6501,7 +6501,7 @@ static uint32_t hwc2_afb_min(
     * only support the ATV bound density that make sense, fallback is
     * always 1080p.
     */
-   int32_t d = property_get_int32("ro.sf.lcd_density", 0);
+   int32_t d = property_get_int32("ro.nx.sf.lcd_density", 0);
    uint32_t v = 0;
 
    switch (d) {

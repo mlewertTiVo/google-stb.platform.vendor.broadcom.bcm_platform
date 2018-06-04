@@ -56,7 +56,7 @@
 #define BOOT_FROM_DEEP_SLEEP "warm,s3_wakeup"
 
 #define PROPERTY_NX_BOOT_KEY_TWO "dyn.nx.boot.key2"
-#define PROPERTY_BOOT_COMPLETED "sys.boot_completed"
+#define PROPERTY_BOOT_COMPLETED "ro.nx.boot_completed"
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
