@@ -687,6 +687,7 @@ static void hwc2_hdmi_collect(
    NEXUS_HdmiOutputHandle hdmi,
    NxClient_DisplaySettings *s) {
 
+   NEXUS_HdmiOutputExtraStatus es;
    NEXUS_HdmiOutputBasicEdidData bedid;
    NEXUS_HdmiOutputEdidData edid;
    NEXUS_VideoFormatInfo i;
@@ -713,10 +714,12 @@ static void hwc2_hdmi_collect(
    }
 
    e = NEXUS_HdmiOutput_GetEdidData(hdmi, &edid);
+   NEXUS_HdmiOutput_GetExtraStatus(hdmi, &es);
    cfg = dsp->cfgs;
    while (cfg != NULL) {
       cfg->hdr10 = false;
       cfg->hlg   = false;
+      cfg->dbv   = es.dolbyVision.supported;
       if (!e) {
          if (edid.hdrdb.valid) {
             cfg->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
@@ -2290,8 +2293,8 @@ static size_t hwc2_dump_gen(
             dsp->pres, dsp->post);
          NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(0, &d);
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext]:hdr-%c,hlg-%c::[dyn]:plm-%c,dbv-%c,tch-%c\n",
-            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x',
+            "\t[ext]:hdr-%c,hlg-%c,dbv-%c::[dyn]:plm-%c,dbv-%c,tch-%c\n",
+            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->aCfg->dbv?'o':'x',
             d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
             d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
             d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o');
