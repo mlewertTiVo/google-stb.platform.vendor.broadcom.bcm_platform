@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.broadcom.BcmBP3Config.BP3Activity">
+
+    <RadioGroup
+        android:id="@+id/idRadioGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        tools:layout_editor_absoluteX="16dp"
+        tools:layout_editor_absoluteY="16dp">
+
+        <RadioButton
+            android:id="@+id/idStatusButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/status"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            tools:layout_editor_absoluteX="28dp"
+            tools:layout_editor_absoluteY="31dp" />
+
+        <RadioButton
+            android:id="@+id/idServerButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/server"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            tools:layout_editor_absoluteX="28dp"
+            tools:layout_editor_absoluteY="100dp" />
+
+        <RadioButton
+            android:id="@+id/idProvisionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/provision"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            tools:layout_editor_absoluteX="28dp"
+            tools:layout_editor_absoluteY="170dp" />
+
+    </RadioGroup>
+
+    <TextView
+        android:id="@+id/idInfo1"
+        android:layout_width="wrap_content"
+        android:layout_height="80dp"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true"
+        android:layout_below="@+id/idRadioGroup"
+        android:layout_marginLeft="21dp"
+        android:layout_marginStart="21dp"
+        android:layout_marginTop="31dp"
+        android:fadeScrollbars="false"
+        android:minLines="4"
+        android:scrollHorizontally="true"
+        android:scrollbarAlwaysDrawHorizontalTrack="true"
+        android:scrollbarAlwaysDrawVerticalTrack="true"
+        android:scrollbars="horizontal|vertical"
+        android:text="@string/usage"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        tools:layout_editor_absoluteX="16dp"
+        tools:layout_editor_absoluteY="151dp" />
+
+    <EditText
+        android:id="@+id/idArgs1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/idInfo1"
+        android:layout_alignStart="@+id/idInfo1"
+        android:layout_below="@+id/idInfo1"
+        android:layout_marginTop="26dp"
+        android:ems="10"
+        android:inputType="textPersonName"
+        android:text="@string/args"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        tools:layout_editor_absoluteX="16dp"
+        tools:layout_editor_absoluteY="183dp" />
+
+    <Button
+        android:id="@+id/idRunApp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignEnd="@+id/idRadioGroup"
+        android:layout_alignParentBottom="true"
+        android:layout_alignRight="@+id/idRadioGroup"
+        android:layout_alignWithParentIfMissing="true"
+        android:layout_marginBottom="28dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginRight="20dp"
+        android:text="@string/run" />
+
+    <TextView
+        android:id="@+id/idInfo2"
+        android:layout_width="wrap_content"
+        android:layout_height="80dp"
+        android:layout_alignLeft="@+id/idArgs1"
+        android:layout_alignStart="@+id/idArgs1"
+        android:layout_below="@+id/idArgs1"
+        android:layout_marginTop="44dp"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:text="@string/usage" />
+
+    <EditText
+        android:id="@+id/idArgs2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/idInfo2"
+        android:layout_alignStart="@+id/idInfo2"
+        android:layout_below="@+id/idInfo2"
+        android:ems="10"
+        android:inputType="textPersonName"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:text="@string/args" />
+
+</RelativeLayout>

@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">BP3 Config</string>
+    <string name="status">Retrieve current status</string>
+    <string name="server">Run as a service</string>
+    <string name="provision">Provision the box</string>
+    <string name="usage">Default usage</string>
+    <string name="args">Default args</string>
+    <string name="run">Run App</string>
+</resources>
