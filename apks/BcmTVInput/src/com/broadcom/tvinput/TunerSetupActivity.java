@@ -18,23 +18,29 @@ package com.broadcom.tvinput;
 import android.app.Activity;
 import android.os.Bundle;
 import android.widget.Toast;
+import android.util.Log;
+
 
 public class TunerSetupActivity extends Activity {
 
     private BcmTvTunerService tunerService;
+    protected static final String TAG = "EpgController";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Log.d(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_tuner_setup);
         updateEpgData();
 
         //Show toast
-        Toast.makeText(this, "Channels added", Toast.LENGTH_LONG).show();
+        // TODO: Causes NullPointerException
+        //Toast.makeText(this, "Channels added", Toast.LENGTH_LONG).show();
         this.finish();
     }
 
     private void updateEpgData() {
+        Log.d(TAG, "updateEpgData()");
         EpgController epg = new EpgController(this.getApplicationContext());
         epg.updateEpgData(BcmTunerJniBridge.getInstance().getScanResults());
     }
