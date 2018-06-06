@@ -49,7 +49,7 @@
 #define ATVR_IN_DEFAULT_SAMPLE_RATE    8000
 #define ATVR_IN_DEFAULT_CHANNELS       AUDIO_CHANNEL_IN_MONO
 #define ATVR_IN_DEFAULT_FORMAT         AUDIO_FORMAT_PCM_16_BIT
-#define ATVR_IN_DEFAULT_DURATION       10 /* ms */
+#define ATVR_IN_DEFAULT_DURATION       100 /* ms */
 
 using namespace android;
 
