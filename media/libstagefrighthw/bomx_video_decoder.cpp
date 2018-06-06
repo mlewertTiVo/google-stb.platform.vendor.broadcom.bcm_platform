@@ -99,7 +99,7 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
-#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min outstanding input buffers not decoded yet
+#define B_MIN_QUEUED_INPUT_BUFFERS (16)     // Min outstanding input buffers not decoded yet
 #define B_MIN_QUEUED_PTS_DIFF (11250)       // Nexus pts units (250 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (24)
