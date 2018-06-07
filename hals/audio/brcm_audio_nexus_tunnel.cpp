@@ -609,6 +609,18 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
         return -ENOENT;
     }
 
+    if (bout->nexus.tunnel.debounce) {
+       // Wait for the debouncing thread to finish
+       ALOGV("%s: Waiting for debouncing to finish", __FUNCTION__);
+       pthread_t thread = bout->nexus.tunnel.debounce_thread;
+       bout->nexus.tunnel.debounce_stopping = true;
+
+       pthread_mutex_unlock(&bout->lock);
+       pthread_join(thread, NULL);
+       pthread_mutex_lock(&bout->lock);
+       ALOGV("%s:      ... done", __FUNCTION__);
+    }
+
     res = NEXUS_Playpump_Flush(playpump);
     if (res != NEXUS_SUCCESS) {
        ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
