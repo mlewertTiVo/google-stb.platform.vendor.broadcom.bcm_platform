@@ -1345,6 +1345,22 @@ static nxserver_t init_nxserver(void)
              }
           }
        }
+       if (property_get_bool("ro.nx.dtu.pbuf1.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.pbuf1.addr", addr, "");
+          property_get("ro.nx.dtu.pbuf1.size", size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling pbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size   = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
        if (property_get_bool("ro.nx.dtu.spbuf0.set", true)) {
           memset(addr, 0, sizeof(addr));
           memset(size, 0, sizeof(size));
@@ -1357,6 +1373,22 @@ static nxserver_t init_nxserver(void)
              if (platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset +
                  platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
                 platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool("ro.nx.dtu.spbuf1.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.spbuf1.addr", addr, "");
+          property_get("ro.nx.dtu.spbuf1.size", size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling spbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
                    NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
              }
           }
