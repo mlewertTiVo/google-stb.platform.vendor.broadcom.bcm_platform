@@ -1,7 +1,7 @@
 service nxserver /vendor/bin/nxserver
    class core
    user root
-   group system
+   group system inet
    critical
 
 

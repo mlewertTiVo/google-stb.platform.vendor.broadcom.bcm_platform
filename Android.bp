@@ -1,4 +1,14 @@
+hidl_package_root {
+    name: "bcm.hardware",
+    path: "vendor/broadcom/bcm_platform/hals",
+}
+
 optional_subdirs = [
-    "hals/nexus/1.0",
+    "hals/bluetooth/1.0",
+    "hals/bp3/1.0",
+    "hals/dpthak/1.0",
     "hals/dspsvcext/1.0",
+    "hals/nexus/1.0",
+    "hals/sdbhak/1.0",
+    "hals/tvisvcext/1.0",
 ]

@@ -47,37 +47,71 @@ public class EpgDataUtil {
     public static List<Channel> getChannelsFromEpgSource(String tunerChannelData) {
         List<Channel> channelList = new ArrayList<>();
 
+        if (tunerChannelData != null && tunerChannelData.isEmpty()) {
+            Log.d("EpgUtil", "getChannelsFromEpgSource(): No tuner data available.");
+            return channelList;
+        }
+
         //Get channels info from some EPG source
         ArrayList<EpgSourceChannelInfo> epgChannelList = EpgDataService.getEpgChannelData();
 
         //Only use the channels that match with that from what the tuner found while scanning
         ArrayList<BroadcastChannelInfo> broadcastChannelList = parseBroadcastChannelData(tunerChannelData);
+        Log.d("EpgUtil", "getChannelsFromEpgSource() broadcastChannelList size: " + broadcastChannelList.size());
 
-        //TODO async task this
-        for (EpgSourceChannelInfo epgChannel : epgChannelList) {
+        if (epgChannelList == null) {
+            Log.d("EpgUtil", "Creating new channels for EPG.");
             for (int i = 0; i < broadcastChannelList.size(); i++) {
-                if (broadcastChannelList.get(i).transportId == epgChannel.tsid &&
-                        broadcastChannelList.get(i).programNumber == epgChannel.sid &&
-                        broadcastChannelList.get(i).video.pid == epgChannel.vpid) {
-                    Channel tvChannel = new Channel.Builder()
-                            .setDisplayName(epgChannel.name)
-                            .setDisplayNumber(epgChannel.number)
-                            .setChannelLogo(epgChannel.logoUrl)
-                            .setOriginalNetworkId(epgChannel.onid)
-                            .setServiceId(epgChannel.sid)
-                            .setTransportStreamId(epgChannel.tsid)
-                            .setVideoPid(epgChannel.vpid)
-                            .setType(epgChannel.type.toString())
-                            .build();
-                    channelList.add(tvChannel);
+                Channel tvChannel = new Channel.Builder()
+                        .setDisplayName("Chan " + broadcastChannelList.get(i).channelNumber)
+                        .setDisplayNumber("" + broadcastChannelList.get(i).programNumber)
+                        .setType(TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO)
+                        .setServiceId(broadcastChannelList.get(i).programNumber)
+                        .setTransportStreamId(broadcastChannelList.get(i).transportId)
+                        .setVideoPid(broadcastChannelList.get(i).video.pid)
+                        .build();
+                channelList.add(tvChannel);
+
+            }
+        } else {
+            Log.d("EpgUtil", "getChannelsFromEpgSource() epgChannelList size: " + epgChannelList.size());
+
+            // TODO: async task this
+            for (EpgSourceChannelInfo epgChannel : epgChannelList) {
+                Log.d("EpgUtil", "Updating existing EPG.");
+                for (int i = 0; i < broadcastChannelList.size(); i++) {
+                    if (broadcastChannelList.get(i).transportId == epgChannel.tsid &&
+                            broadcastChannelList.get(i).programNumber == epgChannel.sid &&
+                            broadcastChannelList.get(i).video.pid == epgChannel.vpid) {
+                        Channel tvChannel = new Channel.Builder()
+                                .setDisplayName(epgChannel.name)
+                                .setDisplayNumber(epgChannel.number)
+                                .setChannelLogo(epgChannel.logoUrl)
+                                .setOriginalNetworkId(epgChannel.onid)
+                                .setServiceId(epgChannel.sid)
+                                .setTransportStreamId(epgChannel.tsid)
+                                .setVideoPid(epgChannel.vpid)
+                                .setType(epgChannel.type.toString())
+                                .build();
+                        channelList.add(tvChannel);
+                    }
                 }
             }
         }
+
+        Log.d("EpgUtil", "getChannelsFromEpgSource() channelList size: " + channelList.size());
         return channelList;
     }
 
     public static ArrayList<BroadcastChannelInfo> parseBroadcastChannelData(String tunerChannelData){
         ArrayList<BroadcastChannelInfo> channelList = new ArrayList<BroadcastChannelInfo>();
+
+        Log.d("EpgUtil", "parseBroadcastChannelData()");
+
+        if (tunerChannelData != null && tunerChannelData.isEmpty()) {
+            Log.d("EpgUtil", "parseBroadcastChannelData(): No tuner data available.");
+            return channelList;
+        }
 
         try {
             JSONArray jsonBroadcastData = new JSONArray(tunerChannelData);
@@ -131,6 +165,8 @@ public class EpgDataUtil {
         //Create a map from tsid and serviceID to channel row ID for existing channels.
         HashMap<String, Long> channelMap = new HashMap<>();
 
+        Log.d("EpgUtil", "updateChannels() Channel size: " + channels.size());
+
         Uri channelsUri = TvContract.buildChannelsUriForInput(inputId);
         String[] projection = {TvContract.Channels._ID, TvContract.Channels.COLUMN_SERVICE_ID, TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID};
         ContentResolver resolver = context.getContentResolver();
@@ -177,11 +213,9 @@ public class EpgDataUtil {
 
             if (rowId == null) {
                 uri = resolver.insert(TvContract.Channels.CONTENT_URI, values);
-                if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "Adding channel " + channel.toString()+ " at " + uri);
             } else {
                 values.put(TvContract.Channels._ID, rowId);
                 uri = TvContract.buildChannelUri(rowId);
-                if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "Updating channel " + channel.toString() + " at " + uri);
                 resolver.update(uri, values, null, null);
                 channelMap.remove(key);
             }
@@ -194,7 +228,7 @@ public class EpgDataUtil {
         //Deletes channels which don't exist in the new feed.
         int size = channelMap.size();
         for (Long rowId : channelMap.values()) {
-            if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "Deleting channel " + rowId);
+            Log.d("EpgUtil", "updateChannels(): Deleting channel " + rowId);
             resolver.delete(TvContract.buildChannelUri(rowId), null, null);
         }
 
@@ -206,10 +240,16 @@ public class EpgDataUtil {
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         LongSparseArray<Channel> channelMap = new LongSparseArray<>();
         Cursor cursor = null;
+
+        {
+            Log.d("EpgUtil", "buildChannelMap() Id: " + inputId.toCharArray());
+            Log.d("EpgUtil", "buildChannelMap() uri: " + uri);
+            Log.d("EpgUtil", "buildChannelMap() chan: " + Channel.PROJECTION);
+        }
         try {
             cursor = resolver.query(uri, Channel.PROJECTION, null, null, null);
             if (cursor == null || cursor.getCount() == 0) {
-                if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "Cursor is null or found no results");
+                Log.d("EpgUtil", "Cursor is null or found no results");
                 return null;
             }
 
@@ -218,7 +258,7 @@ public class EpgDataUtil {
                 channelMap.put(nextChannel.getId(), nextChannel);
             }
         } catch (Exception e) {
-            if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "Content provider query: " + Arrays.toString(e.getStackTrace()));
+            Log.d("EpgUtil", "Content provider query: " + Arrays.toString(e.getStackTrace()));
             return null;
         } finally {
             if (cursor != null) {
@@ -304,7 +344,7 @@ public class EpgDataUtil {
                 try {
                     contentResolver.applyBatch(TvContract.AUTHORITY, ops);
                 } catch (RemoteException | OperationApplicationException e) {
-                    Log.e(BcmTvTunerService.TAG, "Failed to insert programs.", e);
+                    Log.e("EpgUtil", "Failed to insert programs.", e);
                     return;
                 }
                 ops.clear();
@@ -329,7 +369,7 @@ public class EpgDataUtil {
                 programs.add(Program.fromCursor(cursor));
             }
         } catch (Exception e) {
-            Log.w(BcmTvTunerService.TAG, "Unable to get programs for " + channelUri, e);
+            Log.w("EpgUtil", "Unable to get programs for " + channelUri, e);
         } finally {
             if (cursor != null) {
                 cursor.close();
@@ -408,7 +448,6 @@ public class EpgDataUtil {
                     }
                     channelString.append("\n");
                 }
-                Log.e(BcmTvTunerService.TAG, channelString.toString());
                 programCursor.close();
             }
         } finally {

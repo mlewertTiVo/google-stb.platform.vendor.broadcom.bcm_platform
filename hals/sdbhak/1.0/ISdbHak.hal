@@ -1,0 +1,47 @@
+package bcm.hardware.sdbhak@1.0;
+
+/*
+ * ... because hacks are hard to eliminate.  this interface is a hidl compliant
+ *     replacement for the bcmsidebandplayer native vendor library.
+ *
+ *     this is given as a tool for hackers to continue hacking, use at your own
+ *     risks...
+ *
+ */
+
+interface ISdbHak {
+    /**
+     * create a sideband player hack; use the 'p' absolute path for the media source;
+     * returns < 0 on error, 0 otherwise.
+     *
+     */
+    create(string p) generates (int32_t s);
+ 
+    /**
+     * destroys a previously created sideband player hack; returns < 0 on error, 0 otherwise.
+     *
+     */
+    destroy() generates (int32_t s);
+
+    /**
+     * start the created sideband player hack; use the passed in coordinates to place the
+     * video window on screen; returns < 0 on error, 0 otherwise.
+     *
+     */
+    start(int32_t x, int32_t y, int32_t w, int32_t h) generates (int32_t s);
+
+    /**
+     * stop a previously started sideband player hack; returns < 0 on error, 0 otherwise.
+     *
+     */
+    stop() generates (int32_t s);
+
+    /**
+     * positions the created sideband player hack; use the passed in coordinates to (dis)place
+     * the video window on screen; returns < 0 on error, 0 otherwise.
+     *
+     */
+    position(int32_t x, int32_t y, int32_t w, int32_t h) generates (int32_t s);
+};
+
+

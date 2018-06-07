@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+//#define LOG_NDEBUG 0
 #define LOG_TAG "tv_input"
 #include <log/log.h>
 #include <cutils/native_handle.h>
@@ -24,22 +25,7 @@
 
 #include <hardware/tv_input.h>
 
-#include "nexus_types.h"
-#include "nexus_platform.h"
-#include "nexus_playback.h"
-#include "nexus_base_mmap.h"
-#include "nxclient.h"
-#include "nexus_frontend.h"
-#include "nexus_parser_band.h"
-#include "nexus_simple_video_decoder.h"
-#include "bstd.h"
-#include "bkni.h"
-#include "bkni_multi.h"
 #include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include "nexus_surface_client.h"
-#include <bcmsideband.h>
 
 #define DEVICE_ID_TUNER 0
 #define DEVICE_ID_HDMI 1
@@ -87,9 +73,8 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
 static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callback_ops_t* callback, void* data)
 {
     tv_input_event_t tuner_event;
-    NEXUS_Error rc;
 
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("> %s()", __FUNCTION__);
 
     if (dev == NULL || callback == NULL) {
         return -EINVAL;
@@ -122,6 +107,7 @@ static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callb
     if (priv->hdmi_dev)
         return priv->hdmi_ops->initialize(priv->hdmi_dev, callback, data);
 
+    ALOGV("< %s()", __FUNCTION__);
     return 0;
 }
 
@@ -133,7 +119,7 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->get_stream_configurations(priv->hdmi_dev, dev_id, numConfigs, s_out);
 
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("> %s()", __FUNCTION__);
 
     // Initialize the # of channels
     *numConfigs = priv->iNumConfigs;
@@ -151,7 +137,7 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
 
     *s_out = (priv->s_config);
 
-    ALOGV("%s: Exit", __FUNCTION__);
+    ALOGV("< %s()", __FUNCTION__);
 
     return 0;
 }
@@ -163,18 +149,12 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->open_stream(priv->hdmi_dev, dev_id, pTVStream);
 
-    if (priv->sidebandContext) {
-        return -EEXIST;
-    }
+    ALOGV("> %s()", __FUNCTION__);
 
     // Create a native handle
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-    priv->sidebandContext = libbcmsideband_init_sideband_tif(0, &pTVStream->sideband_stream_source_handle, NULL, NULL);
-    if (!priv->sidebandContext) {
-        ALOGE("Unable to initalize the sideband");
-        return -ENODEV;
-    }
 
+    ALOGV("< %s()", __FUNCTION__);
     return 0;
 }
 
@@ -183,9 +163,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int dev_id, int st
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->close_stream(priv->hdmi_dev, dev_id, stream_id);
-    ALOGV("%s: Enter", __FUNCTION__);
-    libbcmsideband_release(priv->sidebandContext);
-    priv->sidebandContext = NULL;
+    ALOGV("<> %s()", __FUNCTION__);
     return 0;
 }
 
@@ -194,7 +172,7 @@ static int tv_input_request_capture(struct tv_input_device *dev, int dev_id, int
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->request_capture(priv->hdmi_dev, dev_id, stream_id, buffer, seq);
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("<> %s()", __FUNCTION__);
     return 0;
 }
 
@@ -203,7 +181,7 @@ static int tv_input_cancel_capture(struct tv_input_device *dev, int dev_id, int 
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->cancel_capture(priv->hdmi_dev, dev_id, stream_id, seq);
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("<> %s()", __FUNCTION__);
     return 0;
 }
 
@@ -211,7 +189,7 @@ static int tv_input_cancel_capture(struct tv_input_device *dev, int dev_id, int 
 
 static int tv_input_device_close(struct hw_device_t *dev)
 {
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("> %s()", __FUNCTION__);
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (priv) {
         if (priv->hdmi_dev)
@@ -219,6 +197,7 @@ static int tv_input_device_close(struct hw_device_t *dev)
         free(priv->s_config);
         free(priv);
     }
+    ALOGV("< %s()", __FUNCTION__);
     return 0;
 }
 
@@ -227,7 +206,7 @@ static int tv_input_device_close(struct hw_device_t *dev)
 static int tv_input_device_open(const struct hw_module_t* module,
         const char* name, struct hw_device_t** device)
 {
-    ALOGV("%s: Enter", __FUNCTION__);
+    ALOGV("> %s()", __FUNCTION__);
 
     int status = -EINVAL;
     if (!strcmp(name, TV_INPUT_DEFAULT_DEVICE)) {
@@ -261,5 +240,6 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->hdmi_dev = (tv_input_device_t *)in_out_ptr;
         dev->hdmi_ops = (struct tv_input_device *)in_out_ptr;
     }
+    ALOGV("< %s()", __FUNCTION__);
     return status;
 }

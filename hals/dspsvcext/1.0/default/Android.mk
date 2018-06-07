@@ -6,6 +6,7 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_INIT_RC := bcm.hardware.dspsvcext@1.0-service.rc
+LOCAL_CFLAGS := -Werror
 
 LOCAL_SRC_FILES := service.cpp
 LOCAL_SRC_FILES += DspSvcExt.cpp

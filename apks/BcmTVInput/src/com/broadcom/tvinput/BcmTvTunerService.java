@@ -33,7 +33,6 @@ import android.view.accessibility.CaptioningManager;
 import java.util.ArrayList;
 
 public class BcmTvTunerService extends TvInputService {
-    protected static final boolean DEBUG = true;
     protected static final String TAG = "TunerService";
 
     private HandlerThread mHandlerThread;
@@ -44,61 +43,69 @@ public class BcmTvTunerService extends TvInputService {
     protected static TvInputManager mManager;
     protected TvInputInfo mInfo;
     protected ArrayList<TvStreamConfig> mStreamConfigs;
-    private boolean epgUpdated = false;
-    private boolean isTunerAvailable = false;
+    private boolean mIsTunerAvailable = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        if (DEBUG) Log.i(TAG, "Service UP!!!!");
         mHandlerThread = new HandlerThread(getClass().getSimpleName());
         mHandlerThread.start();
+        Log.d(TAG, "> onCreate() BcmTvTunerService thread started.");
+
         mDbHandler = new Handler(mHandlerThread.getLooper());
         mHandler = new Handler();
         mCaptioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
         mManager = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
 
-        if (BcmTunerJniBridge.getInstance().initializeTuner() == 0) {
-            this.isTunerAvailable = true;
+        // May need to initiate a scan again as the example nexus live_decode API's
+        // are being used. Part of the live_decode cached data may be lost which
+        // needs to be recreated.
+        if (BcmTunerJniBridge.getInstance().servicesAvailable() == 0) {
+            BcmTunerJniBridge.getInstance().servicesScan();
         }
+
+        this.mIsTunerAvailable = true;
+        Log.d(TAG, "< onCreate()");
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        BcmTunerJniBridge.getInstance().uninitializeTuner();
-        this.isTunerAvailable = false;
-        if (DEBUG) Log.i(TAG, "Service DOWN!!!!");
+        this.mIsTunerAvailable = false;
+        Log.d(TAG, "OnDestroy() Service closed!");
     }
 
     @Nullable
     @Override
     public Session onCreateSession(String inputId) {
-        if (DEBUG) Log.i(TAG, "onCreateSession");
+        Log.d(TAG, "> onCreateSession() inputId: " + inputId);
 
-        if (!this.isTunerAvailable) {
+        if (!this.mIsTunerAvailable) {
             return null;
         }
         BcmTvSession session = new BcmTvSession(this, mInfo);
         this.tvSession = session;
+        Log.d(TAG, "< onCreateSession()");
         return session;
     }
 
     @Override
     public TvInputInfo onHardwareAdded(TvInputHardwareInfo hardwareInfo) {
 
-        if (DEBUG) Log.i(TAG, "onHardwareAdded: " + hardwareInfo.toString());
+        Log.d(TAG, "> onHardwareAdded() hardwareInfo: " + hardwareInfo.toString());
 
-        if (!this.isTunerAvailable && hardwareInfo.getType() != TvInputHardwareInfo.TV_INPUT_TYPE_TUNER) {
+        // TODO: Only add this service once.
+
+        if (!this.mIsTunerAvailable && hardwareInfo.getType() != TvInputHardwareInfo.TV_INPUT_TYPE_TUNER) {
             return null;
         }
 
         TvInputInfo info = null;
         Intent i = new Intent(SERVICE_INTERFACE).setClass(this, this.getClass());
         ResolveInfo resolveInfo = getPackageManager().resolveService(i, PackageManager.GET_SERVICES | PackageManager.GET_META_DATA);
-        info = new TvInputInfo.Builder(this, resolveInfo).setLabel("Tv Tuner").build();
+        info = new TvInputInfo.Builder(this, resolveInfo).setLabel("Broadcom TV Tuner").build();
 
-        if (DEBUG) Log.i(TAG, "onHardwareAdded returns " + info);
+        Log.d(TAG, "< onHardwareAdded() returns: " + info);
         mInfo = info;
         return info;
     }
@@ -106,11 +113,11 @@ public class BcmTvTunerService extends TvInputService {
     @Override
     public String onHardwareRemoved(TvInputHardwareInfo hardwareInfo) {
 
-        if (DEBUG) Log.i(TAG, "onHardwareRemoved: hardwareInfo:" + hardwareInfo);
+        Log.d(TAG, "> onHardwareRemoved() hardwareInfo:" + hardwareInfo);
 
         int deviceId = hardwareInfo.getDeviceId();
 
-        if (DEBUG) Log.i(TAG, "onHardwareRemoved returns " + deviceId);
+        Log.d(TAG, "< onHardwareRemoved() returns: " + deviceId);
         return null;
     }
 }

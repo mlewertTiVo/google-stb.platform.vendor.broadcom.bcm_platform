@@ -1,0 +1,16 @@
+package bcm.hardware.bp3@1.0;
+
+interface Ibp3 {
+    /**
+     * get status of the current bp3 configuration.
+     *
+     */
+    status() generates (string info);
+
+    /**
+     * issue a provisioning call to the server.
+     *
+     */
+    provision(string srvUrl, string key, vec<int32_t> lic) generates (int32_t rc);
+};
+

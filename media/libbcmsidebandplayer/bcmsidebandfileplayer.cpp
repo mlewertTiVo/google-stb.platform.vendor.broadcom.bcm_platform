@@ -163,6 +163,7 @@ BcmSidebandFilePlayer::BcmSidebandFilePlayer(const char*path)
     ALOGV("%s", __FUNCTION__);
     mPath = strdup(path);
     client = new struct client_state;
+    client->stopped = true;
 }
 
 BcmSidebandFilePlayer::~BcmSidebandFilePlayer()

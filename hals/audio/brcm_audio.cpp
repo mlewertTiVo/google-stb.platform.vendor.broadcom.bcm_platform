@@ -847,12 +847,15 @@ static int bdev_get_master_volume(struct audio_hw_device *adev,
 static int bdev_set_master_mute(struct audio_hw_device *adev,
                                 bool muted)
 {
-    UNUSED(adev);
+    struct brcm_device *bdev = (struct brcm_device *)adev;
 
-    ALOGV("%s: at %d, dev = %p\n",
-         __FUNCTION__, __LINE__, adev);
+    ALOGV("%s: at %d, dev = %p, muted = %d\n",
+         __FUNCTION__, __LINE__, adev, muted);
 
+    pthread_mutex_lock(&bdev->lock);
     brcm_audio_set_mute_state(muted);
+    bdev->master_mute = muted;
+    pthread_mutex_unlock(&bdev->lock);
 
     return 0;
 }
@@ -860,12 +863,16 @@ static int bdev_set_master_mute(struct audio_hw_device *adev,
 static int bdev_get_master_mute(struct audio_hw_device *adev,
                                 bool *muted)
 {
-    UNUSED(adev);
+    struct brcm_device *bdev = (struct brcm_device *)adev;
 
     ALOGV("%s: at %d, dev = %p\n",
          __FUNCTION__, __LINE__, adev);
 
-    *muted = brcm_audio_get_mute_state();
+    pthread_mutex_lock(&bdev->lock);
+    // Not using brcm_audio_get_mute_state, because it may have been overriden
+    // by a set_volume(0) in passthrough mode.
+    *muted = bdev->master_mute;
+    pthread_mutex_unlock(&bdev->lock);
 
     return 0;
 }
@@ -1249,6 +1256,12 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
             bdev->bouts[i] = NULL;
             break;
         }
+    }
+
+    // Mute may have been overriden by a set_volume(0) in passthrough mode.
+    if (brcm_audio_get_mute_state() != bdev->master_mute) {
+        ALOGV("Restoring master mute = %d\n", bdev->master_mute);
+        brcm_audio_set_mute_state(bdev->master_mute);
     }
 
     pthread_mutex_unlock(&bout->lock);

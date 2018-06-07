@@ -21,18 +21,7 @@ LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_STATIC_JAVA_LIBRARIES += \
-    android-support-annotations \
-    framework
-
-LOCAL_STATIC_ANDROID_LIBRARIES += \
-    android-support-v17-leanback \
-    android-support-compat \
-    android-support-core-ui \
-    android-support-media-compat \
-    android-support-fragment \
-    android-support-v7-recyclerview
-
+LOCAL_RESOURCE_DIR := $(BCM_VENDOR_STB_ROOT)/bcm_platform/tools/brand/res
 LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
 
 LOCAL_JNI_SHARED_LIBRARIES := libbcmtuner
@@ -40,11 +29,9 @@ LOCAL_JNI_SHARED_LIBRARIES := libbcmtuner
 LOCAL_PACKAGE_NAME := BcmTVInput
 
 LOCAL_USE_AAPT2 := true
-
 LOCAL_PRIVILEGED_MODULE := true
 LOCAL_MODULE_TAGS := optional
-#LOCAL_PROPRIETARY_MODULE := true
-LOCAL_SDK_VERSION := system_current
+LOCAL_SDK_VERSION := current
 
 include $(BUILD_PACKAGE)
 

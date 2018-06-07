@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 public class BcmTvSession extends TvInputService.Session {
+    private String TAG = "TvSession";
 
     private int mSelectedSubtitleTrackIndex;
     private boolean mCaptionEnabled;
@@ -38,28 +39,29 @@ public class BcmTvSession extends TvInputService.Session {
     private Context mContext;
     private TvInputManager.Hardware mHardware;
     private int mDeviceId;
+    private Surface mSurface;
+    private boolean mHasCurrentSurface = false;
+
     public BcmTvTunerService serviceContext;
-    private boolean hasCurrentSurface = false;
 
     BcmTvSession(BcmTvTunerService context, TvInputInfo info) {
         super(context);
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- created");
+        Log.d(TAG, "> BcmTvSession() instantiated.");
         this.serviceContext = context;
         mCaptionEnabled = this.serviceContext.mCaptioningManager.isEnabled();
         mContext = context;
         this.serviceContext.mStreamConfigs = new ArrayList<>();
 
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession,  mDeviceId = " +mDeviceId);
-
         acquireHardware();
+        Log.d(TAG, "<  BcmTvSession() mDeviceId = " +mDeviceId);
     }
 
     private void acquireHardware()
     {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "acquireHardware");
+        Log.d(TAG, "> acquireHardware()");
 
         if (mHardware != null) {
-            if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "acquireHardware is not null");
+            Log.d(TAG, "acquireHardware is not null");
             return;
         }
 
@@ -67,17 +69,18 @@ public class BcmTvSession extends TvInputService.Session {
         {
             @Override
             public void onReleased() {
+                Log.d(TAG, "<> onReleased()");
                 mHardware = null;
             }
 
             @Override
             public void onStreamConfigChanged(TvStreamConfig[] configs) {
-                if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "onStreamConfigChanged "+configs.length);
+                Log.d(TAG, "onStreamConfigChanged "+configs.length);
                 for (TvStreamConfig x: configs) {
-                    Log.d(BcmTvTunerService.TAG, "onStreamConfigChanged,  stream_id = " + x.getStreamId() +
-                            "width = " + x.getMaxWidth() +
-                            "height = " + x.getMaxHeight() +
-                            "type = " + x.getType());
+                    Log.d(TAG, "onStreamConfigChanged,  stream_id = " + x.getStreamId() +
+                            " width = " + x.getMaxWidth() +
+                            " height = " + x.getMaxHeight() +
+                            " type = " + x.getType());
                     serviceContext.mStreamConfigs.add(x);
                 }
             }
@@ -85,13 +88,14 @@ public class BcmTvSession extends TvInputService.Session {
 
         mHardware = BcmTvTunerService.mManager.acquireTvInputHardware(mDeviceId, this.serviceContext.mInfo, callback);
 
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "acquireHardware() mHardware=" + mHardware);
+        Log.d(TAG, "< acquireHardware() mHardware=" + mHardware);
     }
 
     private TvStreamConfig getStreamConfig() {
 
         for (TvStreamConfig config : this.serviceContext.mStreamConfigs) {
             if (config.getType() == TvStreamConfig.STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
+                Log.d(TAG, "getStreamConfig() found video source.");
                 return config;
             }
         }
@@ -100,75 +104,71 @@ public class BcmTvSession extends TvInputService.Session {
 
     @Override
     public void onRelease() {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onRelease()");
-        BcmTunerJniBridge.getInstance().uninitGUI();
-        BcmTvTunerService.mManager.releaseTvInputHardware(mDeviceId, mHardware);
+        Log.d(TAG, "> onRelease()");
+
+        //Notify video unavailable
+        notifyVideoUnavailable(TvInputManager.INPUT_STATE_DISCONNECTED);
+
+        BcmTunerJniBridge.getInstance().closeSession();
+        if( mHardware != null )
+        {
+            // Following code is only needed for a system.
+            // mHardware.setSurface(null, null);
+            BcmTvTunerService.mManager.releaseTvInputHardware(mDeviceId, mHardware);
+        }
+
+        if(!mHasCurrentSurface)
+            BcmTunerJniBridge.getInstance().releaseSdb();
+        Log.d(TAG, "< onRelease()");
     }
 
     @Override
     public void onSetCaptionEnabled(boolean enabled) {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onSetCaptionEnabled() " + enabled);
+        Log.d(TAG, "<> onSetCaptionEnabled() " + enabled);
     }
 
     @Override
     public void onSetStreamVolume(@FloatRange(from = 0.0, to = 1.0) float volume) {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onSetStreamVolume() " + volume);
+        Log.d(TAG, "<> onSetStreamVolume() " + volume);
     }
 
     @Override
     public boolean onSetSurface(@Nullable Surface surface) {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onSetSurface()");
+        Log.d(TAG, "> onSetSurface()");
 
         if (surface == null) {
             this.serviceContext.mStreamConfigs = null;
-            if (this.hasCurrentSurface) {
-                this.hasCurrentSurface = false;
+            if (mHasCurrentSurface) {
+                mHasCurrentSurface = false;
                 BcmTunerJniBridge.getInstance().stop();
             }
-            Log.e(BcmTvTunerService.TAG, "BcmTvSession -- onSetSurface(): surface is null");
+            Log.d(TAG, "< onSetSurface(): surface is null");
             return false;
         }
 
         if (mHardware == null) {
-            if (mHardware == null) {
-                Log.e(BcmTvTunerService.TAG, "BcmTvSession -- onSetSurface(): mHardware is null");
-                return false;
-            }
+            Log.d(TAG, " onSetSurface(): mHardware is null");
+            return false;
         }
 
-        TvStreamConfig config = null;
-        if (surface != null) {
-            config = getStreamConfig();
-            if (config == null) {
-                Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onSetSurface(): config is null");
-                return false;
-            }
-        }
+        Log.d(TAG, "<> onSetSurface: has a valid surface.");
+        BcmTunerJniBridge.getInstance().initialiseSdb(surface);
 
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onSetSurface(): Calling mHardware.setSurface surfaceNull:" + (surface == null)  + " configNull:" + (config == null));
-        mHardware.setSurface(surface, config);
+        mHasCurrentSurface = true;
+        mSurface = surface;
 
-        //Should occur here according to documentation
-        //Order of onTune and onSetSurface are reversed
-        /*this.hasCurrentSurface = true;
-        BcmTunerJniBridge.getInstance().initGUI();*/
-
+        Log.d(TAG, "< onSetSurface()");
         return true;
     }
 
     @Override
     public boolean onTune(Uri channelUri) {
-        if (BcmTvTunerService.DEBUG) Log.d(BcmTvTunerService.TAG, "BcmTvSession -- onTune() uri=" + channelUri);
 
-        //Notify video unavailable
-        notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
+        boolean rtc = false;
 
-        //This should be done in onSetSurface according to documentation
-        //But onTune is called before onSetSurface which is reversed of what should happen
-        if (!this.hasCurrentSurface) {
-            this.hasCurrentSurface = true;
-            BcmTunerJniBridge.getInstance().initGUI();
-        }
+        // TODO: run this method as AsyncTask
+
+        Log.d(TAG, "> onTune() uri=" + channelUri);
 
         Cursor cursor = null;
         try {
@@ -182,19 +182,22 @@ public class BcmTvSession extends TvInputService.Session {
                 if (BcmTunerJniBridge.getInstance().tune(channel.getTransportStreamId(), channel.getServiceId()) == 0){
                     //Notify video available
                     notifyVideoAvailable();
+
+                    Log.d(TAG, "< onTune() notifyVideoAvailable.");
                     return true;
                 }
             }
-            Log.e(BcmTvTunerService.TAG, "BcmTvSession -- onTune() cannot find channel from DB");
+            Log.e(TAG, " onTune() cannot find channel from DB");
 
         } catch (Exception e) {
-            Log.e(BcmTvTunerService.TAG, "Content provider query: " + Arrays.toString(e.getStackTrace()));
+            Log.e(TAG, "Content provider query: " + Arrays.toString(e.getStackTrace()));
         } finally {
             if (cursor != null) {
                 cursor.close();
             }
         }
 
-        return false;
+        Log.d(TAG, "< onTune() uri=" + channelUri);
+        return rtc;
     }
 }

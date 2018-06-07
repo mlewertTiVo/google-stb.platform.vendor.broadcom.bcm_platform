@@ -78,8 +78,8 @@
 #endif
 
 #define DHD_SECDMA_PROP                "ro.nx.dhd.secdma"
-#define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
-#define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
+#define DHD_SECDMA_PARAMS_PATH         "/data/vendor/nexus/secdma"
+#define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
 
 static void wait_for_data_available(void)
 {

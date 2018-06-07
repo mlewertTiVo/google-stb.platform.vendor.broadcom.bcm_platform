@@ -4007,6 +4007,10 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                     // Force remaining input buffers to be flushed
                     ReturnInputBuffers(0, true);
+                    if ( m_callbacks.EventHandler )
+                    {
+                        (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventBufferFlag, m_audioPortBase+1, pHeader->nFlags, NULL);
+                    }
                 }
             }
         }
