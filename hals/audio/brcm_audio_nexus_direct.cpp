@@ -466,6 +466,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.eac3.syncframe_len = 0;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
@@ -499,6 +500,7 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
 
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.eac3.syncframe_len = 0;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
@@ -614,6 +616,7 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
     bout->framesPlayedTotal = 0;
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.eac3.syncframe_len = 0;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
 
     return 0;
