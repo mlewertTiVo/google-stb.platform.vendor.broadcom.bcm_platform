@@ -36,6 +36,31 @@
 # ANY LIMITED REMEDY.
 #
 #############################################################################
+
+# helpers to validate hvd revision to trigger specific behavior
+# when needed.
+__HVD_VER := A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+
+define hvd_ver_is_known
+$(strip \
+  $(if $(1),,$(error Argument missing)) \
+  $(if $(word 2,$(1)),$(error Multiple words in a single argument: $(1))) \
+  $(if $(filter $(1),$(__HVD_VER)),true))
+endef
+
+define _hvd_ver_check_valid
+$(if $(call hvd_ver_is_known,$(1)),,$(error hvd rev format must be letter or letter.variant (trying $(1))))
+endef
+
+define hvd_ver_max
+$(strip $(call _hvd_ver_check_valid,$(1)) $(call _hvd_ver_check_valid,$(2)) \
+  $(lastword $(filter $(1) $(2),$(__HVD_VER))))
+endef
+
+define hvd_ver_gt_or_eq
+$(if $(filter $(1),$(call hvd_ver_max,$(1),$(2))),true)
+endef
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
@@ -196,7 +221,7 @@ LOCAL_SHARED_LIBRARIES += libsrai libbomx_secbuff
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 
-ifeq ($(filter $(HW_HVD_REVISION),S T),$(HW_HVD_REVISION))
+ifeq ($(call hvd_ver_gt_or_eq,S,$(HW_HVD_REVISION)),)
 LOCAL_CFLAGS += -DHW_HVD_REVISION__GT_OR_EQ__S
 # only enable redux hw-decoder on newer platforms.
 ifeq ($(HW_HVD_REDUX),y)
