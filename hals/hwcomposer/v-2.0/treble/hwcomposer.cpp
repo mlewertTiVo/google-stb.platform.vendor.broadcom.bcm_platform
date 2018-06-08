@@ -6512,7 +6512,9 @@ static uint32_t hwc2_afb_min(
    case 213: v = is_h ? 720 : 1280; break;  /* 720p */
    case 640: v = is_h ? 2160 : 3840; break; /* 4K (unused) */
    case 320:                                /* 1080p + default. */
-   default: v = is_h ? 1080 : 1920; break;
+   default: { if (is_h) {v=(max==1080)?720:1080;}
+              else {v=(max==1920)?1280:1920;}
+            } break;
    }
 
    return v;
