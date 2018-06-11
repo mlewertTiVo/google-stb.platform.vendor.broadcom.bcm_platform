@@ -21,6 +21,4 @@ LOCAL_SHARED_LIBRARIES := \
     libhidltransport \
     bcm.hardware.sdbhak@1.0
 
-#    libbcmsidebandplayer
-
 include $(BUILD_SHARED_LIBRARY)

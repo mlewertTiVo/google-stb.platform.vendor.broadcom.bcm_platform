@@ -1,0 +1,9 @@
+cc_library_static {
+    srcs: ["healthd.bcmstb.cpp"],
+    owner: "broadcom",
+    name: "libhealthd.bcmstb",
+    vendor_available: true,
+    cflags: ["-Werror"],
+    include_dirs: ["system/core/base/include"],
+    header_libs: ["libhealthd_headers"],
+}

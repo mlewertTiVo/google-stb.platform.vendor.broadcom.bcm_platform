@@ -67,7 +67,7 @@ extern "C" nxcec_cec_device_type nxcec_get_cec_device_type() {
    char value[PROPERTY_VALUE_MAX];
    nxcec_cec_device_type type = eCecDeviceType_eInvalid;
 
-   if (property_get("ro.hdmi.device_type", value, NULL)) {
+   if (property_get("ro.nx.hdmi.device_type", value, NULL)) {
       type = nxcec_to_cec_device_type(value);
    }
    return type;

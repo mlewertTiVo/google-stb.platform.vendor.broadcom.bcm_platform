@@ -663,6 +663,18 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
         return -ENOENT;
     }
 
+    if (bout->nexus.tunnel.debounce) {
+       // Wait for the debouncing thread to finish
+       ALOGV("%s: Waiting for debouncing to finish", __FUNCTION__);
+       pthread_t thread = bout->nexus.tunnel.debounce_thread;
+       bout->nexus.tunnel.debounce_stopping = true;
+
+       pthread_mutex_unlock(&bout->lock);
+       pthread_join(thread, NULL);
+       pthread_mutex_lock(&bout->lock);
+       ALOGV("%s:      ... done", __FUNCTION__);
+    }
+
     res = NEXUS_Playpump_Flush(playpump);
     if (res != NEXUS_SUCCESS) {
        ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
@@ -1354,6 +1366,13 @@ static char *nexus_tunnel_bout_get_parameters (struct brcm_stream_out *bout, con
 
     /* Supported sample formats */
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS)) {
+        if (formats_str.contains("AUDIO_FORMAT_AC3") && !formats_str.contains("AUDIO_FORMAT_E_AC3")) {
+            NEXUS_AudioCapabilities audioCaps;
+            NEXUS_GetAudioCapabilities(&audioCaps);
+            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+                formats_str.append("|AUDIO_FORMAT_E_AC3");
+            }
+        }
         str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
                           formats_str.isEmpty() ? TOSTRING(NEXUS_OUT_DEFAULT_FORMAT) : formats_str.string());
     }

@@ -157,7 +157,7 @@
 #define NX_INVALID                     -1
 #define NX_NOGRAB_MAGIC                "AWnG"
 
-#define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
+#define NX_ANDROID_BOOTCOMPLETE        "ro.nx.boot_completed"
 #define NX_STATE                       "dyn.nx.state"
 
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
@@ -621,7 +621,7 @@ static void *proactive_runner_task(void *argv)
                     int wdog_timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
                     g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
                     if (g_app.wdog.fd >= 0 && wdog_timeout) {
-                       ALOGI("sys.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
+                       ALOGI("ro.nx.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
                        NEXUS_Error rc;
                        NEXUS_WatchdogCallbackSettings wdogSettings;
                        watchdogWrite(WATCHDOG_TERMINATE);
@@ -642,7 +642,7 @@ static void *proactive_runner_task(void *argv)
                        }
                        g_app.wdog.init = true;
                     } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
-                       ALOGI("wdog disabled on sys.boot_completed");
+                       ALOGI("wdog disabled on ro.nx.boot_completed");
                        watchdogWrite(WATCHDOG_TERMINATE);
                        close(g_app.wdog.fd);
                        g_app.wdog.fd = NX_INVALID;
@@ -1345,6 +1345,22 @@ static nxserver_t init_nxserver(void)
              }
           }
        }
+       if (property_get_bool("ro.nx.dtu.pbuf1.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.pbuf1.addr", addr, "");
+          property_get("ro.nx.dtu.pbuf1.size", size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling pbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size   = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
        if (property_get_bool("ro.nx.dtu.spbuf0.set", true)) {
           memset(addr, 0, sizeof(addr));
           memset(size, 0, sizeof(size));
@@ -1357,6 +1373,22 @@ static nxserver_t init_nxserver(void)
              if (platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset +
                  platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
                 platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool("ro.nx.dtu.spbuf1.set", true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get("ro.nx.dtu.spbuf1.addr", addr, "");
+          property_get("ro.nx.dtu.spbuf1.size", size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling spbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
                    NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
              }
           }

@@ -433,9 +433,11 @@ void NxServer::cbHpdAction(hdmi_state state) {
             case NEXUS_VideoFormat_e4096x2160p24hz:
             case NEXUS_VideoFormat_e3840x2160p24hz:
                property_set("sys.display-size", "3840x2160");
+               property_set("dyn.nx.display-size", "3840x2160");
             break;
             default:
                property_set("sys.display-size", "1920x1080");
+               property_set("dyn.nx.display-size", "1920x1080");
             break;
             }
          }

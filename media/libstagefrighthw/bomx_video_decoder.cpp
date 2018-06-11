@@ -90,7 +90,7 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 #define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
-#define B_PROPERTY_SYS_DISPLAY_SIZE ("sys.display-size")
+#define B_PROPERTY_SYS_DISPLAY_SIZE ("dyn.nx.display-size")
 #define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.hwtex.reset_port")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
@@ -99,7 +99,7 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
-#define B_MIN_QUEUED_INPUT_BUFFERS (12)     // Min outstanding input buffers not decoded yet
+#define B_MIN_QUEUED_INPUT_BUFFERS (16)     // Min outstanding input buffers not decoded yet
 #define B_MIN_QUEUED_PTS_DIFF (11250)       // Nexus pts units (250 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (24)

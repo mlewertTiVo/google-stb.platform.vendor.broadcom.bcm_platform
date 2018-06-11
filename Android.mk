@@ -31,6 +31,9 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 # apk's released.
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
+ifneq ($(filter $(ANDROID_DEVICE_SUPPORTS_BP3),y),)
+include ${BCM_APPS_PATH}/BcmBP3Config/Android.mk
+endif
 include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
