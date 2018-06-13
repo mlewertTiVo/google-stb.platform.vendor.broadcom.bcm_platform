@@ -48,13 +48,13 @@
     <TextView
         android:id="@+id/idInfo1"
         android:layout_width="wrap_content"
-        android:layout_height="80dp"
+        android:layout_height="25dp"
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true"
         android:layout_below="@+id/idRadioGroup"
         android:layout_marginLeft="21dp"
         android:layout_marginStart="21dp"
-        android:layout_marginTop="31dp"
+        android:layout_marginTop="10dp"
         android:fadeScrollbars="false"
         android:minLines="4"
         android:scrollHorizontally="true"
@@ -65,7 +65,7 @@
         android:textSize="20sp"
         android:textStyle="bold"
         tools:layout_editor_absoluteX="16dp"
-        tools:layout_editor_absoluteY="151dp" />
+        tools:layout_editor_absoluteY="150dp" />
 
     <EditText
         android:id="@+id/idArgs1"
@@ -74,14 +74,14 @@
         android:layout_alignLeft="@+id/idInfo1"
         android:layout_alignStart="@+id/idInfo1"
         android:layout_below="@+id/idInfo1"
-        android:layout_marginTop="26dp"
+        android:layout_marginTop="10dp"
         android:ems="10"
         android:inputType="textPersonName"
         android:text="@string/args"
         android:textSize="20sp"
         android:textStyle="bold"
         tools:layout_editor_absoluteX="16dp"
-        tools:layout_editor_absoluteY="183dp" />
+        tools:layout_editor_absoluteY="160dp" />
 
     <Button
         android:id="@+id/idRunApp"
@@ -99,11 +99,11 @@
     <TextView
         android:id="@+id/idInfo2"
         android:layout_width="wrap_content"
-        android:layout_height="80dp"
+        android:layout_height="25dp"
         android:layout_alignLeft="@+id/idArgs1"
         android:layout_alignStart="@+id/idArgs1"
         android:layout_below="@+id/idArgs1"
-        android:layout_marginTop="44dp"
+        android:layout_marginTop="20dp"
         android:textSize="20sp"
         android:textStyle="bold"
         android:text="@string/usage" />
@@ -115,6 +115,31 @@
         android:layout_alignLeft="@+id/idInfo2"
         android:layout_alignStart="@+id/idInfo2"
         android:layout_below="@+id/idInfo2"
+        android:ems="10"
+        android:inputType="textPersonName"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:text="@string/args" />
+
+    <TextView
+        android:id="@+id/idInfo3"
+        android:layout_width="wrap_content"
+        android:layout_height="25dp"
+        android:layout_alignLeft="@+id/idArgs2"
+        android:layout_alignStart="@+id/idArgs2"
+        android:layout_below="@+id/idArgs2"
+        android:layout_marginTop="20dp"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:text="@string/usage" />
+
+    <EditText
+        android:id="@+id/idArgs3"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignLeft="@+id/idInfo3"
+        android:layout_alignStart="@+id/idInfo3"
+        android:layout_below="@+id/idInfo3"
         android:ems="10"
         android:inputType="textPersonName"
         android:textSize="20sp"
