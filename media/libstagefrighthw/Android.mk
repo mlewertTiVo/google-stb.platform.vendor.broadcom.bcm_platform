@@ -221,7 +221,7 @@ LOCAL_SHARED_LIBRARIES += libsrai libbomx_secbuff
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 
-ifeq ($(call hvd_ver_gt_or_eq,S,$(HW_HVD_REVISION)),)
+ifeq ($(call hvd_ver_gt_or_eq,$(HW_HVD_REVISION),S),true)
 LOCAL_CFLAGS += -DHW_HVD_REVISION__GT_OR_EQ__S
 # only enable redux hw-decoder on newer platforms.
 ifeq ($(HW_HVD_REDUX),y)

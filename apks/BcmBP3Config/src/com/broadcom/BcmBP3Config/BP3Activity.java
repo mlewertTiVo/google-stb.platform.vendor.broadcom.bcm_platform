@@ -80,6 +80,7 @@ public class BP3Activity extends Activity
     private boolean bRun = true;
     SharedPreferences sharedPref;
     SharedPreferences.Editor editor;
+    private String strPkgName = "com.broadcom.BcmBP3Config";
     private Ibp3 bp3Interface;
 
     private void bp3Thread(final Context appContext)
@@ -172,6 +173,8 @@ public class BP3Activity extends Activity
         setContentView(R.layout.activity_bp3);
 
         mContext= this.getApplicationContext();
+        sharedPref = this.getSharedPreferences(strPkgName, mContext.MODE_PRIVATE);
+        editor = sharedPref.edit();
 
         // Kick off the thread
         bp3Thread(mContext);
@@ -277,8 +280,20 @@ public class BP3Activity extends Activity
 
                     mInfo1.setText(strKeyInfo);
                     mArgs1.setVisibility(View.VISIBLE);
-                    mArgs1.setText(strKey);
                     mArgs1.setEnabled(true);
+
+                    String strPrevKey = sharedPref.getString("AuthKey", "invalid");
+
+                    // Check if we have a previously entered valid authentication key
+                    if (strPrevKey.equals("invalid"))
+                        mArgs1.setText(strKey);
+
+                    // Save the valid key
+                    else
+                    {
+                        mArgs1.setText(strPrevKey);
+                        editor.putString("AuthKey", strPrevKey).apply();
+                    }
 
                     // Enable this to hide the authentication keys
                     // mArgs1.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -286,11 +301,10 @@ public class BP3Activity extends Activity
 
                     mInfo2.setVisibility(View.VISIBLE);
                     mArgs2.setVisibility(View.VISIBLE);
-
                     mInfo2.setText(strLicenseInfo);
-                    mArgs2.setText(strLicenses);
-                    mArgs2.setEnabled(true);
 
+                    mArgs2.setEnabled(true);
+                    mArgs2.setText(strLicenses);
                     iMode = Mode.PROVISION;
                 }
             }
@@ -358,6 +372,10 @@ public class BP3Activity extends Activity
                     case PROVISION:
                         int iResult;
 
+                        // Save the valid key
+                        editor.putString("AuthKey", mArgs1.getText().toString()).apply();
+
+                        // Parse and extract the licenses
                         StringTokenizer st = new StringTokenizer(mArgs2.getText().toString(), ",");
                         ArrayList<Integer> licList = new ArrayList<Integer>();
 
