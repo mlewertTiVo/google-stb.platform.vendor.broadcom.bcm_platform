@@ -38,7 +38,7 @@
  *****************************************************************************/
 #define LOG_TAG "hfrvideo"
 
-//#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 
 #include <ctype.h>
 #include <unistd.h>
@@ -392,7 +392,7 @@ static int find_key_processes (struct process_entity *key_process_list, int num_
 
 static void elevate_priority (struct process_entity *key_process_list, int num_key_processes)
 {
-   int i, j;
+   int i, j, rc;
    struct sched_param param;
 
    memset(&param, 0, sizeof(param));
@@ -411,8 +411,9 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
                ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
                continue;
             }
-            sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
-            ALOGV("%d elevated to %d:%d:%d", threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness);
+            rc = sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
+            ALOGV("%d elevated to %d:%d:%d rc=%d,err=%d (%s)",
+               threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness, rc, errno, strerror(errno));
          }
       }
    }
