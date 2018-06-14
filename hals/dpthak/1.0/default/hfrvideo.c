@@ -38,7 +38,7 @@
  *****************************************************************************/
 #define LOG_TAG "hfrvideo"
 
-// #define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 
 #include <ctype.h>
 #include <unistd.h>
@@ -213,6 +213,16 @@ static struct process_entity key_process_list_tunneled[] = {
    },
 };
 static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);
+
+static void clear_key_processes_list (struct process_entity *key_process_list, int num_key_processes)
+{
+   int i;
+
+   for (i = 0; i < num_key_processes; ++i) {
+      key_process_list[i].pid = 0;
+      memset(&(key_process_list[i].threads), 0, sizeof(key_process_list[i].threads));
+   }
+}
 
 static ssize_t get_comm_from_pid (pid_t pid, char *comm, int len)
 {
@@ -501,5 +511,6 @@ int do_hfrvideo(int mode)
       }
    }
 
+   clear_key_processes_list (key_process_list, num_key_processes);
    return 0;
 }
