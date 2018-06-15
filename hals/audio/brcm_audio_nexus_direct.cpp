@@ -224,12 +224,28 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *dsp_frames = (uint32_t)(bout->framesPlayed * bout->nexus.direct.frame_multiplier);
+            if (bout->latencyPad) {
+                if (((bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier) >
+                        bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *dsp_frames = 0;
+            else
+                *dsp_frames = (uint32_t)(bout->framesPlayed * bout->nexus.direct.frame_multiplier) -
+                                  bout->latencyEstimate;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
-            *dsp_frames = (uint32_t)bout->framesPlayed;
+            if (bout->latencyPad) {
+                if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *dsp_frames = 0;
+            else
+                *dsp_frames = (uint32_t)bout->framesPlayed - bout->latencyEstimate;
         }
     } else {
        *dsp_frames = 0;
@@ -254,12 +270,28 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *frames = (bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier;
+            if (bout->latencyPad) {
+                if (((bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier) >
+                        bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *frames = 0;
+            else
+                *frames = (bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier -
+                              bout->latencyEstimate;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
-            *frames = bout->framesPlayedTotal + bout->framesPlayed;
+            if (bout->latencyPad) {
+                if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *frames = 0;
+            else
+                *frames = bout->framesPlayedTotal + bout->framesPlayed - bout->latencyEstimate;
         }
     } else {
        *frames =0;
@@ -1033,6 +1065,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     uint32_t audioDecoderId;
     String8 rates_str, channels_str, formats_str;
     char config_rate_str[11];
+    int dolby_ms;
     int i, ret = 0;
 
     if (config->sample_rate == 0)
@@ -1109,6 +1142,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->framesPlayedTotal = 0;
+    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
+    bout->latencyEstimate = (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY,
+                                                ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                    NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
+                             * bout->config.sample_rate) / 1000;
+    bout->latencyPad = bout->latencyEstimate;
+
     if (config->format == AUDIO_FORMAT_PCM_16_BIT) {
         bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
         bout->buffer_size =
