@@ -214,6 +214,16 @@ static struct process_entity key_process_list_tunneled[] = {
 };
 static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);
 
+static void clear_key_processes_list (struct process_entity *key_process_list, int num_key_processes)
+{
+   int i;
+
+   for (i = 0; i < num_key_processes; ++i) {
+      key_process_list[i].pid = 0;
+      memset(&(key_process_list[i].threads), 0, sizeof(key_process_list[i].threads));
+   }
+}
+
 static ssize_t get_comm_from_pid (pid_t pid, char *comm, int len)
 {
    int fd;
@@ -392,7 +402,7 @@ static int find_key_processes (struct process_entity *key_process_list, int num_
 
 static void elevate_priority (struct process_entity *key_process_list, int num_key_processes)
 {
-   int i, j;
+   int i, j, rc;
    struct sched_param param;
 
    memset(&param, 0, sizeof(param));
@@ -411,8 +421,9 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
                ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
                continue;
             }
-            sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
-            ALOGV("%d elevated to %d:%d:%d", threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness);
+            rc = sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
+            ALOGV("%d elevated to %d:%d:%d rc=%d,err=%d (%s)",
+               threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness, rc, errno, strerror(errno));
          }
       }
    }
@@ -500,5 +511,6 @@ int do_hfrvideo(int mode)
       }
    }
 
+   clear_key_processes_list (key_process_list, num_key_processes);
    return 0;
 }

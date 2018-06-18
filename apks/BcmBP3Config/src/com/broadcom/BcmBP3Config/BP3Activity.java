@@ -60,14 +60,16 @@ public class BP3Activity extends Activity
     Context mContext;
     private RadioGroup mRadioGroup;
     private RadioButton mStatusButton, mServerButton, mProvisionButton;
-    private TextView mInfo1, mInfo2;
-    private EditText mArgs1, mArgs2;
+    private TextView mInfo1, mInfo2, mInfo3;
+    private EditText mArgs1, mArgs2, mArgs3;
     private Button mRunButton;
     private String strStatusResult = "N/A";
     private String strStatusInfo = "Displays the currently enabled licenses\n";
-    private String strServerInfo = "IP Address (xx.xx.xx.xx)";
+    private String strServerInfo = "IP Address (xx.xx.xx.xx):";
     private String strKeyInfo = "Authentication Key:";
     private String strLicenseInfo = "Licenses (ex: 3,4):";
+    private String strURLInfo = "URL:";
+    private String strDefaultURL = "bp3.broadcom.com";
     private String strPortInfo = "Port (default is 80):";
     private String iMessage = "INVALID";
     private String strStatusArgs = "N/A";
@@ -197,9 +199,10 @@ public class BP3Activity extends Activity
         mInfo1.setLayoutParams(mParams1);
 
         mArgs1 = (EditText) findViewById(R.id.idArgs1);
-
         mInfo2 = (TextView) findViewById(R.id.idInfo2);
         mArgs2 = (EditText) findViewById(R.id.idArgs2);
+        mInfo3 = (TextView) findViewById(R.id.idInfo3);
+        mArgs3 = (EditText) findViewById(R.id.idArgs3);
 
         mRunButton = (Button) findViewById(R.id.idRunApp);
 
@@ -212,6 +215,8 @@ public class BP3Activity extends Activity
 
         mInfo2.setVisibility(View.INVISIBLE);
         mArgs2.setVisibility(View.INVISIBLE);
+        mInfo3.setVisibility(View.INVISIBLE);
+        mArgs3.setVisibility(View.INVISIBLE);
 
         iState = SERVICE_SEARCH;
 
@@ -252,6 +257,10 @@ public class BP3Activity extends Activity
 
                     mInfo2.setVisibility(View.INVISIBLE);
                     mArgs2.setVisibility(View.INVISIBLE);
+
+                    mInfo3.setVisibility(View.INVISIBLE);
+                    mArgs3.setVisibility(View.INVISIBLE);
+
                     iMode = Mode.STATUS;
                 } else if (checkedId == R.id.idServerButton) {
                     iState = OPTION_SERVER;
@@ -270,6 +279,9 @@ public class BP3Activity extends Activity
                     mInfo2.setText(strPortInfo);
                     mArgs2.setText(strLicenses);
                     mArgs2.setEnabled(true);
+
+                    mInfo3.setVisibility(View.INVISIBLE);
+                    mArgs3.setVisibility(View.INVISIBLE);
 
                     iMode = Mode.SERVICE;
                 } else if (checkedId == R.id.idProvisionButton) {
@@ -302,9 +314,27 @@ public class BP3Activity extends Activity
                     mInfo2.setVisibility(View.VISIBLE);
                     mArgs2.setVisibility(View.VISIBLE);
                     mInfo2.setText(strLicenseInfo);
-
                     mArgs2.setEnabled(true);
                     mArgs2.setText(strLicenses);
+
+                    mInfo3.setVisibility(View.VISIBLE);
+                    mArgs3.setVisibility(View.VISIBLE);
+                    mInfo3.setText(strURLInfo);
+                    mArgs3.setEnabled(true);
+
+                    String strPrevURL = sharedPref.getString("ServerURL", strDefaultURL);
+
+                    // Check if we have a previously entered valid URL
+                    if (strPrevURL.equals(strDefaultURL))
+                        mArgs3.setText(strDefaultURL);
+
+                    // Save the valid key
+                    else
+                    {
+                        mArgs3.setText(strPrevURL);
+                        editor.putString("ServerURL", strPrevURL).apply();
+                    }
+
                     iMode = Mode.PROVISION;
                 }
             }
@@ -375,6 +405,9 @@ public class BP3Activity extends Activity
                         // Save the valid key
                         editor.putString("AuthKey", mArgs1.getText().toString()).apply();
 
+                        // Save the valid URL
+                        editor.putString("ServerURL", mArgs3.getText().toString()).apply();
+
                         // Parse and extract the licenses
                         StringTokenizer st = new StringTokenizer(mArgs2.getText().toString(), ",");
                         ArrayList<Integer> licList = new ArrayList<Integer>();
@@ -383,7 +416,7 @@ public class BP3Activity extends Activity
                             licList.add(Integer.parseInt(st.nextToken()));
 
                         try {
-                            iResult = bp3Interface.provision("bp3.broadcom.com", mArgs1.getText().toString(), licList);
+                            iResult = bp3Interface.provision(mArgs3.getText().toString(), mArgs1.getText().toString(), licList);
                         } catch (RemoteException e) {
                             iState = PROVISION_FAILED;
                             Log.w(TAG, "RemoteException calling Ibp3.status ", e);

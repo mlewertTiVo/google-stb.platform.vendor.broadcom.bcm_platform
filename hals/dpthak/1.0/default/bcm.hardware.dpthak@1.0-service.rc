@@ -2,4 +2,4 @@ service dpthak-hal-1-0 /vendor/bin/hw/bcm.hardware.dpthak@1.0-service
     class hal
     user system
     group system inet
-    capabilities NET_ADMIN
+    capabilities NET_ADMIN SYS_NICE

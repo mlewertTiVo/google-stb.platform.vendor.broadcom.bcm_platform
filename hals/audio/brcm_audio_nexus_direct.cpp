@@ -170,9 +170,6 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
             audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
             NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
         }
-    } else {
-        // Netflix requirement: mute passthrough when volume is 0
-        brcm_audio_set_mute_state(left == 0.0 && right == 0.0);
     }
 
     return 0;
@@ -825,7 +822,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 if (bout->nexus.direct.bitrate &&
                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
                          BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
-                    ALOGV("%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
+                    ALOGVV("%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
                           (decoderStatus.fifoDepth + playpumpStatus.fifoDepth),
                            BITRATE_TO_BYTES_PER_125_MS(decoderStatus.codecStatus.ac3.bitrate));
                     pthread_mutex_unlock(&bout->lock);
