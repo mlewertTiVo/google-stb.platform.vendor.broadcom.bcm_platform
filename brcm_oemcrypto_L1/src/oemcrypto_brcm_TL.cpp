@@ -48,6 +48,8 @@
 #include "drm_wvoemcrypto_tl.h"
 #include "OEMCryptoCENC.h"
 
+#include <nxwrap.h>
+
 #define KEY_CONTROL_SIZE  16
 #define KEY_IV_SIZE  16
 #define KEY_PAD_SIZE  16
@@ -102,12 +104,22 @@ static void dump_hex(const char* name, const uint8_t* vector, size_t length)
 #endif
 }
 
+static NxWrap *oemCryptoNxWrap = NULL;
+
 OEMCryptoResult OEMCrypto_Initialize(void)
 {
     Drm_WVOemCryptoParamSettings_t WvOemCryptoParamSettings;
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     ALOGV("%s entered", __FUNCTION__);
+
+    oemCryptoNxWrap = new NxWrap("BcmOemcrypto_Adapter");
+    if (oemCryptoNxWrap) {
+       oemCryptoNxWrap->join();
+    } else {
+       ALOGE("Adapter failed to create nxclient");
+       return OEMCrypto_ERROR_INIT_FAILED;
+    }
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
     WvOemCryptoParamSettings.api_version = OEMCRYPTO_API_VERSION;
@@ -132,10 +144,18 @@ OEMCryptoResult OEMCrypto_Terminate(void)
     if (DRM_WVOemCrypto_UnInit((int*)&wvRc) != Drm_Success)
     {
       ALOGV("%s: Terminate failed",__FUNCTION__);
-      return wvRc;
+      goto out;
     }
 
     ALOGV("[OEMCrypto_Terminate(): success =========]");
+
+out:
+    if (oemCryptoNxWrap) {
+       oemCryptoNxWrap->leave();
+       delete oemCryptoNxWrap;
+       oemCryptoNxWrap = NULL;
+    }
+
     return wvRc;
 }
 
