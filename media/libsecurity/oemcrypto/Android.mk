@@ -57,7 +57,7 @@ else
 LOCAL_PATH := $(TOP)/vendor/widevine
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
-# add SAGElib related includes
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
@@ -82,7 +82,21 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
-    $(BSAGELIB_INCLUDES)
+    $(BSAGELIB_INCLUDES) \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
+    $(NXCLIENT_INCLUDES)
+
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+LOCAL_C_INCLUDES += \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
@@ -90,12 +104,20 @@ LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 ifeq ($(SAGE_VERSION),2x)
 LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
 endif
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
 
 LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
+LOCAL_SHARED_LIBRARIES += libnxwrap
+
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+else
+LOCAL_SHARED_LIBRARIES += libnxbinder libnxevtsrc
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 endif
