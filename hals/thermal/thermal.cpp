@@ -26,7 +26,6 @@
 #include <hardware/hardware.h>
 #include <hardware/thermal.h>
 
-#define CPU_LABEL               "CPU"
 #define MAX_LENGTH              50
 
 #define CPU_USAGE_FILE          "/proc/stat"
@@ -35,6 +34,9 @@
 #define CPU_ONLINE_FILE_FORMAT  "/sys/devices/system/cpu/cpu%d/online"
 #define SHUTDOWN_TEMPERATURE    125.0
 #define THROTTLE_TEMPERATURE    110.0
+
+const char *CPU_LABEL[] = {"CPU0", "CPU1", "CPU2", "CPU3", "CPU4", "CPU5", "CPU6", "CPU7"};
+const size_t CPU_LABEL_NUM = sizeof(CPU_LABEL) / sizeof(CPU_LABEL[0]);
 
 static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t size) {
     char file_name[MAX_LENGTH];
@@ -64,12 +66,20 @@ static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t 
                 fclose(file);
                 continue;
             }
+            fclose(file);
 
             temp = temp/1000; /* Convert from millicelsius to celsius*/
 
+            if (idx >= CPU_LABEL_NUM) {
+                /* Should never happen but bailing just in case */
+                ALOGE("%s: out of cpu labels", __func__);
+                closedir(dir);
+                return -EPERM;
+            }
+
             if (list != NULL && idx < size) {
                 list[idx] = (temperature_t) {
-                    .name = CPU_LABEL,
+                    .name = CPU_LABEL[idx],
                     .type = DEVICE_TEMPERATURE_CPU,
                     .current_value = temp,
                     .throttling_threshold = THROTTLE_TEMPERATURE,
@@ -77,7 +87,6 @@ static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t 
                     .vr_throttling_threshold = UNKNOWN_TEMPERATURE,
                 };
             }
-            fclose(file);
             idx++;
         }
     }
@@ -93,7 +102,6 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
     size_t len = 0;
     size_t size = 0;
     char file_name[MAX_LENGTH];
-    char cpu_name[MAX_LENGTH];
     FILE *cpu_file;
     FILE *file = fopen(CPU_USAGE_FILE, "r");
 
@@ -144,11 +152,16 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
         }
         fclose(cpu_file);
 
-        snprintf(cpu_name, MAX_LENGTH, "%s%d", CPU_LABEL, cpu_num);
+        if (cpu_num >= (int)CPU_LABEL_NUM) {
+            /* Should never happen but bailing just in case */
+            ALOGE("%s: out of cpu labels", __func__);
+            fclose(file);
+            return -EPERM;
+        }
 
         if (list != NULL) {
             list[size] = (cpu_usage_t) {
-                .name = cpu_name,
+                .name = CPU_LABEL[cpu_num],
                 .active = active,
                 .total = total,
                 .is_online = static_cast<bool>(online)
