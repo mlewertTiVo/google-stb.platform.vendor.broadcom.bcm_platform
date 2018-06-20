@@ -22,6 +22,12 @@ extern "C" {
 #include "nexus_base_os.h"
 #include "nexus_platform.h"
 
+static void *nxwrap = NULL;
+static void *nexus_client = NULL;
+
+void* nxwrap_create_client(void **wrap);
+void nxwrap_destroy_client(void *wrap);
+
 extern char bp3_bin_file_name[];
 extern char bp3_bin_file_path[];
 extern bp3featuresStruct bp3_features[];
@@ -234,6 +240,14 @@ Return<int32_t> bp3::provision(
    if (srvUrl.c_str() == NULL || key.c_str() == NULL)
       return -EINVAL;
 
+   if (nxwrap != NULL)
+      nxwrap_destroy_client(nxwrap);
+   nexus_client = nxwrap_create_client(&nxwrap);
+   if (nexus_client == NULL) {
+      ALOGW("failed to associate nexus client, bailing...");
+      return -ENOMEM;
+   }
+
    curl_global_init(CURL_GLOBAL_ALL);
    CURL *curl = curl_easy_init();
    if (curl == NULL) return -CURLE_FAILED_INIT;
@@ -392,6 +406,9 @@ out:
    curl_slist_free_all(headers);
    if (curl) curl_easy_cleanup(curl);
    curl_global_cleanup();
+   if (nxwrap != NULL)
+      nxwrap_destroy_client(nxwrap);
+   nxwrap = NULL;
    return rc;
 }
 
