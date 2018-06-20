@@ -99,6 +99,7 @@ NEXUS_Error BOMX_AllocSecureBuffer(size_t size, bool allocClearBuffer, NEXUS_Mem
     }
     if (allocClearBuffer)
         pSecBufferSt->clearBuffSize = size;
+    NEXUS_Platform_SetSharedHandle(hMemBlock, true);
     *phSecureBuffer = hMemBlock;
     NEXUS_MemoryBlock_Unlock(hMemBlock);
     return NEXUS_SUCCESS;
@@ -111,6 +112,7 @@ void BOMX_FreeSecureBuffer(NEXUS_MemoryBlockHandle hSecureBuffer)
     NEXUS_Error nx_rc;
 
     BDBG_ASSERT(hSecureBuffer != NULL);
+    NEXUS_Platform_SetSharedHandle(hSecureBuffer, false);
     pMemory = NULL;
     nx_rc = NEXUS_MemoryBlock_Lock(hSecureBuffer, &pMemory);
     if (nx_rc || pMemory == NULL) {
