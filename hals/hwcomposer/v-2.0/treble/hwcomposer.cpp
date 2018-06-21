@@ -5710,9 +5710,7 @@ int hwc2_blit_gpx(
    }
    sa = c;
    da = p;
-   if (!dsp->sfb) {
-      oa = da;
-   }
+   oa = da;
 
    if (lyr->scmp) {
       /* don't blit anything if we can skip this layer. */
