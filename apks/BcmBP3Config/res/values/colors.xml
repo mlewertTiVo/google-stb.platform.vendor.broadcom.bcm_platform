@@ -4,4 +4,7 @@
     <color name="colorPrimaryDark">#303f9f</color>
     <color name="colorAccent">#FF4081</color>
     <color name="colorControlHighlight">#FF7010</color>
+    <color name="colorCrimson">#DC143C</color>
+    <color name="colorLightGray">#FFCCCCCC</color>
+    <color name="colorDarkGray">#8B8989</color>
 </resources>
