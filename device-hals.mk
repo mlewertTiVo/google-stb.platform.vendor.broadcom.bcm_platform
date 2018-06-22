@@ -17,7 +17,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/sdbhak/1.0/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/thermal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/tv_input/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/vulkan/Android.mk
-#include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/wifi/1.0/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/wifi/1.2/Android.mk
 
 ifneq ($(filter $(ANDROID_DEVICE_SUPPORTS_BP3),y),)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/bp3/1.0/Android.mk
