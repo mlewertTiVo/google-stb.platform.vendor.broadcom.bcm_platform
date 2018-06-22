@@ -68,7 +68,7 @@ struct DspCb {
    sp<INexusDspCb> cb;
 };
 
-class NexusImpl : public INexus {
+class NexusImpl : public INexus, public hidl_death_recipient {
 public:
 
    // INexus server interface.
@@ -81,6 +81,9 @@ public:
    Return<NexusStatus> setWoL(const hidl_string& ifc);
    Return<NexusStatus> acquireWL();
    Return<NexusStatus> releaseWL();
+
+   // hidl_death_recipient
+   virtual void serviceDied(uint64_t cookie, const wp<::android::hidl::base::V1_0::IBase>& who);
 
    void start_middleware();
    void stop_middleware();

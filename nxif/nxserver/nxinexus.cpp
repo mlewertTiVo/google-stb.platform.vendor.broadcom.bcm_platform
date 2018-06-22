@@ -306,6 +306,7 @@ Return<NexusStatus> NexusImpl::registerHpdCb(uint64_t cId, const ::android::sp<I
       struct HpdCb n = {cId, cb};
       mHpdCb.push_back(n);
       ALOGI("[hpd]:client: %" PRIu64 ": registered", cId);
+      cb->linkToDeath(this, cId);
       return NexusStatus::SUCCESS;
    }
 }
@@ -333,6 +334,7 @@ Return<NexusStatus> NexusImpl::registerDspCb(uint64_t cId, const ::android::sp<I
       struct DspCb n = {cId, cb};
       mDspCb.push_back(n);
       ALOGI("[dsp]:client: %" PRIu64 ": registered", cId);
+      cb->linkToDeath(this, cId);
       return NexusStatus::SUCCESS;
    }
 }
@@ -909,5 +911,14 @@ void NexusImpl::cbHdcp(void *context, int param) {
    (void)context;
    (void)param;
 #endif
+}
+
+
+void NexusImpl::serviceDied(uint64_t cookie, const wp<::android::hidl::base::V1_0::IBase>& who) {
+   (void)who;
+
+   ALOGI("%s: client %" PRIu64 " died", __FUNCTION__, cookie);
+   registerHpdCb(cookie, NULL);
+   registerDspCb(cookie, NULL);
 }
 
