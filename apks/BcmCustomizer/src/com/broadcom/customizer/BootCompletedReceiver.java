@@ -44,6 +44,8 @@ package com.broadcom.customizer;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.SystemProperties;
+import android.provider.Settings;
 import android.util.Log;
 
 import static com.broadcom.customizer.Constants.DEBUG;
@@ -66,5 +68,22 @@ public class BootCompletedReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (DEBUG) Log.d(TAG, "boot completed " + intent);
         mSplashScreenManager.bootCompleted();
+
+        final String propertyKey = "ro.nx.dolby.ms";
+        final String nrdpSettingKey = "nrdp_audio_platform_capabilities";
+        final String nrdpSettingMS12Value = "{\"audiocaps\":{\"continuousAudio\":true,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":true,\"easing\":true},\"atmos\":{\"enabled\":true,\"mixing\":true,\"easing\":true}}}";
+
+        final String propString;
+
+        propString = android.os.SystemProperties.get(propertyKey);
+        if (propString.compareTo("12") == 0) {
+
+            final String nrdpSettingString;
+            nrdpSettingString = Settings.Global.getString(context.getContentResolver(), nrdpSettingKey);
+            if (nrdpSettingString == null) {
+                Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, nrdpSettingMS12Value);
+                Log.i(TAG, nrdpSettingKey + " set to " + nrdpSettingMS12Value);
+            }
+        }
     }
 }
