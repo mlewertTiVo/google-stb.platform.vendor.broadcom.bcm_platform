@@ -1516,6 +1516,8 @@ static int km_open(
    hw_device_t** device) {
 
    char nexus[PROPERTY_VALUE_MAX];
+   int c = 0;
+   static int c_max = 20;
 
    if (strcmp(name, KEYSTORE_KEYMASTER) != 0)
       return -EINVAL;
@@ -1542,8 +1544,8 @@ static int km_open(
       if (!strncmp(nexus, "loaded", strlen("loaded")))
          break;
       else {
-         ALOGW("nexus not ready for keymaster, 0.5 second delay...");
-         usleep(1000000/2);
+         ALOGW("nexus not ready for keymaster, 0.25 second delay...");
+         usleep(1000000/4);
          property_get("dyn.nx.state", nexus, "");
       }
    }
@@ -1552,6 +1554,30 @@ static int km_open(
       ALOGE("failed to alloc keymaster2 nexus client, aborting.");
       free(km_hdl);
       return -EINVAL;
+   }
+   // busy loop wait for ssd readiness (rpmb), without rpmb, the
+   // keymaster may not fully function, but should work to some degree.
+   property_get("dyn.nx.ssd.state", nexus, "");
+   while (1) {
+      if (!strncmp(nexus, "init", strlen("init"))) {
+         // all is well.
+         ALOGI("keymaster operating with ssd service (rpmb|vfs).");
+         break;
+      } else if (!strncmp(nexus, "ended", strlen("ended"))) {
+         // ssd attempted, but crashed or is not properly setup, try without.
+         ALOGW("keymaster operating without ssd service (rpmb), ssd failure.");
+         break;
+      } else {
+         // something is wrong, ssd may not even be present.
+         ALOGW("ssd not ready for keymaster, 0.25 second delay...");
+         usleep(1000000/4);
+         property_get("dyn.nx.ssd.state", nexus, "");
+         c++;
+         if (c > c_max) {
+            ALOGE("keymaster timeout waiting for ssd service, proceed without.");
+            break;
+         }
+      }
    }
 
    // now try to load up keymaster on tee side once.

@@ -46,18 +46,21 @@ int main(int argc, char** argv)
    (void) argc;
    (void) argv;
 
+   property_set("dyn.nx.ssd.state", "start");
+
    for (;;) {
       memset(value, 0, sizeof(value));
       property_get("dyn.nx.state", value, NULL);
       if (strlen(value) && !strncmp(value, "loaded", strlen(value))) {
          break;
       }
-      sleep(1);
+      usleep(1000000/4);
    }
 
    mNxWrap = new NxWrap("nxssd");
    if (mNxWrap == NULL) {
       ALOGE("%s: could not create nexus client context!", __FUNCTION__);
+      goto exit;
    } else {
       mNxWrap->join_v(stbMon, mNxWrap);
    }
@@ -72,6 +75,8 @@ int main(int argc, char** argv)
       goto exit;
    }
 
+   property_set("dyn.nx.ssd.state", "init");
+
    ALOGI("%s: wait for ssd ops...", __FUNCTION__);
    SSDTl_Wait_For_Operations();
 
@@ -79,6 +84,7 @@ int main(int argc, char** argv)
    SSDTl_Uninit();
 
 exit:
+   property_set("dyn.nx.ssd.state", "ended");
    if (mNxWrap) {
       mNxWrap->leave();
       delete mNxWrap;
