@@ -44,7 +44,8 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
-#define NEXUS_OUT_BUFFER_DURATION_MS    10
+#define NEXUS_OUT_BUFFER_DURATION_MS    30
+#define NEXUS_OUT_DEFAULT_LATENCY       10
 
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
@@ -645,7 +646,7 @@ static uint32_t nexus_bout_get_latency(struct brcm_stream_out *bout)
 {
     (void)bout;
     /* See SWANDROID-4627 for calculation */
-    return NEXUS_OUT_BUFFER_DURATION_MS;
+    return NEXUS_OUT_DEFAULT_LATENCY;
 }
 
 static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int64_t *timestamp)
