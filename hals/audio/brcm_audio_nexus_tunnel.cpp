@@ -135,7 +135,7 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
 {
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
 
-    if (!bout->dolbyMs) {
+    if (!bout->dolbyMs12) {
         ALOGV("%s: No dolby MS support, changing master volume", __FUNCTION__);
         brcm_audio_set_audio_volume(left, right);
 
@@ -320,7 +320,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
     start_settings.primary.pidChannel = bout->nexus.tunnel.pid_channel;
 
-    if (bout->dolbyMs) {
+    if (bout->dolbyMs12) {
         start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
 
         if ((start_settings.primary.codec == NEXUS_AudioCodec_eAc3) ||
@@ -1038,7 +1038,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioResourceId;
 
-    if (bout->dolbyMs) {
+    if (bout->dolbyMs12) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
 
         NEXUS_SimpleAudioDecoderSettings settings;
@@ -1165,6 +1165,20 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         bout->nexus.tunnel.pes_debug = NULL;
     }
 
+    // Restore auto mode for MS11
+    if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force auto output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+        ret = NxClient_SetAudioSettings(&audioSettings);
+        if (ret) {
+            ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
+        }
+    }
+
     return 0;
 
 err_pid:
@@ -1190,6 +1204,17 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
 
     if (bout->nexus.state == BRCM_NEXUS_STATE_DESTROYED) {
        return 0;
+    }
+
+    // Force PCM mode for MS11
+    if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force PCM output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+        NxClient_SetAudioSettings(&audioSettings);
     }
 
     nexus_tunnel_bout_stop(bout);

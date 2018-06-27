@@ -43,7 +43,8 @@
 #include "bomx_utils.h"
 
 #define BRCM_BUFFER_SIZE_MS     10
-#define BRCM_SUPPORTED_DOLBY_MS 12
+#define BRCM_SUPPORTED_DOLBY_MS11 11
+#define BRCM_SUPPORTED_DOLBY_MS12 12
 
 // Runtime properties
 #define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("media.brcm.aout_debug")
@@ -1150,7 +1151,8 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     }
 
     dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
-    bout->dolbyMs = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS);
+    bout->dolbyMs11 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS11);
+    bout->dolbyMs12 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS12);
 
     pthread_mutex_lock(&bdev->lock);
 
