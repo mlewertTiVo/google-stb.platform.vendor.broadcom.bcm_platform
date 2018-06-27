@@ -556,6 +556,20 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    popcount(config->channel_mask),
                                    NEXUS_OUT_BUFFER_DURATION_MS);
 
+    /* Force PCM mode for MS11 */
+    if (bout->dolbyMs11) {
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force PCM output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+        ret = NxClient_SetAudioSettings(&audioSettings);
+        if (ret) {
+            ALOGE("%s: Error setting PCM mode, ret = %d", __FUNCTION__, ret);
+        }
+    }
+
     /* Allocate simpleAudioPlayback */
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleAudioPlayback = 1;
