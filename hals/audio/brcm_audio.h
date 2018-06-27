@@ -405,7 +405,6 @@ public:
 private:
     bool threadLoop();
     android::Mutex mMutex;
-    android::Condition mCond;
     b_standby_monitor_callback mCallbacks[MAX_STANDBY_MONITOR_CALLBACKS];
     void *mContexts[MAX_STANDBY_MONITOR_CALLBACKS];
     unsigned mNumCallbacks;
