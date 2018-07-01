@@ -26,7 +26,7 @@ LOCAL_SRC_FILES := drm_data.c
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/liblog/include \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)

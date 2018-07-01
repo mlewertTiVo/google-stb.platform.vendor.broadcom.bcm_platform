@@ -26,7 +26,7 @@ LOCAL_SRC_FILES := ${COMMON_SOURCES}
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/priv \
@@ -86,11 +86,11 @@ LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 # fix me!
-LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 else
 LOCAL_MODULE_TARGET_ARCH := arm
-LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 endif
 include $(BUILD_PREBUILT)
 
@@ -103,7 +103,7 @@ LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
@@ -210,7 +210,7 @@ LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \

@@ -12,30 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifeq ($(SAGE_SUPPORT),y)
-
 #-------------
-# libsrai.so
+# librsa_tl.so
 #-------------
 LOCAL_PATH := ${REFSW_BASE_DIR}
 include $(CLEAR_VARS)
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
+ifeq ($(SAGE_SUPPORT),y)
+
 # add SAGElib related includes
 include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
-include $(LOCAL_PATH)/magnum/portinginterface/hsm/bhsm_defs.inc
 
 LOCAL_SRC_FILES := \
-    BSEAV/lib/security/sage/srai/src/sage_srai.c \
-    BSEAV/lib/security/sage/srai/src/sage_srai_global_lock.c \
-    magnum/syslib/sagelib/src/bsagelib_tools.c
+    BSEAV/lib/security/sage/utility/src/rsa_tl.c \
+    BSEAV/lib/security/sage/utility/src/utility_platform.c \
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include/private \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/utility/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
     $(BSAGELIB_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
@@ -47,15 +48,14 @@ ifeq ($(TARGET_BUILD_VARIANT),user)
 # Disable warning logs for user build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
-LOCAL_CFLAGS += -DBHSM_ZEUS_VER_MAJOR=$(BHSM_ZEUS_VER_MAJOR) -DBHSM_ZEUS_VER_MINOR=$(BHSM_ZEUS_VER_MINOR)
 
-LOCAL_SHARED_LIBRARIES := libnexus liblog
+LOCAL_SHARED_LIBRARIES := libnexus liblog libsrai
 
-LOCAL_MODULE := libsrai
+LOCAL_MODULE := librsa_tl
+
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 
 include $(BUILD_SHARED_LIBRARY)
-
 endif
 

@@ -18,7 +18,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-SRC_PREFIX := ../../../../refsw/BSEAV/lib/security/bcrypt/src
+SRC_PREFIX := ../../../refsw/BSEAV/lib/security/bcrypt/src
 LOCAL_SRC_FILES := \
     ${SRC_PREFIX}/bcrypt.c \
     ${SRC_PREFIX}/bcrypt_aes_sw.c \
@@ -43,7 +43,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/boringssl/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
