@@ -1393,7 +1393,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        {
            ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
            g_decActiveStateLock.unlock();
-           this->Invalidate(OMX_ErrorUndefined);
+           this->Invalidate(OMX_ErrorInsufficientResources);
            return;
        }
 
