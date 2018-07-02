@@ -44,7 +44,8 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
-#define NEXUS_OUT_BUFFER_DURATION_MS    10
+#define NEXUS_OUT_BUFFER_DURATION_MS    30
+#define NEXUS_OUT_DEFAULT_LATENCY       10
 
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
@@ -555,6 +556,20 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    popcount(config->channel_mask),
                                    NEXUS_OUT_BUFFER_DURATION_MS);
 
+    /* Force PCM mode for MS11 */
+    if (bout->dolbyMs11) {
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force PCM output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+        ret = NxClient_SetAudioSettings(&audioSettings);
+        if (ret) {
+            ALOGE("%s: Error setting PCM mode, ret = %d", __FUNCTION__, ret);
+        }
+    }
+
     /* Allocate simpleAudioPlayback */
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleAudioPlayback = 1;
@@ -645,7 +660,7 @@ static uint32_t nexus_bout_get_latency(struct brcm_stream_out *bout)
 {
     (void)bout;
     /* See SWANDROID-4627 for calculation */
-    return NEXUS_OUT_BUFFER_DURATION_MS;
+    return NEXUS_OUT_DEFAULT_LATENCY;
 }
 
 static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int64_t *timestamp)

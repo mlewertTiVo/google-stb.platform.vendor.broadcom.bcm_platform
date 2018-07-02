@@ -159,7 +159,7 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
     }
 
 
-    if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
         if (bout->nexus.direct.fadeLevel != (unsigned)(left * 100)) {
             NEXUS_SimpleAudioDecoderSettings audioSettings;
             NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
@@ -224,12 +224,28 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *dsp_frames = (uint32_t)(bout->framesPlayed * bout->nexus.direct.frame_multiplier);
+            if (bout->latencyPad) {
+                if (((bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier) >
+                        bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *dsp_frames = 0;
+            else
+                *dsp_frames = (uint32_t)(bout->framesPlayed * bout->nexus.direct.frame_multiplier) -
+                                  bout->latencyEstimate;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
-            *dsp_frames = (uint32_t)bout->framesPlayed;
+            if (bout->latencyPad) {
+                if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *dsp_frames = 0;
+            else
+                *dsp_frames = (uint32_t)bout->framesPlayed - bout->latencyEstimate;
         }
     } else {
        *dsp_frames = 0;
@@ -254,12 +270,28 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *frames = (bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier;
+            if (bout->latencyPad) {
+                if (((bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier) >
+                        bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *frames = 0;
+            else
+                *frames = (bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier -
+                              bout->latencyEstimate;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
-            *frames = bout->framesPlayedTotal + bout->framesPlayed;
+            if (bout->latencyPad) {
+                if ((bout->framesPlayedTotal + bout->framesPlayed) > bout->latencyPad)
+                    bout->latencyPad = 0;
+            }
+            if (bout->latencyPad)
+                *frames = 0;
+            else
+                *frames = bout->framesPlayedTotal + bout->framesPlayed - bout->latencyEstimate;
         }
     } else {
        *frames =0;
@@ -353,7 +385,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
 
-        if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+        if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
             start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
         }
 
@@ -381,7 +413,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
                                 &codecSettings.codecSettings.ac3:
                                 &codecSettings.codecSettings.ac3Plus;
 
-            if (bout->dolbyMs) {
+            if (bout->dolbyMs12) {
                 dolbySettings->enableAtmosProcessing = true;
 
                 if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
@@ -1033,6 +1065,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     uint32_t audioDecoderId;
     String8 rates_str, channels_str, formats_str;
     char config_rate_str[11];
+    int dolby_ms;
     int i, ret = 0;
 
     if (config->sample_rate == 0)
@@ -1109,6 +1142,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->framesPlayedTotal = 0;
+    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
+    bout->latencyEstimate = (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY,
+                                                ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                    NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
+                             * bout->config.sample_rate) / 1000;
+    bout->latencyPad = bout->latencyEstimate;
+
     if (config->format == AUDIO_FORMAT_PCM_16_BIT) {
         bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
         bout->buffer_size =
@@ -1144,7 +1184,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioDecoderId;
 
-    if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
 
         NEXUS_SimpleAudioDecoderSettings settings;
@@ -1249,6 +1289,21 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
+    // Restore auto mode for MS11
+    if (bout->dolbyMs11 &&
+        !(property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
+          property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false))) {
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force auto output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+        ret = NxClient_SetAudioSettings(&audioSettings);
+        if (ret) {
+            ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
+        }
+    }
     return 0;
 
 err_pid:
@@ -1289,6 +1344,14 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
             audioSettings.spdif.outputMode = bout->nexus.direct.savedSPDIFOutputMode;
 
         ALOGI("Restore audio output mode");
+        NxClient_SetAudioSettings(&audioSettings);
+    } else if (bout->dolbyMs11) { // Force PCM mode for MS11
+        NxClient_AudioSettings audioSettings;
+
+        ALOGI("Force PCM output");
+        NxClient_GetAudioSettings(&audioSettings);
+        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
         NxClient_SetAudioSettings(&audioSettings);
     }
 

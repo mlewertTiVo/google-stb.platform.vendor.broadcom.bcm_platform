@@ -17,6 +17,11 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/tools/bp3
+
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := -Werror
@@ -30,6 +35,7 @@ LOCAL_SRC_FILES += bp3.cpp
 
 LOCAL_SHARED_LIBRARIES := \
     bcm.hardware.bp3@1.0 \
+    bcm.hardware.nexus@1.0 \
     libhidlbase \
     libhidltransport \
     libbase \
@@ -41,6 +47,7 @@ LOCAL_SHARED_LIBRARIES := \
     libsrai \
     libcurl \
     libssl \
-    libz
+    libz \
+    libnxwrap
 
 include $(BUILD_EXECUTABLE)

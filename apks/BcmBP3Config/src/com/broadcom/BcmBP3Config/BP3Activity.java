@@ -152,7 +152,7 @@ public class BP3Activity extends Activity
 
                                     // Display the message (if needed)
                                     if (!iMessage.isEmpty())
-                                        Toast.makeText(appContext, iMessage, Toast.LENGTH_SHORT).show();
+                                        Toast.makeText(appContext, iMessage, Toast.LENGTH_LONG).show();
 
                                     iPrevState = iState;
                                 }
@@ -340,8 +340,20 @@ public class BP3Activity extends Activity
             }
         });
 
+        mRunButton.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) {
+                    mRunButton.setBackgroundColor(getResources().getColor(R.color.colorDarkGray));
+                }
+
+                else
+                    mRunButton.setBackgroundColor(getResources().getColor(R.color.colorLightGray));
+            }
+        });
+
         mRunButton.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
+            public void onClick(View v) {
                 String buttonStr = mRunButton.getText().toString();
 
                 switch (iMode) {

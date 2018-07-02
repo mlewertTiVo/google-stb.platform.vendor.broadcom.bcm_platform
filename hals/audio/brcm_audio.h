@@ -227,7 +227,8 @@ struct brcm_stream_out {
     bool started;
     bool suspended;
     bool tunneled;
-    bool dolbyMs;
+    bool dolbyMs11;
+    bool dolbyMs12;
     int standbyCallback;
     FILE *outDebugFile;
     uint64_t last_pres_frame;
@@ -404,7 +405,6 @@ public:
 private:
     bool threadLoop();
     android::Mutex mMutex;
-    android::Condition mCond;
     b_standby_monitor_callback mCallbacks[MAX_STANDBY_MONITOR_CALLBACKS];
     void *mContexts[MAX_STANDBY_MONITOR_CALLBACKS];
     unsigned mNumCallbacks;
