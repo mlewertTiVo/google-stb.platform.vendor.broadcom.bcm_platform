@@ -54,19 +54,19 @@ endif
 include $(BUILD_PREBUILT)
 else
 # compile library from source
-LOCAL_PATH := $(TOP)/vendor/widevine
+LOCAL_PATH := $(TOP)/vendor
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
-    brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
-    libwvdrmengine/cdm/core/src/string_conversions.cpp\
-    libwvdrmengine/cdm/core/src/properties.cpp \
-    libwvdrmengine/cdm/src/log.cpp \
-    brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64.cpp \
-    brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64w.cpp \
+    broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
+    widevine/libwvdrmengine/cdm/core/src/string_conversions.cpp\
+    widevine/libwvdrmengine/cdm/core/src/properties.cpp \
+    widevine/libwvdrmengine/cdm/src/log.cpp \
+    broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64.cpp \
+    broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/tp/stringencoders/src/modp_b64w.cpp \
 
 
 LOCAL_C_INCLUDES := \
@@ -74,7 +74,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
-    $(TOP)/vendor/widevine/brcm_oemcrypto_L1/include \
+    $(TOP)/vendor/broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/include \
     $(TOP)/vendor/widevine/libwvdrmengine/cdm/core/include \
     $(TOP)/vendor/widevine/brcm_oemcrypto_L1/tp/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
