@@ -1559,6 +1559,7 @@ static void nxserver_rmlmk(uint64_t client)
    }
 }
 
+#define NXWRAP_JOIN_V "/vendor/usr/nxwl"
 int main(void)
 {
     struct timespec t;
@@ -1660,6 +1661,10 @@ int main(void)
 
     ALOGI("connecting ourselves.");
     NxClient_GetDefaultJoinSettings(&joinSettings);
+    if ((joinSettings.mode != NEXUS_ClientMode_eVerified) &&
+        !access(NXWRAP_JOIN_V, R_OK)) {
+      joinSettings.mode = NEXUS_ClientMode_eVerified;
+    }
     rc = NxClient_Join(&joinSettings);
     if (rc != NEXUS_SUCCESS) {
        ALOGE("failed to join the server!");

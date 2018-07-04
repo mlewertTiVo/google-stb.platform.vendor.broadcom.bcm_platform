@@ -135,6 +135,29 @@ int NxWrap::join() {
    return rc;
 }
 
+#define NXWRAP_JOIN_V "/vendor/usr/nxwl"
+int NxWrap::join_v() {
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NxClient_JoinSettings joinSettings;
+   NEXUS_PlatformStatus status;
+
+   Mutex::Autolock autoLock(mLck);
+   NxClient_GetDefaultJoinSettings(&joinSettings);
+   joinSettings.ignoreStandbyRequest = true;
+   if (!access(NXWRAP_JOIN_V, R_OK)) {
+      joinSettings.mode = NEXUS_ClientMode_eVerified;
+   }
+   sprintf(joinSettings.name, NX_NOGRAB_MAGIC);
+   do {
+      rc = NxClient_Join(&joinSettings);
+      // try to join server forever.
+      if (rc != NEXUS_SUCCESS) {
+         usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
+       }
+   } while (rc != NEXUS_SUCCESS);
+   return rc;
+}
+
 int NxWrap::join_once() {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
@@ -331,6 +354,20 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
    if (nx != NULL) {
       *nxwrap = nx;
       nx->join();
+      client = nx->client();
+   }
+
+   return (void *)(intptr_t)client;
+}
+
+extern "C" void* nxwrap_create_verified_client(void **nxwrap) {
+
+   uint64_t client = 0;
+   NxWrap *nx = new NxWrap();
+
+   if (nx != NULL) {
+      *nxwrap = nx;
+      nx->join_v();
       client = nx->client();
    }
 
