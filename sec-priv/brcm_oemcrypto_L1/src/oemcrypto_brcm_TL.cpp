@@ -48,7 +48,9 @@
 #include "drm_wvoemcrypto_tl.h"
 #include "OEMCryptoCENC.h"
 
+#if !defined(ANDROID_WIDEVINE_UPDATE)
 #include <nxwrap.h>
+#endif
 
 #define KEY_CONTROL_SIZE  16
 #define KEY_IV_SIZE  16
@@ -104,7 +106,9 @@ static void dump_hex(const char* name, const uint8_t* vector, size_t length)
 #endif
 }
 
+#if !defined(ANDROID_WIDEVINE_UPDATE)
 static NxWrap *oemCryptoNxWrap = NULL;
+#endif
 
 OEMCryptoResult OEMCrypto_Initialize(void)
 {
@@ -113,6 +117,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     ALOGV("%s entered", __FUNCTION__);
 
+#if !defined(ANDROID_WIDEVINE_UPDATE)
     oemCryptoNxWrap = new NxWrap("BcmOemcrypto_Adapter");
     if (oemCryptoNxWrap) {
        oemCryptoNxWrap->join();
@@ -120,6 +125,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
        ALOGE("Adapter failed to create nxclient");
        return OEMCrypto_ERROR_INIT_FAILED;
     }
+#endif
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
     WvOemCryptoParamSettings.api_version = OEMCRYPTO_API_VERSION;
@@ -150,12 +156,14 @@ OEMCryptoResult OEMCrypto_Terminate(void)
     ALOGV("[OEMCrypto_Terminate(): success =========]");
 
 out:
+
+#if !defined(ANDROID_WIDEVINE_UPDATE)
     if (oemCryptoNxWrap) {
        oemCryptoNxWrap->leave();
        delete oemCryptoNxWrap;
        oemCryptoNxWrap = NULL;
     }
-
+#endif
     return wvRc;
 }
 
