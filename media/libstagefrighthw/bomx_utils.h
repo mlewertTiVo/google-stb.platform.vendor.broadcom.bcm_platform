@@ -68,6 +68,9 @@ extern "C" {
 #define BOMX_ERR_TRACE(omxerr) (((omxerr) == OMX_ErrorNone)?OMX_ErrorNone:BOMX_PrintError(LOG_TAG, __FILE__,__LINE__,(omxerr)))
 #define BOMX_GET_NXCLIENT_SLOT(arr,slot) {for ( (slot)=0; (slot)<NXCLIENT_MAX_IDS && (arr)[(slot)].id != 0; (slot)++ );}
 
+#define BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER      (4)     // This matches the same alignment from BPXL_P_PITCH_ALIGNMENT
+#define BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422   (32)    // This matches the same alignment from BPXL_P_PITCH_YCBCR422_ALIGNMENT
+
 BERR_Code BOMX_PrintBError(const char *pLogTag, const char *pFile, unsigned lineno, BERR_Code berr);
 OMX_ERRORTYPE BOMX_PrintError(const char *pLogTag, const char *pFile, unsigned lineno, OMX_ERRORTYPE omxerr);
 

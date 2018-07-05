@@ -3264,7 +3264,7 @@ NEXUS_SurfaceHandle BOMX_VideoEncoder::CreateSurface(
               BOMX_BERR_TRACE(BERR_UNKNOWN);
               return NULL;
           }
-          createSettings.pixelMemoryOffset = offset;
+          createSettings.pixelMemoryOffset = 0; // "offset" must be 0 at this point
        }
        else
        {
@@ -3308,6 +3308,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
           pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08);
 
     BOMX_ImageSurfaceNode *pNode;
+    int stride = ((2 * pPortDef->format.video.nFrameWidth) + (BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1);
     for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
     {
         pNode = new BOMX_ImageSurfaceNode;
@@ -3320,7 +3321,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
         pNode->hSurface = CreateSurface(
                               pPortDef->format.video.nFrameWidth,
                               pPortDef->format.video.nFrameHeight,
-                              2 * pPortDef->format.video.nFrameWidth,
+                              stride,
                               NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08,
                               0,
                               0,
@@ -4268,7 +4269,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-    int stride, cstride, alignment = 4;
+    int stride, cstride, alignment = BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER;
     uint8_t *y_addr, *cr_addr, *cb_addr;
     unsigned cr_offset, cb_offset;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
@@ -4524,7 +4525,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%p",
               pixelFormat, pAddr, planeHandle);
 
-        hSrc = CreateSurface(width, height, stride, pixelFormat, planeHandle, 0, NULL, NULL);
+        hSrc = CreateSurface(width, height, (stride + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1), pixelFormat, planeHandle, 0, NULL, NULL);
         if ( NULL == hSrc )
         {
             ALOGE("Unable to allocate color format conversion surface");

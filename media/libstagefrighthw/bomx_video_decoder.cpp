@@ -138,7 +138,6 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_DEC_ACTIVE_STATE_ACTIVE_SECURE                    (2)
 
 #define B_YV12_ALIGNMENT (16)
-#define B_YUV_PITCH_ALIGNMENT (4)       // matches the same alignment from BPXL_P_PITCH_ALIGNMENT
 
 #define B_UHD_DISPLAY ("3840x2160")     // marker for having a uhd display connected.
 
@@ -4430,7 +4429,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eY8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
-            surfaceSettings.pitch = (pPortDef->format.video.nStride + (B_YUV_PITCH_ALIGNMENT-1)) & ~(B_YUV_PITCH_ALIGNMENT-1);
+            surfaceSettings.pitch = (pPortDef->format.video.nStride + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1);
             surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.yMemBlkFd);
             if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
@@ -4449,7 +4448,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCb8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
-            surfaceSettings.pitch = (pPortDef->format.video.eColorFormat == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)) ? (pPortDef->format.video.nStride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1) : (pPortDef->format.video.nStride/2 + (B_YUV_PITCH_ALIGNMENT-1)) & ~(B_YUV_PITCH_ALIGNMENT-1);
+            surfaceSettings.pitch = (pPortDef->format.video.eColorFormat == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)) ? (pPortDef->format.video.nStride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1) : (pPortDef->format.video.nStride/2 + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1);
             surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
             if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
