@@ -73,7 +73,7 @@ static const char * PROPERTY_PM_TP3_EN                    = "ro.nx.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.nx.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.nx.pm.cpufreq_scale_en";
 static const char * PROPERTY_PM_WOL_EN                    = "ro.nx.pm.wol.en";
-static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.nx.pm.wol.mdns.en";
+static const char * PROPERTY_PM_WOL_SCREEN_ON_EN          = "ro.nx.pm.wol.screen.on.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
 static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
@@ -89,8 +89,8 @@ static const int8_t DEFAULT_PROPERTY_PM_TP2_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CPU3 during standby
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
-static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
-static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
+static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 1;     // Enable Linux wake up by the WoLAN event
+static const int8_t DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN  = 0;     // Disable Android screen on WoLAN event
 static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
 static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
@@ -301,9 +301,9 @@ static bool power_get_property_wol_en()
     return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
 }
 
-static bool power_get_property_wol_mdns_en()
+static bool power_get_property_wol_screen_on_en()
 {
-    return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
+    return property_get_bool(PROPERTY_PM_WOL_SCREEN_ON_EN, DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN);
 }
 
 static nxwrap_pwr_state power_get_off_state()
@@ -406,12 +406,12 @@ static status_t power_set_wol_mode()
 {
     unsigned int full_wol_en;
 
-    // Handle Android WoLAN enable/disable property
-    // If enabled, a WoLAN event will wake up Android
+    // Handle Android WoLAN screen on enable/disable property
+    // If enabled, a WoLAN event will wake up Android and turn on the screen
     // Otherwise, Android PM won't be notified and
     // device will return back to low power state
     if (sysfs_get(SYS_FULL_WOL_WAKEUP, &full_wol_en) == NO_ERROR) {
-        bool full_wol_en_pr = power_get_property_wol_en();
+        bool full_wol_en_pr = power_get_property_wol_screen_on_en();
 
         if (full_wol_en_pr != full_wol_en) {
             if (sysfs_set(SYS_FULL_WOL_WAKEUP, full_wol_en_pr) != NO_ERROR) {
@@ -430,8 +430,13 @@ static status_t power_set_wol_mode()
         ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
     }
 
-    // Create a monitor thread to poll when the network interface is UP...
-    return power_create_thread("WoL monitor", power_wol_monitor_thread);
+    if (power_get_property_wol_en()) {
+        // Create a monitor thread to poll when the network interface is UP...
+        return power_create_thread("WoL monitor", power_wol_monitor_thread);
+    }
+    else {
+        return NO_ERROR;
+    }
 }
 
 static status_t power_get_sw_lid_state(bool *down)
