@@ -688,10 +688,10 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client &&
             g_app.clients[i].client == client) {
-            ALOGW("nx-RE.connect(%d): '%s'::%p::%d", i,
+            ALOGW("nx-RE.connect(%d): '%s'::%d::%p", i,
                   g_app.clients[i].joinSettings.name,
-                  g_app.clients[i].client,
-                  g_app.clients[i].joinSettings.mode);
+                  g_app.clients[i].joinSettings.mode,
+                  g_app.clients[i].client);
             goto out_lock;
         }
     }
@@ -707,10 +707,11 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
                g_app.connected = APP_MAX_CLIENTS;
             }
             ALOGI_IF(NX_CLIENT_USAGE_LOG,
-               "connect[%u]:%u::%p::'%s'::%p", i,
+               "connect[%u]:%u::%p::'%s'::%d::%p", i,
                g_app.clients[i].pid,
                g_app.clients[i].handle,
                g_app.clients[i].joinSettings.name,
+               g_app.clients[i].joinSettings.mode,
                g_app.clients[i].client);
             break;
         }
