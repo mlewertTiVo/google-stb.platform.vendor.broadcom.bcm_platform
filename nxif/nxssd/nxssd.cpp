@@ -59,7 +59,7 @@ int main(int argc, char** argv)
    if (mNxWrap == NULL) {
       ALOGE("%s: could not create nexus client context!", __FUNCTION__);
    } else {
-      mNxWrap->join(stbMon, mNxWrap);
+      mNxWrap->join_v(stbMon, mNxWrap);
    }
 
    ALOGI("%s: lookup ssd settings...", __FUNCTION__);
