@@ -149,8 +149,9 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
             fclose(file);
             fclose(cpu_file);
             return errno ? -errno : -EIO;
+        } else {
+            fclose(cpu_file);
         }
-        fclose(cpu_file);
 
         if (cpu_num >= (int)CPU_LABEL_NUM) {
             /* Should never happen but bailing just in case */
