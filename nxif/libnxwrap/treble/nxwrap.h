@@ -68,6 +68,7 @@ public:
    int join_v();
    int join_once();
    int join(StdbyMonCb cb, void *ctx);
+   int join_v(StdbyMonCb cb, void *ctx);
    // disconnect from middleware.
    void leave();
    // get the identification of the middleware client from server, can be used to
