@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "ThermalHAL"
+#define LOG_TAG "bcm-thermal"
 
 #include <errno.h>
 #include <ctype.h>
@@ -25,6 +25,7 @@
 #include <utils/Log.h>
 #include <hardware/hardware.h>
 #include <hardware/thermal.h>
+#include "nxclient.h"
 
 #define MAX_LENGTH              50
 
@@ -32,27 +33,70 @@
 #define TEMPERATURE_DIR         "/sys/class/thermal"
 #define THERMAL_DIR             "thermal_zone"
 #define CPU_ONLINE_FILE_FORMAT  "/sys/devices/system/cpu/cpu%d/online"
-#define SHUTDOWN_TEMPERATURE    125.0
-#define THROTTLE_TEMPERATURE    110.0
 
-const char *CPU_LABEL[] = {"CPU0", "CPU1", "CPU2", "CPU3", "CPU4", "CPU5", "CPU6", "CPU7"};
+extern "C" void* nxwrap_create_client(void **wrap);
+extern "C" void nxwrap_destroy_client(void *wrap);
+static void *nxWrap = NULL;
+static NxClient_ThermalConfiguration nxThermalCfg;
+static bool nxThermal = false;
+
+// in practice, we only support a single thermal zone at the moment: cpu.
+const char *ZONE_LABEL[] = {"CPU", "UNK"};
+const size_t ZONE_LABEL_NUM = sizeof(ZONE_LABEL) / sizeof(ZONE_LABEL[0]);
+
+const char *CPU_LABEL[] = {"CPU0", "CPU1", "CPU2", "CPU3"};
 const size_t CPU_LABEL_NUM = sizeof(CPU_LABEL) / sizeof(CPU_LABEL[0]);
+
+static void nexus_print_thermal_config(NxClient_ThermalConfiguration *config) {
+   NxClient_ThermalStatus status;
+   unsigned i;
+
+   NxClient_GetThermalStatus(&status);
+   ALOGI("ct  : %u", status.temperature);
+   if (!status.activeTempThreshold) {
+      ALOGI("no active temp threshold defined - no action applied");
+      return;
+   }
+   if (NxClient_GetThermalConfiguration(status.activeTempThreshold, config)) {
+      return;
+   }
+   ALOGI("at  : %u", status.activeTempThreshold);
+   ALOGI("ott : %u", config->overTempThreshold);
+   ALOGI("tt  : %u", config->overTempThreshold - config->hysteresis);
+   ALOGI("otr : %u", config->overTempReset);
+   ALOGI("opt : %u", config->overPowerThreshold);
+   ALOGI("pi  : %u", config->pollInterval);
+   ALOGI("td  : %u", config->tempDelay);
+   ALOGI("tj  : %u", config->thetaJC);
+   ALOGI("ag ::: use");
+   for (i=0; i<sizeof(config->priorityTable)/sizeof(config->priorityTable[0]); i++) {
+      if (!config->priorityTable[i].agent) break;
+      ALOGI("%u ::: %u",
+            config->priorityTable[i].agent,
+            status.priorityTable[i].inUse);
+   }
+}
 
 static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t size) {
     char file_name[MAX_LENGTH];
     FILE *file;
-    float temp;
+    float temp, tt, st;
     size_t idx = 0;
     DIR *dir;
     struct dirent *de;
 
-    /** Read all available temperatures from
-     * /sys/class/thermal/thermal_zone[0-9]+/temp files.
-     * Don't guarantee that all temperatures are in Celsius. */
     dir = opendir(TEMPERATURE_DIR);
     if (dir == 0) {
         ALOGE("%s: failed to open directory %s: %s", __func__, TEMPERATURE_DIR, strerror(-errno));
         return -errno;
+    }
+
+    // if nexus thermal is in place, report the proper threshold.
+    tt = UNKNOWN_TEMPERATURE;
+    st = UNKNOWN_TEMPERATURE;
+    if (nxThermal) {
+       tt = (float)nxThermalCfg.overTempThreshold / 1000;
+       st = (float)nxThermalCfg.overTempReset / 1000;
     }
 
     while ((de = readdir(dir))) {
@@ -70,21 +114,21 @@ static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t 
 
             temp = temp/1000; /* Convert from millicelsius to celsius*/
 
-            if (idx >= CPU_LABEL_NUM) {
+            if (idx >= ZONE_LABEL_NUM) {
                 /* Should never happen but bailing just in case */
-                ALOGE("%s: out of cpu labels", __func__);
+                ALOGE("%s: out of zone labels", __func__);
                 closedir(dir);
                 return -EPERM;
             }
 
             if (list != NULL && idx < size) {
                 list[idx] = (temperature_t) {
-                    .name = CPU_LABEL[idx],
-                    .type = DEVICE_TEMPERATURE_CPU,
-                    .current_value = temp,
-                    .throttling_threshold = THROTTLE_TEMPERATURE,
-                    .shutdown_threshold = SHUTDOWN_TEMPERATURE,
-                    .vr_throttling_threshold = UNKNOWN_TEMPERATURE,
+                    .name                    = ZONE_LABEL[idx],
+                    .type                    = DEVICE_TEMPERATURE_CPU, /* only device supported. */
+                    .current_value           = temp,
+                    .throttling_threshold    = tt,
+                    .shutdown_threshold      = st,
+                    .vr_throttling_threshold = UNKNOWN_TEMPERATURE,    /* not applicable. */
                 };
             }
             idx++;
@@ -162,9 +206,9 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
 
         if (list != NULL) {
             list[size] = (cpu_usage_t) {
-                .name = CPU_LABEL[cpu_num],
-                .active = active,
-                .total = total,
+                .name      = CPU_LABEL[cpu_num],
+                .active    = active,
+                .total     = total,
                 .is_online = static_cast<bool>(online)
             };
         }
@@ -180,22 +224,94 @@ static ssize_t get_cooling_devices(thermal_module_t *, cooling_device_t *, size_
     return 0;
 }
 
+static void nexus_thermal_callback(
+   void *context,
+   int param) {
+
+   (void)context;
+   (void)param;
+
+   ALOGE("nexus_thermal_callback called.");
+}
+
+static void nexus_config_callback(
+   void *context,
+   int param) {
+
+   (void)context;
+   (void)param;
+
+   // TODO: who did that?  we do not allow|expose this currently.
+   ALOGW("nexus thermal - configuration changed, really??");
+
+   // change in thermal configuration.
+   NxClient_ThermalStatus status;
+   NxClient_GetThermalStatus(&status);
+   NxClient_GetThermalConfiguration(status.activeTempThreshold, &nxThermalCfg);
+   nexus_print_thermal_config(&nxThermalCfg);
+}
+
+static int thermal_open(
+   const hw_module_t* module,
+   const char* name,
+   hw_device_t** device) {
+
+   (void)module;
+
+   NxClient_ThermalStatus s;
+   NxClient_CallbackThreadSettings cts;
+   NEXUS_Error rc;
+
+   if (strcmp(name, THERMAL_HARDWARE_MODULE_ID) != 0)
+      return -EINVAL;
+
+   void *nexus_client = nxwrap_create_client(&nxWrap);
+   if (nexus_client == NULL) {
+      ALOGE("failed to alloc thermal nexus client, aborting.");
+      return -EINVAL;
+   }
+
+   NxClient_GetThermalStatus(&s);
+   if (s.activeTempThreshold) {
+      rc = NxClient_GetThermalConfiguration(s.activeTempThreshold, &nxThermalCfg);
+      if (rc == 0) {
+         nxThermal = true;
+         nexus_print_thermal_config(&nxThermalCfg);
+      }
+   }
+
+   ALOGI("nexus thermal: %s.",
+         nxThermal ? "in use" : "invalid, using default");
+
+   NxClient_GetDefaultCallbackThreadSettings(&cts);
+   cts.coolingAgentChanged.callback  = nexus_thermal_callback;
+   cts.coolingAgentChanged.context   = (void *)module;
+   cts.thermalConfigChanged.callback = nexus_config_callback;
+   cts.thermalConfigChanged.context  = (void *)module;
+   rc = NxClient_StartCallbackThread(&cts);
+
+   *device = NULL;
+   return 0;
+}
+
 static struct hw_module_methods_t thermal_module_methods = {
-    .open = NULL,
+    .open = thermal_open,
 };
 
-thermal_module_t HAL_MODULE_INFO_SYM = {
+thermal_module_t HAL_MODULE_INFO_SYM
+__attribute__ ((visibility ("default"))) = {
     .common = {
-        .tag = HARDWARE_MODULE_TAG,
-        .module_api_version = THERMAL_HARDWARE_MODULE_API_VERSION_0_1,
-        .hal_api_version = HARDWARE_HAL_API_VERSION,
-        .id = THERMAL_HARDWARE_MODULE_ID,
-        .name = "bcm_platform thermal module",
-        .author = "Broadcom Limited",
-        .methods = &thermal_module_methods,
+      .tag                = HARDWARE_MODULE_TAG,
+      .module_api_version = THERMAL_HARDWARE_MODULE_API_VERSION_0_1,
+      .hal_api_version    = HARDWARE_HAL_API_VERSION,
+      .id                 = THERMAL_HARDWARE_MODULE_ID,
+      .name               = "bcm_platform thermal module",
+      .author             = "Broadcom Canada",
+      .methods            = &thermal_module_methods,
+      .dso                = 0,
+      .reserved           = {},
     },
-
-    .getTemperatures = get_temperatures,
-    .getCpuUsages = get_cpu_usages,
-    .getCoolingDevices = get_cooling_devices,
+    .getTemperatures      = get_temperatures,
+    .getCpuUsages         = get_cpu_usages,
+    .getCoolingDevices    = get_cooling_devices,
 };

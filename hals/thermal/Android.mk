@@ -14,15 +14,33 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
+LOCAL_SHARED_LIBRARIES += libnexus libnxclient libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+else
+LOCAL_SHARED_LIBRARIES += libbinder
+endif
 
 LOCAL_SRC_FILES := thermal.cpp
 LOCAL_MODULE := thermal.$(TARGET_BOARD_PLATFORM)
