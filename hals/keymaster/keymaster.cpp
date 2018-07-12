@@ -313,6 +313,7 @@ out_fin:
    }
    SAGE_Manufacturing_Uninit();
 out:
+   ALOGW("km_fallback: exit with code %x (%u)", km_err, km_err);
    return km_err;
 }
 
@@ -324,11 +325,14 @@ static int km_init(struct bcm_km *km_hdl) {
       return 0;
    }
 
+   ALOGI_IF(KM_LOG_ALL_IN, "km_init: starting tl-side.");
    KeymasterTl_GetDefaultInitSettings(&km_hdl->is);
    km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
    if (km_err != BERR_SUCCESS) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl error'ed out: %x (%u).", km_err, km_err);
       if (km_err == BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND) {
          km_err = km_fallback(km_hdl);
+         ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl fallback: %x (%u).", km_err, km_err);
          if (km_err == BERR_SUCCESS) {
             memset(km_hdl->is.drm_binfile_path, 0,
                    sizeof(km_hdl->is.drm_binfile_path));
@@ -338,6 +342,7 @@ static int km_init(struct bcm_km *km_hdl) {
             km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
          }
       }
+      ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl final: (%x) %u.", km_err, km_err);
       property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
       return km_berr_2_interr(km_err);
    }
@@ -808,6 +813,10 @@ static keymaster_error_t km_import_key(
    if (!set.Contains(TAG_CREATION_DATETIME)) {
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
    }
+   // insert a key size tag if none specified.
+   if (!set.Contains(TAG_KEY_SIZE)) {
+      KM_Tag_AddInteger(km_params, SKM_TAG_KEY_SIZE, key_data->data_length);
+   }
    KeymasterTl_ImportKeySettings km_import;
    KeymasterTl_GetDefaultImportKeySettings(&km_import);
    km_import.in_key_params = km_params;
@@ -1020,6 +1029,11 @@ static keymaster_error_t km_attest_key(
    size_t serial_len = set.SerializedSize();
    UniquePtr<uint8_t[]> serial(new uint8_t[serial_len]);
    set.Serialize(serial.get(), serial.get() + serial_len);
+   if (!set.Contains(TAG_ATTESTATION_APPLICATION_ID)) {
+      ALOGE("km_attest_key: missing TAG_ATTESTATION_APPLICATION_ID");
+      return KM_ERROR_ATTESTATION_APPLICATION_ID_MISSING;
+   }
+
    BERR_Code km_err;
    KM_Tag_ContextHandle km_params = NULL;
    int i;
