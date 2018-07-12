@@ -474,13 +474,15 @@ static NEXUS_PixelFormat gr2nx_pixel(
 
    switch (gr) {
    case HAL_PIXEL_FORMAT_RGBA_8888: return NEXUS_PixelFormat_eA8_B8_G8_R8;
-   case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: /* fall through. */
+   case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: /* fall-thru */
    case HAL_PIXEL_FORMAT_RGBX_8888: return NEXUS_PixelFormat_eX8_B8_G8_R8;
-   case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
    case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
    case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
    case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
-   default:                         break;
+   case HAL_PIXEL_FORMAT_RGB_888: // NEXUS_PixelFormat_eR8_G8_B8; - not support in g2d
+   case HAL_PIXEL_FORMAT_RGBA_FP16: // NEXUS_PixelFormat_eAf16_Bf16_Gf16_Rf16 - no support in g2d
+   case HAL_PIXEL_FORMAT_RGBA_1010102: // NEXUS_PixelFormat_eA2_B10_G10_R10- no support in g2d
+   default: break;
    }
 
    ALOGE("[gr2nx]: unsupported format %d", gr);
@@ -2874,6 +2876,34 @@ static int32_t hwc2_dspcSupp(
    return ret;
 }
 
+static int32_t hwc2_bufSupp(
+   struct hwc2_bcm_device_t *hwc2,
+   buffer_handle_t buf) {
+
+   if (buf == NULL) {
+      return HWC2_ERROR_NONE;
+   }
+
+   hwc2_error_t ret = HWC2_ERROR_NONE;
+   NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
+   NEXUS_MemoryBlockHandle bh = NULL;
+   PSHARED_DATA shared = NULL;
+   void *map = NULL;
+   private_handle_t::get_block_handles((private_handle_t *)buf, &bh, NULL);
+   lrc = hwc2_mem_lock(hwc2, bh, &map);
+   shared = (PSHARED_DATA) map;
+   if ((lrc == NEXUS_SUCCESS) && (shared != NULL)) {
+      if (gr2nx_pixel(shared->container.format) == NEXUS_PixelFormat_eUnknown) {
+         ret = HWC2_ERROR_UNSUPPORTED;
+      }
+   }
+   if (lrc == NEXUS_SUCCESS) {
+      hwc2_mem_unlock(hwc2, bh);
+   }
+
+   return ret;
+}
+
 static int32_t hwc2_sclSupp(
    struct hwc2_bcm_device_t *hwc2,
    hwc_rect_t *src,
@@ -4476,6 +4506,15 @@ static uint32_t hwc2_comp_validate(
          if (ret != HWC2_ERROR_NONE) {
             ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
                "lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)",
+               lyr->hdl,
+               getCompositionName(HWC2_COMPOSITION_DEVICE),
+               getCompositionName(HWC2_COMPOSITION_CLIENT));
+            lyr->cDev = HWC2_COMPOSITION_CLIENT;
+         }
+         ret = (hwc2_error_t)hwc2_bufSupp(hwc2, lyr->bh);
+         if (ret != HWC2_ERROR_NONE) {
+            ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
+               "lyr[%" PRIu64 "]:%s->%s (buffer format not supported)",
                lyr->hdl,
                getCompositionName(HWC2_COMPOSITION_DEVICE),
                getCompositionName(HWC2_COMPOSITION_CLIENT));

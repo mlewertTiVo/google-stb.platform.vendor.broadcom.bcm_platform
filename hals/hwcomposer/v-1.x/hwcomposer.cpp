@@ -1208,12 +1208,11 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
-          "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
+          "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,sz:%d}::use:0x%x\n",
           client->grhdl,
           gr_buffer->flags,
           gr_buffer->pid,
           gr_buffer->oglStride,
-          gr_buffer->oglFormat,
           gr_buffer->oglSize,
           gr_buffer->usage);
 
@@ -1302,12 +1301,11 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
-           "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
+           "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,sz:%d}::use:0x%x\n",
            client->last.grhdl,
            gr_buffer->flags,
            gr_buffer->pid,
            gr_buffer->oglStride,
-           gr_buffer->oglFormat,
            gr_buffer->oglSize,
            gr_buffer->usage);
 
