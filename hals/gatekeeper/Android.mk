@@ -1,7 +1,9 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+
+ifeq ($(ANDROID_SUPPORTS_KEYMASTER),y)
+ifeq ($(SAGE_SUPPORT),y)
 
 LOCAL_SRC_FILES := gk.cpp
 
@@ -52,3 +54,7 @@ LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_MODULE := gatekeeper.$(TARGET_BOARD_PLATFORM)
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif
+endif
+

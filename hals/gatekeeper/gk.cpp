@@ -93,7 +93,7 @@ done:
    return true;
 }
 #else
-static bool km_chip_zb(void) {
+static bool gk_chip_zb(void) {
    NEXUS_OtpMspRead readMsp0;
    NEXUS_OtpMspRead readMsp1;
    uint32_t Msp0Data;
