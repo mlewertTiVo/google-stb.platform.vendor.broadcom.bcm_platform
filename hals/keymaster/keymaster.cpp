@@ -488,6 +488,7 @@ static keymaster_error_t km_generate_key(
    hw_authenticator_type_t km_authtype;
    uint64_t km_secid;
    uint32_t km_timeout;
+   bool insert_no_auth = false;
    memset(&km_key, 0, sizeof(km_key));
 
    AuthorizationSet set;
@@ -522,8 +523,8 @@ static keymaster_error_t km_generate_key(
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_USER_SECURE_ID, value: %llu", km_secid);
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_USER_AUTH_TYPE, value: %u", km_authtype);
    } else {
-      ALOGE("km_generate_key: missing mandatory (TAG_USER_SECURE_ID,TAG_USER_AUTH_TYPE)|TAG_NO_AUTH_REQUIRED,");
-      return KM_ERROR_INVALID_ARGUMENT;
+      ALOGW("km_generate_key: missing mandatory (TAG_USER_SECURE_ID,TAG_USER_AUTH_TYPE)|TAG_NO_AUTH_REQUIRED (insert)");
+      insert_no_auth = true;
    }
    // recommended: KM_TAG_AUTH_TIMEOUT, unless KM_TAG_NO_AUTH_REQUIRED
    if (set.GetTagValue(TAG_AUTH_TIMEOUT, &km_timeout)) {
@@ -539,6 +540,10 @@ static keymaster_error_t km_generate_key(
       ALOGE("km_generate_key: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
+   }
+   // insert 'no auth required' if nothing specified.
+   if (insert_no_auth) {
+      KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
    }
    // insert a "all applications" tag if none specified.
    if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
@@ -769,6 +774,9 @@ static keymaster_error_t km_import_key(
    keymaster_key_characteristics_t* characteristics) {
 
    keymaster2_device_t* km_dev = (keymaster2_device_t *)dev;
+   hw_authenticator_type_t km_authtype;
+   uint64_t km_secid;
+   bool insert_no_auth = false;
    struct bcm_km *km_hdl =(struct bcm_km *)km_dev->context;
    if (km_hdl == NULL) {
       ALOGE("km_import_key: null bcm-km handle?!");
@@ -793,6 +801,18 @@ static keymaster_error_t km_import_key(
       ALOGE("km_import_key: failed to build set for in params");
       return KM_ERROR_UNKNOWN_ERROR;
    }
+   // validate inputs.
+   // mandatory: (KM_TAG_USER_SECURE_ID and KM_TAG_USER_AUTH_TYPE) or KM_TAG_NO_AUTH_REQUIRED
+   if (set.GetTagValue(TAG_NO_AUTH_REQUIRED)) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_NO_AUTH_REQUIRED");
+   } else if (set.GetTagValue(TAG_USER_SECURE_ID, &km_secid) &&
+              set.GetTagValue(TAG_USER_AUTH_TYPE, &km_authtype)) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_USER_SECURE_ID, value: %llu", km_secid);
+      ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_USER_AUTH_TYPE, value: %u", km_authtype);
+   } else {
+      ALOGW("km_import_key: missing mandatory (TAG_USER_SECURE_ID,TAG_USER_AUTH_TYPE)|TAG_NO_AUTH_REQUIRED (insert)");
+      insert_no_auth = true;
+   }
    size_t serial_len = set.SerializedSize();
    UniquePtr<uint8_t[]> serial(new uint8_t[serial_len]);
    set.Serialize(serial.get(), serial.get() + serial_len);
@@ -804,6 +824,10 @@ static keymaster_error_t km_import_key(
       ALOGE("km_import_key: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
+   }
+   // insert 'no auth required' if nothing specified.
+   if (insert_no_auth) {
+      KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
    }
    // insert a "all applications" tag if none specified.
    if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
