@@ -48,6 +48,7 @@ extern "C" {
 #else
 #include "nexus_otp_msp.h"
 #endif
+#include "nexus_security.h"
 }
 
 extern "C" void* nxwrap_create_verified_client(void **wrap);
@@ -64,6 +65,45 @@ struct bcm_km {
    uint8_t *fbkCfg;
    size_t fbkSize;
 };
+
+struct km_op_s {
+   km_operation_handle_t op;
+   NEXUS_KeySlotHandle ks;
+};
+
+static NEXUS_KeySlotHandle km_ks_alloc(
+   void) {
+   NEXUS_KeySlotHandle ks = NULL;
+#if (NEXUS_SECURITY_API_VERSION==1)
+   NEXUS_SecurityKeySlotSettings kss;
+   NEXUS_Security_GetDefaultKeySlotSettings(&kss);
+   kss.client = NEXUS_SecurityClientType_eSage;
+   kss.keySlotEngine = NEXUS_SecurityEngine_eM2m;
+   ks = NEXUS_Security_AllocateKeySlot(&kss);
+#else
+   NEXUS_KeySlotAllocateSettings kss;
+   NEXUS_KeySlot_GetDefaultAllocateSettings(&kss);
+   kss.useWithDma = true;
+   kss.owner = NEXUS_SecurityCpuContext_eSage;
+   kss.slotType = NEXUS_KeySlotType_eIvPerSlot;
+   ks = NEXUS_KeySlot_Allocate(&kss);
+#endif
+   if (ks == NULL) {
+      ALOGE("km_ks_alloc: failed allocating keyslot.");
+   }
+   return ks;
+}
+
+static void km_ks_free(
+   NEXUS_KeySlotHandle ks) {
+   if (ks == NULL) return;
+#if (NEXUS_SECURITY_API_VERSION==1)
+   NEXUS_Security_FreeKeySlot(ks);
+#else
+   NEXUS_KeySlot_Invalidate(ks);
+   NEXUS_KeySlot_Free(ks);
+#endif
+}
 
 static uint8_t *km_dup_2_kmblob(
    uint8_t *buffer,
@@ -1253,15 +1293,32 @@ static keymaster_error_t km_begin(
       ALOGE("km_begin: null operation handle?!");
       return KM_ERROR_OUTPUT_PARAMETER_NULL;
    }
+   struct km_op_s *km_op =
+      reinterpret_cast<struct km_op_s*>(malloc(sizeof(struct km_op_s)));
+   if (km_op == NULL) {
+      ALOGE("km_begin: failed allocating km_op");
+      return KM_ERROR_UNEXPECTED_NULL_POINTER;
+   }
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
-   if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   if (km_init_err) {
+      free(km_op);
+      return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   }
+
+   NEXUS_KeySlotHandle ks = km_ks_alloc();
+   if (ks == NULL) {
+      free(km_op);
+      return KM_ERROR_UNEXPECTED_NULL_POINTER;
+   }
 
    AuthorizationSet set;
    set.Reinitialize(*in_params);
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_begin: failed to build set for in params");
+      km_ks_free(ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    size_t serial_len = set.SerializedSize();
@@ -1271,6 +1328,8 @@ static keymaster_error_t km_begin(
    KM_Tag_ContextHandle km_params = NULL;
    km_err = KM_Tag_CreateContextFromAndroidBlob(serial.get(), serial.get() + serial_len, &km_params);
    if (km_err != BERR_SUCCESS) {
+      km_ks_free(ks);
+      free(km_op);
       ALOGE("km_begin: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
@@ -1280,11 +1339,14 @@ static keymaster_error_t km_begin(
    km_operation_handle_t km_out_hdl;
    KeymasterTl_GetDefaultCryptoBeginSettings(&km_cbs);
    km_cbs.purpose = (km_purpose_t)purpose;
+   km_cbs.hKeyslot = ks;
    km_cbs.in_key_blob.size = key->key_material_size;
    km_cbs.in_key_blob.buffer = (uint8_t *)key->key_material;
    km_cbs.in_params = km_params;
    km_err = KeymasterTl_CryptoBegin(km_hdl->handle, &km_cbs, &km_out_hdl);
    if (km_err != BERR_SUCCESS) {
+      km_ks_free(ks);
+      free(km_op);
       if (km_cbs.in_params) KM_Tag_DeleteContext(km_cbs.in_params);
       ALOGE("km_begin: failed crypto operation: begin, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1316,7 +1378,10 @@ static keymaster_error_t km_begin(
       }
       KM_Tag_DeleteContext(km_cbs.out_params);
    }
-   *operation_handle = (keymaster_operation_handle_t)km_out_hdl;
+
+   km_op->ks = ks;
+   km_op->op = km_out_hdl;
+   *operation_handle = (keymaster_operation_handle_t)km_op;
 
    return KM_ERROR_OK;
 }
@@ -1332,27 +1397,41 @@ static keymaster_error_t km_update(
 
    keymaster2_device_t* km_dev = (keymaster2_device_t *)dev;
    struct bcm_km *km_hdl =(struct bcm_km *)km_dev->context;
+   struct km_op_s *km_op =
+      reinterpret_cast<struct km_op_s*>(operation_handle);
    if (km_hdl == NULL) {
       ALOGE("km_update: null bcm-km handle?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    if (!input) {
       ALOGE("km_update: null input?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
    if (!input_consumed) {
       ALOGE("km_update: null input consumed?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_OUTPUT_PARAMETER_NULL;
    }
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
-   if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   if (km_init_err) {
+      km_ks_free(km_op->ks);
+      free(km_op);
+      return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   }
 
    AuthorizationSet set;
    set.Reinitialize(*in_params);
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_update: failed to build set for in params");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    size_t serial_len = set.SerializedSize();
@@ -1364,6 +1443,8 @@ static keymaster_error_t km_update(
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_update: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
+      km_ks_free(km_op->ks);
+      free(km_op);
       return km_berr_2_kmerr(km_err);
    }
 
@@ -1372,8 +1453,10 @@ static keymaster_error_t km_update(
    km_cus.in_params = km_params;
    km_cus.in_data.buffer = (uint8_t *)input->data;
    km_cus.in_data.size = input->data_length;
-   km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, operation_handle, &km_cus);
+   km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
    if (km_err != BERR_SUCCESS) {
+      km_ks_free(km_op->ks);
+      free(km_op);
       if (km_cus.in_params) KM_Tag_DeleteContext(km_cus.in_params);
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1411,6 +1494,8 @@ static keymaster_error_t km_update(
          output->data_length = km_cus.out_data.size;
          output->data = km_dup_2_kmblob(km_cus.out_data.buffer, km_cus.out_data.size);
          if (!output->data) {
+            km_ks_free(km_op->ks);
+            free(km_op);
             if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
             ALOGE("km_finish: failed copying generated key");
             return KM_ERROR_MEMORY_ALLOCATION_FAILED;
@@ -1433,27 +1518,42 @@ static keymaster_error_t km_finish(
 
    keymaster2_device_t* km_dev = (keymaster2_device_t *)dev;
    struct bcm_km *km_hdl =(struct bcm_km *)km_dev->context;
+   struct km_op_s *km_op =
+      reinterpret_cast<struct km_op_s*>(operation_handle);
+
    if (km_hdl == NULL) {
       ALOGE("km_finish: null bcm-km handle?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    if (!input) {
       ALOGE("km_finish: null input?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
    if (input->data_length > km_hdl->maxFinishInput) {
       ALOGE("km_finish: oversized input?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_INVALID_INPUT_LENGTH;
    }
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
-   if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   if (km_init_err) {
+      km_ks_free(km_op->ks);
+      free(km_op);
+      return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   }
 
    AuthorizationSet set;
    set.Reinitialize(*in_params);
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_finish: failed to build set for in params");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    size_t serial_len = set.SerializedSize();
@@ -1465,6 +1565,8 @@ static keymaster_error_t km_finish(
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_finish: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
+      km_ks_free(km_op->ks);
+      free(km_op);
       return km_berr_2_kmerr(km_err);
    }
 
@@ -1475,8 +1577,10 @@ static keymaster_error_t km_finish(
    km_cfs.in_signature.size = signature->data_length;
    km_cfs.in_data.buffer = (uint8_t *)input->data;
    km_cfs.in_data.size = input->data_length;
-   km_err = KeymasterTl_CryptoFinish(km_hdl->handle, operation_handle, &km_cfs);
+   km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
    if (km_err != BERR_SUCCESS) {
+      km_ks_free(km_op->ks);
+      free(km_op);
       if (km_cfs.in_params) KM_Tag_DeleteContext(km_cfs.in_params);
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1513,6 +1617,8 @@ static keymaster_error_t km_finish(
          output->data_length = km_cfs.out_data.size;
          output->data = km_dup_2_kmblob(km_cfs.out_data.buffer, km_cfs.out_data.size);
          if (!output->data) {
+            km_ks_free(km_op->ks);
+            free(km_op);
             if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
             ALOGE("km_finish: failed copying generated key");
             return KM_ERROR_MEMORY_ALLOCATION_FAILED;
@@ -1521,6 +1627,8 @@ static keymaster_error_t km_finish(
       if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
    }
 
+   km_ks_free(km_op->ks);
+   free(km_op);
    return KM_ERROR_OK;
 }
 
@@ -1530,23 +1638,35 @@ static keymaster_error_t km_abort(
 
    keymaster2_device_t* km_dev = (keymaster2_device_t *)dev;
    struct bcm_km *km_hdl =(struct bcm_km *)km_dev->context;
+   struct km_op_s *km_op =
+      reinterpret_cast<struct km_op_s*>(operation_handle);
    if (km_hdl == NULL) {
       ALOGE("km_abort: null bcm-km handle?!");
+      km_ks_free(km_op->ks);
+      free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
-   if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   if (km_init_err) {
+      km_ks_free(km_op->ks);
+      free(km_op);
+      return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   }
 
    BERR_Code km_err;
-   km_err = KeymasterTl_CryptoAbort(km_hdl->handle, operation_handle);
+   km_err = KeymasterTl_CryptoAbort(km_hdl->handle, km_op->op);
    if (km_err != BERR_SUCCESS) {
+      km_ks_free(km_op->ks);
+      free(km_op);
       ALOGE("km_abort: failed operation, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
 
+   km_ks_free(km_op->ks);
+   free(km_op);
    return KM_ERROR_OK;
 }
 
