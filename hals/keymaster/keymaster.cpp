@@ -51,6 +51,8 @@ extern "C" {
 #include "nexus_security.h"
 }
 
+#define KM_OUT_DATA_SZ (4*4096)
+
 extern "C" void* nxwrap_create_verified_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
 
@@ -112,6 +114,19 @@ static uint8_t *km_dup_2_kmblob(
       return NULL;
    }
    uint8_t *dup = reinterpret_cast<uint8_t*>(malloc(size));
+   if (dup) {
+      memcpy(dup, buffer, size);
+   }
+   return dup;
+}
+
+static uint8_t *km_dup_2_srai(
+   const uint8_t *buffer,
+   uint32_t size) {
+   if (size == 0 || buffer == NULL) {
+      return NULL;
+   }
+   uint8_t *dup = (uint8_t *)SRAI_Memory_Allocate(size, SRAI_MemoryType_Shared);
    if (dup) {
       memcpy(dup, buffer, size);
    }
@@ -1451,17 +1466,30 @@ static keymaster_error_t km_update(
    KeymasterTl_CryptoUpdateSettings km_cus;
    KeymasterTl_GetDefaultCryptoUpdateSettings(&km_cus);
    km_cus.in_params = km_params;
-   km_cus.in_data.buffer = (uint8_t *)input->data;
+   km_cus.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
    km_cus.in_data.size = input->data_length;
+   km_cus.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
+   km_cus.out_data.size = KM_OUT_DATA_SZ;
+   if (!km_cus.in_data.buffer || !km_cus.out_data.buffer) {
+      ALOGE("km_update: failed allocating srai buffers");
+      km_ks_free(km_op->ks);
+      free(km_op);
+      if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
+      if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
+      return KM_ERROR_MEMORY_ALLOCATION_FAILED;
+   }
    km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       free(km_op);
+      if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
+      if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
       if (km_cus.in_params) KM_Tag_DeleteContext(km_cus.in_params);
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
+   if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
    if (km_cus.in_params) KM_Tag_DeleteContext(km_cus.in_params);
    *input_consumed = km_cus.out_input_consumed;
    if (km_cus.out_params && KM_Tag_GetNumPairs(km_cus.out_params)) {
@@ -1573,19 +1601,35 @@ static keymaster_error_t km_finish(
    KeymasterTl_CryptoFinishSettings km_cfs;
    KeymasterTl_GetDefaultCryptoFinishSettings(&km_cfs);
    km_cfs.in_params = km_params;
-   km_cfs.in_signature.buffer = (uint8_t *)signature->data;
+   km_cfs.in_signature.buffer = km_dup_2_srai(signature->data, signature->data_length);
    km_cfs.in_signature.size = signature->data_length;
-   km_cfs.in_data.buffer = (uint8_t *)input->data;
+   km_cfs.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
    km_cfs.in_data.size = input->data_length;
+   km_cfs.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
+   km_cfs.out_data.size = KM_OUT_DATA_SZ;
+   if (!km_cfs.in_data.buffer || !km_cfs.in_signature.buffer || !km_cfs.out_data.buffer) {
+      ALOGE("km_finish: failed allocating srai buffers");
+      km_ks_free(km_op->ks);
+      free(km_op);
+      if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
+      if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
+      if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
+      return KM_ERROR_MEMORY_ALLOCATION_FAILED;
+   }
    km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       free(km_op);
+      if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
+      if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
+      if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
       if (km_cfs.in_params) KM_Tag_DeleteContext(km_cfs.in_params);
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
+   if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
+   if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
    if (km_cfs.in_params) KM_Tag_DeleteContext(km_cfs.in_params);
    if (km_cfs.out_params && KM_Tag_GetNumPairs(km_cfs.out_params)) {
       if (out_params) {
@@ -1619,6 +1663,8 @@ static keymaster_error_t km_finish(
          if (!output->data) {
             km_ks_free(km_op->ks);
             free(km_op);
+            if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
+            if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
             if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
             ALOGE("km_finish: failed copying generated key");
             return KM_ERROR_MEMORY_ALLOCATION_FAILED;
