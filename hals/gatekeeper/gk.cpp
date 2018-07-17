@@ -35,6 +35,10 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
   *****************************************************************************/
+
+//#define LOG_NDEBUG 0
+#define GK_LOG_ALL_IN 1
+
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -63,8 +67,6 @@ struct bcm_gk {
    uint8_t *fbkCfg;
    size_t fbkSize;
 };
-
-struct bcm_gk *gk_hdl = NULL;
 
 extern "C" void* nxwrap_create_verified_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
@@ -228,11 +230,14 @@ static int gk_init(struct bcm_gk *gk_hdl) {
       return 0;
    }
 
+   ALOGI_IF(GK_LOG_ALL_IN, "gk_init: starting tl-side.");
    GatekeeperTl_GetDefaultInitSettings(&gk_hdl->is);
    gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
    if (gk_err != BERR_SUCCESS) {
+      ALOGI_IF(GK_LOG_ALL_IN, "gk_init: tl error'ed out: %x (%u).", gk_err, gk_err);
       if (gk_err == BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND) {
          gk_err = gk_fallback(gk_hdl);
+         ALOGI_IF(GK_LOG_ALL_IN, "gk_init: tl fallback: %x (%u).", gk_err, gk_err);
          if (gk_err == BERR_SUCCESS) {
             memset(gk_hdl->is.drm_binfile_path, 0,
                    sizeof(gk_hdl->is.drm_binfile_path));
@@ -242,6 +247,7 @@ static int gk_init(struct bcm_gk *gk_hdl) {
             gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
          }
       }
+      ALOGI_IF(GK_LOG_ALL_IN, "gk_init: tl final: (%x) %u.", gk_err, gk_err);
       return gk_berr_2_interr(gk_err);
    }
 
@@ -285,7 +291,7 @@ static int brcm_gk_enroll(
    }
    gk_pwd.size = desired_password_length;
    gk_pwd.buffer = (uint8_t *) desired_password;
-   gk_err = GatekeeperTl_Enroll(gk_hdl->handle, uid,
+   gk_err = GatekeeperTl_Enroll(gk_dev->handle, uid,
       gk_in_hdl_set ? &gk_in_hdl : NULL,   /* optional */
       gk_in_pwd_set ? &gk_orig_pwd : NULL, /* optional */
       &gk_pwd, &retry, &gk_out_hdl);
@@ -334,7 +340,7 @@ static int brcm_gk_verify(
    }
    gk_pwd.size = provided_password_length;
    gk_pwd.buffer = (uint8_t *) provided_password;
-   gk_err = GatekeeperTl_Verify(gk_hdl->handle, uid,
+   gk_err = GatekeeperTl_Verify(gk_dev->handle, uid,
       challenge, &gk_pwd_hdl, &gk_pwd, &retry, &gk_token);
    if (gk_err != BERR_SUCCESS) {
       ALOGE("gk_verify: failed, err: %u, retry: %u", gk_err, retry);
