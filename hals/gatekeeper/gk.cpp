@@ -360,23 +360,6 @@ static int brcm_gk_verify(
    return 0;
 }
 
-static int brcm_gk_del_u(
-   const struct gatekeeper_device *dev,
-   uint32_t uid) {
-
-   struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
-   ALOGW("brcm_gk_del_u(%u): no-op for gatekeeper %p", uid, gk_dev);
-   return 0;
-}
-
-static int brcm_gk_del_all_u(
-   const struct gatekeeper_device *dev) {
-
-   struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
-   ALOGW("brcm_gk_del_all_u: no-op for gatekeeper %p", gk_dev);
-   return 0;
-}
-
 static int brcm_gk_close(
    hw_device_t *dev) {
    struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
@@ -466,8 +449,8 @@ static int brcm_gk_open(
 
    gk_hdl->dev.enroll            = brcm_gk_enroll,
    gk_hdl->dev.verify            = brcm_gk_verify,
-   gk_hdl->dev.delete_user       = brcm_gk_del_u,
-   gk_hdl->dev.delete_all_users  = brcm_gk_del_all_u,
+   gk_hdl->dev.delete_user       = nullptr,
+   gk_hdl->dev.delete_all_users  = nullptr,
 
    *device = (hw_device_t*) &gk_hdl->dev.common;
    return 0;
