@@ -44,6 +44,7 @@
 
 typedef struct BOMX_SecBufferSt {
     uint8_t *pSecureBuff;
+    NEXUS_MemoryBlockHandle hSecureBuff;
     size_t clearBuffSize;
     size_t clearBuffOffset;
 } BOMX_SecBufferSt;
