@@ -1521,9 +1521,10 @@ static keymaster_error_t km_update(
    }
    if (km_cus.out_data.buffer && km_cus.out_data.size) {
       if (output) {
-         output->data_length = km_cus.out_data.size;
-         output->data = km_dup_2_kmblob(km_cus.out_data.buffer, km_cus.out_data.size);
+         output->data_length = km_cus.out_data_size;
+         output->data = km_dup_2_kmblob(km_cus.out_data.buffer, km_cus.out_data_size);
          if (!output->data) {
+            output->data_length = 0;
             km_ks_free(km_op->ks);
             free(km_op);
             if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
@@ -1670,9 +1671,10 @@ static keymaster_error_t km_finish(
    }
    if (km_cfs.out_data.buffer && km_cfs.out_data.size) {
       if (output) {
-         output->data_length = km_cfs.out_data.size;
-         output->data = km_dup_2_kmblob(km_cfs.out_data.buffer, km_cfs.out_data.size);
+         output->data_length = km_cfs.out_data_size;
+         output->data = km_dup_2_kmblob(km_cfs.out_data.buffer, km_cfs.out_data_size);
          if (!output->data) {
+            output->data_length = 0;
             km_ks_free(km_op->ks);
             free(km_op);
             if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
