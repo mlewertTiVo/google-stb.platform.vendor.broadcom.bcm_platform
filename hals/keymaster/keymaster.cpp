@@ -71,6 +71,7 @@ struct bcm_km {
 struct km_op_s {
    km_operation_handle_t op;
    NEXUS_KeySlotHandle ks;
+   keymaster_purpose_t p;
 };
 
 static NEXUS_KeySlotHandle km_ks_alloc(
@@ -1396,6 +1397,7 @@ static keymaster_error_t km_begin(
 
    km_op->ks = ks;
    km_op->op = km_out_hdl;
+   km_op->p = purpose;
    *operation_handle = (keymaster_operation_handle_t)km_op;
 
    return KM_ERROR_OK;
@@ -1607,8 +1609,18 @@ static keymaster_error_t km_finish(
    km_cfs.in_data.size = input->data_length;
    km_cfs.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
    km_cfs.out_data.size = KM_OUT_DATA_SZ;
-   if (!km_cfs.in_data.buffer || !km_cfs.in_signature.buffer || !km_cfs.out_data.buffer) {
+   if (!km_cfs.in_data.buffer || !km_cfs.out_data.buffer) {
       ALOGE("km_finish: failed allocating srai buffers");
+      km_ks_free(km_op->ks);
+      free(km_op);
+      if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
+      if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
+      if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
+      return KM_ERROR_MEMORY_ALLOCATION_FAILED;
+   }
+   if (!km_cfs.in_signature.buffer && (km_op->p == KM_PURPOSE_VERIFY)) {
+      // TODO: AEAD mode, KM_PURPOSE_DECRYPT implies KM_PURPOSE_VERIFY (?)
+      ALOGE("km_finish: failed allocating mandatory signature srai buffers");
       km_ks_free(km_op->ks);
       free(km_op);
       if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
