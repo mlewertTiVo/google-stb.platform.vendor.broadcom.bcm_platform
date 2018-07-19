@@ -404,6 +404,10 @@ static void hwc2_eotf(
             ALOGI("[eotf]: sdr.");
             s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
+         case HWC2_EOTF_INPUT:
+            ALOGI("[eotf]: input tracking.");
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eMax;
+         break;
          case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
@@ -6698,6 +6702,10 @@ static void hwc2_hb_ntfy(
       int i = (ntfy.surface_hdl-HWC2_VID_MAGIC);
       if (i >= 0 && i < HWC2_VID_WIN) {
          hwc2->rlpf[i] = true;
+      }
+      ALOGV("[ext]: active video client.");
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_INPUT);
       }
    }
    break;
