@@ -680,7 +680,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         BOMX_STRUCT_INIT(&portFormats[i]);
         portFormats[i].nIndex = i;
         portFormats[i].nPortIndex = m_audioPortBase+1;
-        portFormats[i].eEncoding = OMX_AUDIO_CodingUnused;
+        portFormats[i].eEncoding = OMX_AUDIO_CodingPCM;
     }
     m_pAudioPorts[1] = new BOMX_AudioPort(m_audioPortBase+1, OMX_DirOutput, B_NUM_BUFFERS, B_OUTPUT_BUFFER_SIZE, false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pAudioPorts[1] )
