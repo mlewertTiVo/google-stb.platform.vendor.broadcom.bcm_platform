@@ -300,7 +300,7 @@ static int brcm_gk_enroll(
       if (retry > 0) {
          return retry;
       }
-      return gk_err;
+      return gk_berr_2_interr(gk_err);
    }
    *enrolled_password_handle = new uint8_t[sizeof(gk_password_handle_t)];
    if (*enrolled_password_handle == NULL) {
@@ -347,7 +347,7 @@ static int brcm_gk_verify(
       if (retry > 0) {
          return retry;
       }
-      return gk_err;
+      return gk_berr_2_interr(gk_err);
    }
    *auth_token = new uint8_t[sizeof(km_hw_auth_token_t)];
    if (*auth_token == NULL) {
