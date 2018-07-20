@@ -1472,7 +1472,8 @@ static keymaster_error_t km_update(
    km_cus.in_data.size = input->data_length;
    km_cus.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
    km_cus.out_data.size = KM_OUT_DATA_SZ;
-   if (!km_cus.in_data.buffer || !km_cus.out_data.buffer) {
+   if ((!km_cus.in_data.buffer && input->data_length) ||
+       !km_cus.out_data.buffer) {
       ALOGE("km_update: failed allocating srai buffers");
       km_ks_free(km_op->ks);
       free(km_op);
@@ -1610,7 +1611,8 @@ static keymaster_error_t km_finish(
    km_cfs.in_data.size = input->data_length;
    km_cfs.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
    km_cfs.out_data.size = KM_OUT_DATA_SZ;
-   if (!km_cfs.in_data.buffer || !km_cfs.out_data.buffer) {
+   if ((!km_cfs.in_data.buffer && input->data_length) ||
+       !km_cfs.out_data.buffer) {
       ALOGE("km_finish: failed allocating srai buffers");
       km_ks_free(km_op->ks);
       free(km_op);
