@@ -1520,20 +1520,20 @@ static keymaster_error_t km_update(
       }
       KM_Tag_DeleteContext(km_cus.out_params);
    }
-   if (km_cus.out_data.buffer && km_cus.out_data.size) {
-      if (output) {
+   if (km_cus.out_data.buffer) {
+      if (km_cus.out_data_size && output) {
          output->data_length = km_cus.out_data_size;
          output->data = km_dup_2_kmblob(km_cus.out_data.buffer, km_cus.out_data_size);
          if (!output->data) {
             output->data_length = 0;
             km_ks_free(km_op->ks);
             free(km_op);
-            if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
+            SRAI_Memory_Free(km_cus.out_data.buffer);
             ALOGE("km_finish: failed copying generated key");
             return KM_ERROR_MEMORY_ALLOCATION_FAILED;
          }
       }
-      if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
+      SRAI_Memory_Free(km_cus.out_data.buffer);
    }
 
    return KM_ERROR_OK;
@@ -1621,7 +1621,8 @@ static keymaster_error_t km_finish(
       if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
       return KM_ERROR_MEMORY_ALLOCATION_FAILED;
    }
-   if (!km_cfs.in_signature.buffer && (km_op->p == KM_PURPOSE_VERIFY)) {
+   if (!km_cfs.in_signature.buffer &&
+       (signature->data_length || (km_op->p == KM_PURPOSE_VERIFY))) {
       // TODO: AEAD mode, KM_PURPOSE_DECRYPT implies KM_PURPOSE_VERIFY (?)
       ALOGE("km_finish: failed allocating mandatory signature srai buffers");
       km_ks_free(km_op->ks);
@@ -1671,8 +1672,8 @@ static keymaster_error_t km_finish(
       }
       KM_Tag_DeleteContext(km_cfs.out_params);
    }
-   if (km_cfs.out_data.buffer && km_cfs.out_data.size) {
-      if (output) {
+   if (km_cfs.out_data.buffer) {
+      if (km_cfs.out_data_size && output) {
          if (km_op->p == KM_PURPOSE_VERIFY) {
             ALOGD("km_finish: KM_PURPOSE_VERIFY: do not report output (cert).");
          } else {
@@ -1684,13 +1685,13 @@ static keymaster_error_t km_finish(
                free(km_op);
                if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
                if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
-               if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
+               SRAI_Memory_Free(km_cfs.out_data.buffer);
                ALOGE("km_finish: failed copying generated key");
                return KM_ERROR_MEMORY_ALLOCATION_FAILED;
             }
          }
       }
-      if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
+      SRAI_Memory_Free(km_cfs.out_data.buffer);
    }
 
    km_ks_free(km_op->ks);
