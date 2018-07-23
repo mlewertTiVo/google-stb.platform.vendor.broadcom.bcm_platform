@@ -5356,17 +5356,15 @@ int hwc2_blit_yv12(
 
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
-      if (!dsp->sfb) {
-         if ((*ms == hwc2_seeding_vid) ||
-             ((*ms == hwc2_seeding_gfx) &&
-              ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)))) {
-            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
-            hwc2_chkpt(hwc2);
-            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
-                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
-                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
-         }
+      if ((*ms == hwc2_seeding_vid) ||
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
+           ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)))) {
+         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                  "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                  (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                  dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
       }
       *ms = hwc2_seeding_none;
    }
@@ -5744,17 +5742,15 @@ int hwc2_blit_gpx(
 
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
-      if (!dsp->sfb) {
-         if ((*ms == hwc2_seeding_vid) ||
-             ((*ms == hwc2_seeding_gfx) &&
-              ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)))) {
-            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
-            hwc2_chkpt(hwc2);
-            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
-                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
-                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
-         }
+      if ((*ms == hwc2_seeding_vid) ||
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
+           ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)))) {
+         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                  "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                  (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                  dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
       }
       *ms = hwc2_seeding_none;
    }
