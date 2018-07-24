@@ -3208,6 +3208,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         m_adaptivePlaybackEnabled = pAdaptive->bEnable == OMX_TRUE ? true : false;
+        if ( m_metadataEnabled || !m_adaptivePlaybackEnabled )
+        {
+            ALOGI("Ignore setting prepareForAdaptivePlayback (%s)", m_metadataEnabled ? "metadata" : "non-adaptive" );
+            return OMX_ErrorNone;
+        }
+
         // Update crop and port format
         OMX_PARAM_PORTDEFINITIONTYPE portDef;
         m_pVideoPorts[1]->GetDefinition(&portDef);
