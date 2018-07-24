@@ -893,10 +893,6 @@ static keymaster_error_t km_import_key(
    if (!set.Contains(TAG_CREATION_DATETIME)) {
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
    }
-   // insert a key size tag if none specified.
-   if (!set.Contains(TAG_KEY_SIZE)) {
-      KM_Tag_AddInteger(km_params, SKM_TAG_KEY_SIZE, key_data->data_length);
-   }
    KeymasterTl_ImportKeySettings km_import;
    KeymasterTl_GetDefaultImportKeySettings(&km_import);
    km_import.in_key_params = km_params;
