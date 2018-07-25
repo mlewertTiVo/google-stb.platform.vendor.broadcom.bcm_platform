@@ -112,7 +112,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_EOTF_HDR10 1
 #define HWC2_EOTF_HLG   2
 #define HWC2_EOTF_SDR   3
-#define HWC2_EOTF_NS    4
+#define HWC2_EOTF_INPUT 4
+#define HWC2_EOTF_NS    5
 
 /* dump frames content for each composition, requires:
  *

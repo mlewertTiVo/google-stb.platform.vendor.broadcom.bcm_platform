@@ -404,6 +404,10 @@ static void hwc2_eotf(
             ALOGI("[eotf]: sdr.");
             s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
          break;
+         case HWC2_EOTF_INPUT:
+            ALOGI("[eotf]: input tracking.");
+            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eMax;
+         break;
          case HWC2_EOTF_NS:
          default:
             ALOGI("[eotf]: non-specific.");
@@ -5342,17 +5346,15 @@ int hwc2_blit_yv12(
 
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
-      if (!dsp->sfb) {
-         if ((*ms == hwc2_seeding_vid) ||
-             ((*ms == hwc2_seeding_gfx) &&
-              ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)))) {
-            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
-            hwc2_chkpt(hwc2);
-            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
-                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
-                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
-         }
+      if ((*ms == hwc2_seeding_vid) ||
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
+           ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)))) {
+         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                  "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                  (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                  dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
       }
       *ms = hwc2_seeding_none;
    }
@@ -5730,17 +5732,15 @@ int hwc2_blit_gpx(
 
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
-      if (!dsp->sfb) {
-         if ((*ms == hwc2_seeding_vid) ||
-             ((*ms == hwc2_seeding_gfx) &&
-              ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)))) {
-            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
-            hwc2_chkpt(hwc2);
-            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
-                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
-                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
-         }
+      if ((*ms == hwc2_seeding_vid) ||
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
+           ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)))) {
+         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                  "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                  (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                  dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
       }
       *ms = hwc2_seeding_none;
    }
@@ -6702,6 +6702,10 @@ static void hwc2_hb_ntfy(
       int i = (ntfy.surface_hdl-HWC2_VID_MAGIC);
       if (i >= 0 && i < HWC2_VID_WIN) {
          hwc2->rlpf[i] = true;
+      }
+      ALOGV("[ext]: active video client.");
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_INPUT);
       }
    }
    break;
