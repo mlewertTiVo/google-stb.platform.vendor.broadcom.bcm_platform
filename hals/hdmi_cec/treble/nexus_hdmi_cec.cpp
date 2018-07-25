@@ -814,8 +814,10 @@ status_t NexusHdmiCecDevice::initialise()
        goto out_error;
     }
     mLogicalAddress = cecStatus.logicalAddress;
-    if (cecStatus.ready) {
-       char looperName[] = "Hdmi Cec  x Message Looper";
+
+    if ((cecStatus.physicalAddress[0] != 0xFF) &&
+        (cecStatus.physicalAddress[1] != 0xFF)) {
+       char looperName[] = "Hdmi Cec Rx|Tx Msgs";
 
        looperName[9] = 'R';
        mHdmiCecRxMessageLooper = new ALooper;
