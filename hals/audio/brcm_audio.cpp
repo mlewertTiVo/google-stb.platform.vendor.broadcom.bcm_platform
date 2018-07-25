@@ -300,7 +300,7 @@ static int bout_set_parameters(struct audio_stream *stream,
                     } else if (!bout->tunneled) {
                         ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
                               __FUNCTION__, hw_sync_id);
-                        ret = -ENOENT;
+                        ret = -EINVAL;
                     }
                 }
             }
