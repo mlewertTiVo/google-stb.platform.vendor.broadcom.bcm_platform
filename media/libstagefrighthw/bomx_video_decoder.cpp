@@ -6116,6 +6116,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
                 return OMX_ErrorUnsupportedIndex;
             }
+            else if ( m_metadataEnabled && (g_extensions[i].index == OMX_IndexParamPrepareForAdaptivePlayback) )
+            {
+                ALOGD("Interface %s not supported in metadata mode", g_extensions[i].pName);
+                return OMX_ErrorUnsupportedIndex;
+            }
             else
             {
                 *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
