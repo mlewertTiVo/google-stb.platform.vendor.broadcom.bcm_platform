@@ -547,12 +547,13 @@ static void power_init(struct power_module *module __unused)
         power_set_sw_lid_state(SW_LID_STATE_UP);
     }
 
+#ifdef NEXUS_HAS_GPIO
     if (gNexusPower->initialiseGpios(gPowerState) != NO_ERROR) {
         ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
         goto power_init_fail;
     }
-
     gpios_initialised = true;
+#endif
 
     // Create the doze timer...
     se.sigev_value.sival_int = 0;
@@ -581,7 +582,9 @@ static void power_init(struct power_module *module __unused)
 power_init_fail:
     if (gNexusPower.get()) {
         if (gpios_initialised) {
+#ifdef NEXUS_HAS_GPIO
             gNexusPower->uninitialiseGpios();
+#endif
         }
         gNexusPower = NULL;
     }
@@ -1118,7 +1121,9 @@ static void *power_event_monitor_thread(void *arg __unused)
                                 else if (event == DROID_PM_EVENT_BT_WAKE_ON) {
                                     ALOGV("%s: Received a BT_WAKE Asserted event", __FUNCTION__);
                                     if (gNexusPower.get()) {
+#ifdef NEXUS_HAS_GPIO
                                         gNexusPower->setGpiosInterruptWakeManager(gPowerState, NexusPower::NexusGpio::GpioInterruptWakeManager_eBt, true);
+#endif
                                     }
                                 }
                                 else if (event == DROID_PM_EVENT_BT_WAKE_OFF) {

@@ -50,7 +50,9 @@
 #include "nexus_types.h"
 #include "nexus_platform_features.h"
 #include "nxclient.h"
+#ifdef NEXUS_HAS_GPIO
 #include <nexus_gpio.h>
+#endif
 #include "linuxuinput.h"
 #include "droid_pm.h"
 #include <nxwrap.h>
@@ -71,6 +73,7 @@ class NexusPower : public android::RefBase {
         LinuxUInputRef();
     };
 
+#ifdef NEXUS_HAS_GPIO
     class NexusGpio : public android::RefBase {
         public:
         static int const MAX_INSTANCES = 8;
@@ -146,25 +149,32 @@ class NexusPower : public android::RefBase {
                   NEXUS_GpioValue *pOutputValues);
         NexusGpio &operator=(const NexusGpio &);
     };
+#endif
 
     public:
     static sp<NexusPower> instantiate();
     status_t setPowerState(nxwrap_pwr_state state);
     status_t getPowerStatus(nxwrap_pwr_state *pState, nxwrap_wake_status *pWake);
     status_t setVideoOutputsState(nxwrap_pwr_state state);
+#ifdef NEXUS_HAS_GPIO
     status_t initialiseGpios(nxwrap_pwr_state state);
     void     uninitialiseGpios();
     status_t setGpios(nxwrap_pwr_state state);
     status_t clearGpios();
     status_t setGpiosInterruptWakeManager(nxwrap_pwr_state state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable);
+#endif
     ~NexusPower();
 
     private:
     nxcec_cec_device_type mCecDeviceType;
     NxWrap *mNxWrap;
+#ifdef NEXUS_HAS_GPIO
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
-    sp<LinuxUInputRef> mUInput;
     DefaultKeyedVector<enum NexusGpio::GpioInterruptWakeManager, bool> mInterruptWakeManagers;
+#else
+    DefaultKeyedVector<int, bool> mInterruptWakeManagers;
+#endif
+    sp<LinuxUInputRef> mUInput;
 
     // Disallow constructor and copy constructor...
     NexusPower();

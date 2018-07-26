@@ -45,7 +45,9 @@
 
 #include <hdmi_ext.h>
 
+#ifdef NEXUS_HAS_GPIO
 unsigned NexusPower::NexusGpio::mInstances = 0;
+#endif
 
 sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
 {
@@ -165,7 +167,9 @@ status_t NexusPower::setPowerState(nxwrap_pwr_state state)
        otherwise if powering down, then we must send CEC commands first. */
     if (state == ePowerState_S0) {
         // Setup the GPIO output values depending on the power state...
+#ifdef NEXUS_HAS_GPIO
         ret = setGpios(state);
+#endif
 
         if (ret != NO_ERROR) {
             ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, nxwrap_get_power_string(state));
@@ -196,15 +200,18 @@ status_t NexusPower::setPowerState(nxwrap_pwr_state state)
             ret = INVALID_OPERATION;
         }
         else {
+#ifdef NEXUS_HAS_GPIO
             // Setup the GPIO output values depending on the power state...
             ret = setGpios(state);
-
+#endif
             if (ret != NO_ERROR) {
                 ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
             }
             else {
                 // Finally clear any pending Gpio interrupts to avoid being accidentally woken up again when suspended
+#ifdef NEXUS_HAS_GPIO
                 ret = clearGpios();
+#endif
                 if (ret != NO_ERROR) {
                     ALOGE("%s: Could not clear GPIO's for PowerState %d!!!", __FUNCTION__, state);
                 }
@@ -226,6 +233,7 @@ status_t NexusPower::getPowerStatus(nxwrap_pwr_state *pState, nxwrap_wake_status
     return ret;
 }
 
+#ifdef NEXUS_HAS_GPIO
 void NexusPower::NexusGpio::gpioCallback(void *context, int param)
 {
     NexusPower::NexusGpio *pNexusGpio = reinterpret_cast<NexusPower::NexusGpio *>(context);
@@ -1005,3 +1013,5 @@ status_t NexusPower::setGpiosInterruptWakeManager(nxwrap_pwr_state state, enum N
     }
     return status;
 }
+#endif
+
