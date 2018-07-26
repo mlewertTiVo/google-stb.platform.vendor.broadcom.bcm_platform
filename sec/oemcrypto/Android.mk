@@ -109,11 +109,6 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
 
-# once we are able to remove all changes from android widevine, remove
-# this flag completely.
-#
-LOCAL_CFLAGS += -DANDROID_WIDEVINE_UPDATE
-
 LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 LOCAL_SHARED_LIBRARIES += libnxwrap
