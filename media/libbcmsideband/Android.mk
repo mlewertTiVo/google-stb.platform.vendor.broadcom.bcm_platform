@@ -13,7 +13,6 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
@@ -24,7 +23,7 @@ LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS += -Werror
 
 LOCAL_MODULE := libbcmsideband
-LOCAL_SHARED_LIBRARIES := libutils libcutils libhwcbinder liblog
+LOCAL_SHARED_LIBRARIES := libutils libcutils liblog
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SRC_FILES := treble/bcmsideband.cpp
 LOCAL_CFLAGS += -DBCM_FULL_TREBLE
