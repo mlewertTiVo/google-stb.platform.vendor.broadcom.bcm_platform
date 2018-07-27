@@ -1,5 +1,5 @@
 /******************************************************************************
- * (c) 2017 Broadcom
+ * (c) 2017-2018 Broadcom
  *
  * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -89,6 +89,7 @@ static status_t parse_wolopts(char *optstr, uint32_t *data)
     case 'a': *data |= WAKE_ARP; break;
     case 'g': *data |= WAKE_MAGIC; break;
     case 's': *data |= WAKE_MAGICSECURE; break;
+    case 'f': *data |= WAKE_FILTER; break;
     case 'd': *data = 0; break;
     default: status = BAD_VALUE; break;
     }
@@ -138,6 +139,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    Mutex::Autolock _l(mLock);
    int status;
    struct ifreq ifr;
+   struct ethtool_rxnfc rxnfc;
    int fd = socket(AF_INET, SOCK_DGRAM, 0);
    if (fd < 0) {
       return NexusStatus::UNKNOWN;
@@ -153,13 +155,40 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
       return NexusStatus::UNKNOWN;
    } else {
       if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
-         struct ethtool_rxnfc rxnfc;
+         struct ethtool_drvinfo drvinfo;
+
+         memset(&drvinfo, 0, sizeof(drvinfo));
+         drvinfo.cmd = ETHTOOL_GDRVINFO;
+         ifr.ifr_data = (void*)&drvinfo;
+         status = ioctl(fd, SIOCETHTOOL, &ifr);
+         if (status != NO_ERROR) {
+            close(fd);
+            return NexusStatus::UNKNOWN;
+         }
+
+         ALOGD("Configuring '%s' driver for WoLAN", drvinfo.driver);
          memset(&rxnfc, 0, sizeof(rxnfc));
          rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
-         rxnfc.fs.flow_type = IPV4_USER_FLOW;
-         rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
-         rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
-         rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
+         if (strcmp(drvinfo.driver, "bcmgenet") == 0) {
+            rxnfc.fs.flow_type = IPV4_USER_FLOW;
+            rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
+            rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
+            rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
+         } else if (strcmp(drvinfo.driver, "dsa") == 0) {
+            rxnfc.fs.flow_type = UDP_V4_FLOW;
+            rxnfc.fs.h_u.udp_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
+            rxnfc.fs.m_u.udp_ip4_spec.ip4dst = ~0;
+            rxnfc.fs.ring_cookie = 64; // IMP port (port 8, queue 0, 8 queues per port
+            rxnfc.fs.location = RX_CLS_LOC_ANY;
+         } else if (strcmp(drvinfo.driver, "bcmsysport") == 0) {
+            /* Nothing to do. Setup is handled via gphy interface, through dsa driver */
+            goto exit;
+         } else {
+            ALOGE("Unknown driver name '%s'", drvinfo.driver);
+            close(fd);
+            return NexusStatus::UNKNOWN;
+         }
+
          ifr.ifr_data = (void *)&rxnfc;
          status = ioctl(fd, SIOCETHTOOL, &ifr);
          if (status != NO_ERROR) {
@@ -179,6 +208,10 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
          int i;
          status = parse_wolopts(wol_opts, &data);
          if (status == NO_ERROR) {
+            if (data & WAKE_MAGICSECURE && data & WAKE_FILTER) {
+               ALOGE("Can't configure filter and magic packet with password");
+               data &= ~WAKE_MAGICSECURE;
+            }
             wolinfo.wolopts = data;
             if (data & WAKE_MAGICSECURE) {
                uint8_t sopass[SOPASS_MAX];
@@ -187,6 +220,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
                PropertyMap* config;
                path = get_sopass_file_path();
                if (path.isEmpty()) {
+                  ALOGE("Can't read sopass file");
                   goto exit;
                }
                status = PropertyMap::load(path, &config);
@@ -201,17 +235,27 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
                         for (i = 0; i < SOPASS_MAX; i++) {
                            wolinfo.sopass[i] = sopass[i];
                         }
+                        ALOGD("Sopass file loaded");
                      }
                   } else {
                      goto exit;
                   }
                }
             }
+            if (data & WAKE_FILTER) {
+               /* Use filter number returned from ETHTOOL_SRXCLSRLINS above */
+               uint32_t filter = rxnfc.fs.location;
+               if (filter < SOPASS_MAX * 8) {
+                  wolinfo.sopass[filter/8] = 1 << (filter % 8);
+               } else
+                  ALOGE("Bad filter number %d", filter);
+            }
          }
          if (status == NO_ERROR) {
             wolinfo.cmd = ETHTOOL_SWOL;
             ifr.ifr_data = (void *)&wolinfo;
             status = ioctl(fd, SIOCETHTOOL, &ifr);
+            ALOGD("set wol returns %d", status);
          }
       }
    }

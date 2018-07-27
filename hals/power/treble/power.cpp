@@ -380,6 +380,7 @@ static status_t power_set_enet_wol()
               ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, powerNetInterfaces[i]);
               status = -EAGAIN;
            }
+           break; // Stop after the first interface present
         }
     }
 
