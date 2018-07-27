@@ -1546,8 +1546,29 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandFlush(
             // Input port
             if ( IsEncoderStarted() )
             {
-                (void)SetInputPortState(OMX_StateIdle);
-                (void)SetInputPortState(StateGet());
+                NEXUS_VideoImageInputSurfaceSettings surfSettings;
+                NEXUS_Error errCode;
+
+                NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+                errCode = NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+                if ( errCode )
+                {
+                    ALOGE("Error flushing input surfaces (%d)", errCode);
+                    return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+                }
+
+                ReturnInputBuffers(true);
+                m_pBufferTracker->Flush();
+
+                // Reset frame rate estimator
+                OMX_U32 newFrameRate = 0;
+                m_frameRateTracker.CheckForNewFrameRate(newFrameRate);
+                if ( newFrameRate == 0 )
+                {
+                    newFrameRate = (OMX_U32)B_DEFAULT_OUTPUT_FRAMERATE;
+                }
+                m_frameRateTracker.Reset();
+                m_frameRateTracker.Start(newFrameRate);
             }
         }
         else
@@ -3308,6 +3329,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
           pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08);
 
     BOMX_ImageSurfaceNode *pNode;
+    void *slock;
     int stride = ((2 * pPortDef->format.video.nFrameWidth) + (BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1);
     for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
     {
@@ -3337,6 +3359,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
 
         BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
         m_nImageSurfaceFreeListLen++;
+        NEXUS_Surface_Lock(pNode->hSurface, &slock);
 
     }
     ALOGV("%d Nexus surfaces created", m_nImageSurfaceFreeListLen);
@@ -3575,6 +3598,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
 
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList)) )
     {
+        NEXUS_Surface_Unlock(pNode->hSurface);
         BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
         BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
@@ -3583,6 +3607,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
 
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList)) )
     {
+        NEXUS_Surface_Unlock(pNode->hSurface);
         BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
         BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
@@ -4138,7 +4163,7 @@ bool BOMX_VideoEncoder::GraphicsCheckpoint()
     return ret;
 }
 
-NEXUS_Error BOMX_VideoEncoder::ConvertYv12To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
+NEXUS_Error BOMX_VideoEncoder::ConvertYuv420To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
@@ -4333,7 +4358,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 
     ALOGV("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
 
-    ConvertYv12To422p(srcCb, srcCr, srcY, hDst, false);
+    ConvertYuv420To422p(srcCb, srcCr, srcY, hDst, false);
 
     NEXUS_Surface_Flush(hDst);
 
@@ -4385,29 +4410,42 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     ALOGV("%s: pShareData:%p, width:%u, height:%u, format:%u, stride:%u", __FUNCTION__,
           pSharedData, width, height, cFormat, stride);
 
-    if (HAL_PIXEL_FORMAT_YV12 == cFormat)
+    if (HAL_PIXEL_FORMAT_YV12 == cFormat || HAL_PIXEL_FORMAT_YCBCR_420_888 == cFormat)
     {
         int stride, cstride;
         unsigned cr_offset, cb_offset;
         NEXUS_SurfaceHandle srcCb, srcCr, srcY;
         void *slock;
         size_t size;
-        int alignment = 16; /* hardcoded for this format. */
 
-        stride = (width + (alignment-1)) & ~(alignment-1);
-        cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
-        cr_offset = stride * height;
-        cb_offset = (height/2) * ((stride/2 + (alignment-1)) & ~(alignment-1));
+        if (HAL_PIXEL_FORMAT_YV12 == cFormat)
+        {
+            int alignment = 16; /* hardcoded for this format. */
 
-        ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
-              width, height, stride, cr_offset, cb_offset);
+            stride = (width + (alignment-1)) & ~(alignment-1);
+            cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
+            cr_offset = stride * height;
+            cb_offset = (height/2) * cstride;
+            size = cr_offset + (cstride * height);
+        }
+        else
+        {
+            // 4:2:0 YCbCr
+            stride = width;
+            cstride = stride / 2;
+            cb_offset = stride * height;
+            cr_offset = (height/2) * cstride;
+            size = cb_offset + (cstride * height);
+        }
+        ALOGV("%s: %s (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
+              (HAL_PIXEL_FORMAT_YV12 == cFormat) ? "yv12" : "yuv420", width, height, stride, cr_offset, cb_offset);
 
         if ( NULL != m_pInputDumpFile )
         {
             void *pInputMem;
             rc = NEXUS_MemoryBlock_Lock(planeHandle, &pInputMem);
             ALOG_ASSERT(!rc);
-            fwrite(pInputMem, cr_offset + (cstride * height), 1, m_pInputDumpFile);
+            fwrite(pInputMem, size, 1, m_pInputDumpFile);
             NEXUS_MemoryBlock_Unlock(planeHandle);
         }
 
@@ -4451,7 +4489,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
 
         ALOGV("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
 
-        ConvertYv12To422p(srcCb, srcCr, srcY, hDst, true);
+        ConvertYuv420To422p(srcCb, srcCr, srcY, hDst, true);
 
         NEXUS_Surface_Flush(hDst);
 

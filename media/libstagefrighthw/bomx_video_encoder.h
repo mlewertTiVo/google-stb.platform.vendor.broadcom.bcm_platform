@@ -379,7 +379,7 @@ protected:
     NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     void FreeInputBuffer(void*& pBuffer);
     bool GraphicsCheckpoint();
-    NEXUS_Error ConvertYv12To422p(NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, bool);
+    NEXUS_Error ConvertYuv420To422p(NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, bool);
     NEXUS_Error ExtractGrallocBuffer(private_handle_t *, NEXUS_SurfaceHandle);
     NEXUS_Error ExtractNexusBuffer(uint8_t *, unsigned int, unsigned, NEXUS_SurfaceHandle);
 
