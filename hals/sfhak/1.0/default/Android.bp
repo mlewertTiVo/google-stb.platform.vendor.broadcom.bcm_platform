@@ -1,0 +1,24 @@
+cc_binary {
+    name: "bcm.hardware.sfhak@1.0-service",
+    defaults: ["hidl_defaults"],
+    vendor: true,
+    relative_install_path: "hw",
+    srcs: [
+      "SfHak.cpp",
+      "service.cpp",
+    ],
+
+    init_rc: ["bcm.hardware.sfhak@1.0-service.rc"],
+
+    shared_libs: [
+      "android.hidl.memory@1.0",
+      "bcm.hardware.sfhak@1.0",
+      "libbinder",
+      "libhidlbase",
+      "libhidlmemory",
+      "libhidltransport",
+      "libhwbinder",
+      "liblog",
+      "libutils",
+    ],
+}
