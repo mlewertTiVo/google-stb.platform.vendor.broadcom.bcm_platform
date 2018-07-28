@@ -102,7 +102,7 @@ static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn scree
 static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
 // SecureOn(TM) password file path.
-static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/sopass.key";
+static const char * SOPASS_KEY_FILE_PATH                  = "/data/vendor/misc/nexus/sopass.key";
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";

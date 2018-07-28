@@ -98,7 +98,7 @@ static status_t parse_wolopts(char *optstr, uint32_t *data)
     return status;
 }
 
-#define SOPASS_KEY_FILE_PATH "/data/misc/nexus/sopass.key"
+#define SOPASS_KEY_FILE_PATH "/data/vendor/misc/nexus/sopass.key"
 static String8 get_sopass_file_path()
 {
     String8 path;
