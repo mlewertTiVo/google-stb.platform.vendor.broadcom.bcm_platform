@@ -1037,7 +1037,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         }
         else
         {
-            ALOGV("Set Input Port Color Format to %u (%#x)", pFormat->eColorFormat, pFormat->eColorFormat);
+            ALOGV("Set Input Port Color Format to %u (%#x) rate=%u comp=%d", pFormat->eColorFormat, pFormat->eColorFormat, pFormat->xFramerate, pFormat->eCompressionFormat);
             // Per the OMX spec you are supposed to initialize the port defs to defaults when changing format
             // Leave buffer size parameters alone and update color format/framerate.
             OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
@@ -1181,10 +1181,12 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         m_nativeGraphicsEnabled = pEnableParams->enable == OMX_TRUE ? true : false;
 
         // Mode has changed.  Set appropriate output color format.
+        OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = (OMX_PARAM_PORTDEFINITIONTYPE *)m_pVideoPorts[0]->GetDefinition();
         OMX_VIDEO_PARAM_PORTFORMATTYPE portFormat;
         BOMX_STRUCT_INIT(&portFormat);
         portFormat.nPortIndex = m_videoPortBase;
-        portFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
+        portFormat.eCompressionFormat = pPortDef->format.video.eCompressionFormat;
+        portFormat.xFramerate = pPortDef->format.video.xFramerate;
         if ( m_nativeGraphicsEnabled )
         {
             // In this mode, the color format should be an android HAL format.
@@ -4624,7 +4626,7 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
 
     NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
 
-    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
+    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;
     encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
     encoderSettings.video.refreshRate = B_DEFAULT_VIDEO_REFRESH_RATE;
 
