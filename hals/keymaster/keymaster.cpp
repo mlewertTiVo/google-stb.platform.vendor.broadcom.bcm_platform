@@ -20,6 +20,7 @@
 #define LOG_TAG "bcm-km"
 #include <log/log.h>
 
+#include <inttypes.h>
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
@@ -325,7 +326,7 @@ static BERR_Code km_fallback(struct bcm_km *km_hdl) {
 
    c = fread(d, 1, km_size, f);
    if (c != km_size) {
-      ALOGE("km_fallback: failed to copy %s (%d) to sage, copied %d",
+      ALOGE("km_fallback: failed to copy %s (%zu) to sage, copied %zu",
          key_path, km_size, c);
       goto out_error;
    }
@@ -495,7 +496,7 @@ static keymaster_error_t km_add_rng_entropy(
    }
    km_db.buffer = (uint8_t *)SRAI_Memory_Allocate(data_length, SRAI_MemoryType_Shared);
    if (!km_db.buffer) {
-      ALOGE("km_add_rng_entropy: failed srai-alloc-size: %u", data_length);
+      ALOGE("km_add_rng_entropy: failed srai-alloc-size: %zu", data_length);
       return km_berr_2_kmerr(BERR_OUT_OF_SYSTEM_MEMORY);
    }
    km_db.size = data_length;
@@ -576,7 +577,7 @@ static keymaster_error_t km_generate_key(
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_NO_AUTH_REQUIRED");
    } else if (set.GetTagValue(TAG_USER_SECURE_ID, &km_secid) &&
               set.GetTagValue(TAG_USER_AUTH_TYPE, &km_authtype)) {
-      ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_USER_SECURE_ID, value: %llu", km_secid);
+      ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_USER_SECURE_ID, value: %" PRIu64 "", km_secid);
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_USER_AUTH_TYPE, value: %u", km_authtype);
    } else {
       ALOGW("km_generate_key: missing mandatory (TAG_USER_SECURE_ID,TAG_USER_AUTH_TYPE)|TAG_NO_AUTH_REQUIRED (insert)");
@@ -746,7 +747,7 @@ static keymaster_error_t km_get_key_characteristics(
             KM_Tag_DeleteContext(km_params);
             return km_berr_2_kmerr(km_err);
          }
-         ALOGI_IF(KM_LOG_ALL_IN, "km_get_key_characteristics: added tag: %u, length: %u", KM_TAG_APPLICATION_ID, client_id->data_length);
+         ALOGI_IF(KM_LOG_ALL_IN, "km_get_key_characteristics: added tag: %u, length: %zu", KM_TAG_APPLICATION_ID, client_id->data_length);
       }
       if (app_data && app_data->data) {
          km_err = KM_Tag_AddBlob(km_params, SKM_TAG_APPLICATION_DATA, app_data->data_length, app_data->data);
@@ -756,7 +757,7 @@ static keymaster_error_t km_get_key_characteristics(
             KM_Tag_DeleteContext(km_params);
             return km_berr_2_kmerr(km_err);
          }
-         ALOGI_IF(KM_LOG_ALL_IN, "km_get_key_characteristics: added tag: %u, length: %u", KM_TAG_APPLICATION_DATA, app_data->data_length);
+         ALOGI_IF(KM_LOG_ALL_IN, "km_get_key_characteristics: added tag: %u, length: %zu", KM_TAG_APPLICATION_DATA, app_data->data_length);
       }
    }
    km_characs.in_params = km_params;
@@ -863,7 +864,7 @@ static keymaster_error_t km_import_key(
       ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_NO_AUTH_REQUIRED");
    } else if (set.GetTagValue(TAG_USER_SECURE_ID, &km_secid) &&
               set.GetTagValue(TAG_USER_AUTH_TYPE, &km_authtype)) {
-      ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_USER_SECURE_ID, value: %llu", km_secid);
+      ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_USER_SECURE_ID, value: %" PRIu64 "", km_secid);
       ALOGI_IF(KM_LOG_ALL_IN, "km_import_key: tag: TAG_USER_AUTH_TYPE, value: %u", km_authtype);
    } else {
       ALOGW("km_import_key: missing mandatory (TAG_USER_SECURE_ID,TAG_USER_AUTH_TYPE)|TAG_NO_AUTH_REQUIRED (insert)");
@@ -1036,7 +1037,7 @@ static keymaster_error_t km_export_key(
             KM_Tag_DeleteContext(km_params);
             return km_berr_2_kmerr(km_err);
          }
-         ALOGI_IF(KM_LOG_ALL_IN, "km_export_key: added tag: %u, length: %u", KM_TAG_APPLICATION_ID, client_id->data_length);
+         ALOGI_IF(KM_LOG_ALL_IN, "km_export_key: added tag: %u, length: %zu", KM_TAG_APPLICATION_ID, client_id->data_length);
       }
       if (app_data && app_data->data) {
          km_err = KM_Tag_AddBlob(km_params, SKM_TAG_APPLICATION_DATA, app_data->data_length, app_data->data);
@@ -1046,7 +1047,7 @@ static keymaster_error_t km_export_key(
             KM_Tag_DeleteContext(km_params);
             return km_berr_2_kmerr(km_err);
          }
-         ALOGI_IF(KM_LOG_ALL_IN, "km_export_key: added tag: %u, length: %u", KM_TAG_APPLICATION_DATA, app_data->data_length);
+         ALOGI_IF(KM_LOG_ALL_IN, "km_export_key: added tag: %u, length: %zu", KM_TAG_APPLICATION_DATA, app_data->data_length);
       }
    }
    km_export.in_params = km_params;

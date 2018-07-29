@@ -159,7 +159,7 @@ static BERR_Code gk_fallback(struct bcm_gk *gk_hdl) {
 
    c = fread(d, 1, gk_size, f);
    if (c != gk_size) {
-      ALOGE("gk_fallback: failed to copy %s (%d) to sage, copied %d",
+      ALOGE("gk_fallback: failed to copy %s (%zu) to sage, copied %zu",
          key_path, gk_size, c);
       goto out_error;
    }

@@ -343,9 +343,9 @@ Return<int32_t> bp3::provision(
    curl_easy_setopt(curl, CURLOPT_URL, buf);
    ADD_PART("otpId", "0x%x%08x", otpIdHi, otpIdLo)
 #ifdef BP3_TA_FEATURE_READ_SUPPORT
-   ADD_PART("otpSelect", "%zu", BP3_OTPKeyTypeA)
+   ADD_PART("otpSelect", "%u", BP3_OTPKeyTypeA)
 #else
-   ADD_PART("otpSelect", "%zu", 0)
+   ADD_PART("otpSelect", "%u", 0)
 #endif
    ADD_PART("prodId", "0x%x", prodId)
    ADD_PART("secCode", "0x%x", securityCode & 0x03FFC000)
@@ -396,10 +396,10 @@ Return<int32_t> bp3::provision(
    }
    curl_easy_setopt(curl, CURLOPT_URL, buf);
    for (uint32_t i = 0; i < statusSize; i++) {
-      ADD_PART("status", "%zu", status[i])
+      ADD_PART("status", "%u", status[i])
    }
    free(status);
-   ADD_PART("errCode", "%zu", errCode)
+   ADD_PART("errCode", "%d", errCode)
 
    if (logsize > 0) {
       curl_formadd(&post, &last,
