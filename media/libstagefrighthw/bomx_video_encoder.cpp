@@ -621,6 +621,14 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel31;
     m_sAvcVideoParams.nAllowedPictureTypes = (OMX_U32)OMX_VIDEO_PictureTypeI|(OMX_U32)OMX_VIDEO_PictureTypeP|(OMX_U32)OMX_VIDEO_PictureTypeB|(OMX_U32)OMX_VIDEO_PictureTypeEI|(OMX_U32)OMX_VIDEO_PictureTypeEP;
 
+    /* set VP8 defaults */
+    // Much of this structure is not relevant.  Zero everything except for profile and level. Error resilient mode is more for video conferencing.
+    memset(&m_sVp8VideoParams, 0, sizeof(OMX_VIDEO_PARAM_VP8TYPE));
+    BOMX_STRUCT_INIT(&m_sVp8VideoParams);
+    m_sVp8VideoParams.nPortIndex = m_videoPortBase + 1;
+    m_sVp8VideoParams.eProfile = OMX_VIDEO_VP8ProfileMain;
+    m_sVp8VideoParams.eLevel = OMX_VIDEO_VP8Level_Version3;
+
     /* set video bitrate defaults */
     memset(&m_sVideoBitrateParams, 0, sizeof(OMX_VIDEO_PARAM_BITRATETYPE));
     BOMX_STRUCT_INIT(&m_sVideoBitrateParams);
@@ -776,6 +784,18 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         pAvc->nAllowedPictureTypes = m_sAvcVideoParams.nAllowedPictureTypes;
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamVideoVp8:
+    {
+        OMX_VIDEO_PARAM_VP8TYPE *pVp8 = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
+        ALOGV("GetParameter OMX_IndexParamVideoVp8");
+        BOMX_STRUCT_VALIDATE(pVp8);
+        if ( pVp8->nPortIndex != m_videoPortBase + 1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        *pVp8 = m_sVp8VideoParams;
+        return OMX_ErrorNone;
+    }
     case OMX_IndexParamVideoBitrate:
     {
         OMX_VIDEO_PARAM_BITRATETYPE *pBitrate = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
@@ -847,12 +867,16 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         {
             switch ( (int)GetCodec() )
             {
-            default:
-                // Only certain codecs support this interface
-                break;
             case OMX_VIDEO_CodingAVC:
                 pProfileLevel->eProfile = m_sAvcVideoParams.eProfile;
                 pProfileLevel->eLevel = m_sAvcVideoParams.eLevel;
+                break;
+            case OMX_VIDEO_CodingVP8:
+                pProfileLevel->eProfile = m_sVp8VideoParams.eProfile;
+                pProfileLevel->eLevel = m_sVp8VideoParams.eLevel;
+                break;
+            default:
+                // Only certain codecs support this interface
                 break;
             }
         }
@@ -1130,6 +1154,21 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         }
 
         BKNI_Memcpy(&m_sAvcVideoParams, pParam, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+        ALOGV("Profile = %d, Level = %d", pParam->eProfile, pParam->eLevel);
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamVideoVp8:
+    {
+        OMX_VIDEO_PARAM_VP8TYPE *pParam = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
+        ALOGV("SetParameter OMX_IndexParamVideoVp8");
+        BOMX_STRUCT_VALIDATE(pParam);
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
+        {
+            ALOGE("output port only");
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        BKNI_Memcpy(&m_sVp8VideoParams, pParam, sizeof(OMX_VIDEO_PARAM_VP8TYPE));
         ALOGV("Profile = %d, Level = %d", pParam->eProfile, pParam->eLevel);
         return OMX_ErrorNone;
     }
@@ -2988,27 +3027,27 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
     return bRet;
 }
 
-typedef struct _OMX_TO_NEXUS_PROFILE_TYPE_
+typedef struct _OMX_AVC_TO_NEXUS_PROFILE_TYPE_
 {
     OMX_VIDEO_AVCPROFILETYPE omxProfile;
     NEXUS_VideoCodecProfile nexusProfile;
-} OMX_TO_NEXUS_PROFILE_TYPE;
+} OMX_AVC_TO_NEXUS_PROFILE_TYPE;
 
-typedef struct _OMX_TO_NEXUS_LEVEL_TYPE_
+typedef struct _OMX_AVC_TO_NEXUS_LEVEL_TYPE_
 {
     OMX_VIDEO_AVCLEVELTYPE omxLevel;
     NEXUS_VideoCodecLevel nexusLevel;
-} OMX_TO_NEXUS_LEVEL_TYPE;
+} OMX_AVC_TO_NEXUS_LEVEL_TYPE;
 
 
-static const OMX_TO_NEXUS_PROFILE_TYPE ProfileMapTable[] =
+static const OMX_AVC_TO_NEXUS_PROFILE_TYPE AvcProfileMapTable[] =
 {
     {OMX_VIDEO_AVCProfileBaseline,      NEXUS_VideoCodecProfile_eBaseline},
     {OMX_VIDEO_AVCProfileMain,          NEXUS_VideoCodecProfile_eMain},
     {OMX_VIDEO_AVCProfileHigh,          NEXUS_VideoCodecProfile_eHigh}
 };
 
-static const OMX_TO_NEXUS_LEVEL_TYPE LevelMapTable[] =
+static const OMX_AVC_TO_NEXUS_LEVEL_TYPE AvcLevelMapTable[] =
 {
     {OMX_VIDEO_AVCLevel1,                NEXUS_VideoCodecLevel_e10},
     {OMX_VIDEO_AVCLevel1b,               NEXUS_VideoCodecLevel_e1B},
@@ -3028,23 +3067,71 @@ static const OMX_TO_NEXUS_LEVEL_TYPE LevelMapTable[] =
     {OMX_VIDEO_AVCLevel51,               NEXUS_VideoCodecLevel_e51},
 };
 
-NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
+NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOmxAvcProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
 {
-    for (unsigned int i = 0; i < sizeof(ProfileMapTable)/sizeof(ProfileMapTable[0]); i++)
+    for (unsigned int i = 0; i < sizeof(AvcProfileMapTable)/sizeof(AvcProfileMapTable[0]); i++)
     {
-        if (ProfileMapTable[i].omxProfile==profile)
-            return ProfileMapTable[i].nexusProfile;
+        if (AvcProfileMapTable[i].omxProfile==profile)
+            return AvcProfileMapTable[i].nexusProfile;
     }
 
     return NEXUS_VideoCodecProfile_eBaseline;
 }
 
-NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
+NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOmxAvcLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
 {
-    for(unsigned int i = 0; i < sizeof(LevelMapTable)/sizeof(LevelMapTable[0]); i++)
+    for(unsigned int i = 0; i < sizeof(AvcLevelMapTable)/sizeof(AvcLevelMapTable[0]); i++)
     {
-        if(LevelMapTable[i].omxLevel==level)
-            return LevelMapTable[i].nexusLevel;
+        if(AvcLevelMapTable[i].omxLevel==level)
+            return AvcLevelMapTable[i].nexusLevel;
+    }
+
+    return NEXUS_VideoCodecLevel_e31;
+}
+
+typedef struct _OMX_VP8_TO_NEXUS_PROFILE_TYPE_
+{
+    OMX_VIDEO_VP8PROFILETYPE omxProfile;
+    NEXUS_VideoCodecProfile nexusProfile;
+} OMX_VP8_TO_NEXUS_PROFILE_TYPE;
+
+typedef struct _OMX_VP8_TO_NEXUS_LEVEL_TYPE_
+{
+    OMX_VIDEO_VP8LEVELTYPE omxLevel;
+    NEXUS_VideoCodecLevel nexusLevel;
+} OMX_VP8_TO_NEXUS_LEVEL_TYPE;
+
+
+static const OMX_VP8_TO_NEXUS_PROFILE_TYPE Vp8ProfileMapTable[] =
+{
+    {OMX_VIDEO_VP8ProfileMain,           NEXUS_VideoCodecProfile_eMain},
+};
+
+static const OMX_VP8_TO_NEXUS_LEVEL_TYPE Vp8LevelMapTable[] =
+{
+    {OMX_VIDEO_VP8Level_Version0,        NEXUS_VideoCodecLevel_e00},
+    {OMX_VIDEO_VP8Level_Version1,        NEXUS_VideoCodecLevel_e10},
+    {OMX_VIDEO_VP8Level_Version2,        NEXUS_VideoCodecLevel_e20},
+    {OMX_VIDEO_VP8Level_Version3,        NEXUS_VideoCodecLevel_e30},
+};
+
+NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOmxVp8ProfileTypetoNexus(OMX_VIDEO_VP8PROFILETYPE profile)
+{
+    for (unsigned int i = 0; i < sizeof(Vp8ProfileMapTable)/sizeof(Vp8ProfileMapTable[0]); i++)
+    {
+        if (Vp8ProfileMapTable[i].omxProfile==profile)
+            return Vp8ProfileMapTable[i].nexusProfile;
+    }
+
+    return NEXUS_VideoCodecProfile_eBaseline;
+}
+
+NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOmxVp8LevelTypetoNexus(OMX_VIDEO_VP8LEVELTYPE level)
+{
+    for(unsigned int i = 0; i < sizeof(Vp8LevelMapTable)/sizeof(Vp8LevelMapTable[0]); i++)
+    {
+        if(Vp8LevelMapTable[i].omxLevel==level)
+            return Vp8LevelMapTable[i].nexusLevel;
     }
 
     return NEXUS_VideoCodecLevel_e31;
@@ -3111,14 +3198,16 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     {
     case NEXUS_VideoCodec_eH264:
     {
-        encoderStartSettings.output.video.settings.profile = ConvertOMXProfileTypetoNexus(m_sAvcVideoParams.eProfile);
-        encoderStartSettings.output.video.settings.level = ConvertOMXLevelTypetoNexus(m_sAvcVideoParams.eLevel);
+        encoderStartSettings.output.video.settings.profile = ConvertOmxAvcProfileTypetoNexus(m_sAvcVideoParams.eProfile);
+        encoderStartSettings.output.video.settings.level = ConvertOmxAvcLevelTypetoNexus(m_sAvcVideoParams.eLevel);
         encoderStartSettings.output.video.settings.nonRealTime = true;
         encoderStartSettings.output.video.settings.interlaced = false;
         break;
     }
     case NEXUS_VideoCodec_eVp8:
     {
+        encoderStartSettings.output.video.settings.profile = ConvertOmxVp8ProfileTypetoNexus(m_sVp8VideoParams.eProfile);
+        encoderStartSettings.output.video.settings.level = ConvertOmxVp8LevelTypetoNexus(m_sVp8VideoParams.eLevel);
         encoderStartSettings.output.video.settings.nonRealTime = true;
         encoderStartSettings.output.video.settings.interlaced = false;
         break;
