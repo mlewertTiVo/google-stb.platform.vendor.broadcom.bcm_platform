@@ -25,13 +25,17 @@ ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnexus.so
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_2ND_ARCH}/libnexus.so
 else
-LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 ifeq ($(BCM_DIST_KNLIMG_BINS),y)
-LOCAL_SRC_FILES_arm := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus.so
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus.so
+LOCAL_SRC_FILES_arm64 := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus.so
 else
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
 endif
 endif
 include $(BUILD_PREBUILT)
@@ -47,13 +51,17 @@ ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
 else
-LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 ifeq ($(BCM_DIST_KNLIMG_BINS),y)
-LOCAL_SRC_FILES_arm := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm64 := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
 else
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
 endif
 endif
 include $(BUILD_PREBUILT)
@@ -69,13 +77,17 @@ ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
 else
-LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 ifeq ($(BCM_DIST_KNLIMG_BINS),y)
-LOCAL_SRC_FILES_arm := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm64 := ${BINDIST_BIN_DIR_1ST_ARCH}/libnxserver.a
 else
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
 endif
 endif
 include $(BUILD_PREBUILT)
@@ -93,11 +105,15 @@ LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
 LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnexus_static.a
 else
-LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 ifeq ($(BCM_DIST_KNLIMG_BINS),y)
-LOCAL_SRC_FILES_arm := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus_static.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus_static.a
+LOCAL_SRC_FILES_arm64 := ${BINDIST_BIN_DIR_1ST_ARCH}/libnexus_static.a
 else
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
 endif
 endif
 include $(BUILD_PREBUILT)
@@ -115,11 +131,15 @@ LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_NXC_BIN_DIR_1ST_ARCH}/libnxclient.so
 LOCAL_SRC_FILES_arm   := ${NEXUS_NXC_BIN_DIR_2ND_ARCH}/libnxclient.so
 else
-LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 ifeq ($(BCM_DIST_KNLIMG_BINS),y)
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
 LOCAL_SRC_FILES_arm   := ${BINDIST_NXC_BIN_DIR_1ST_ARCH}/libnxclient.so
+LOCAL_SRC_FILES_arm64 := ${BINDIST_NXC_BIN_DIR_1ST_ARCH}/libnxclient.so
 else
+# define arm|arm64, but use only one from LOCAL_MODULE_TARGET_ARCH
 LOCAL_SRC_FILES_arm   := ${NEXUS_NXC_BIN_DIR_1ST_ARCH}/libnxclient.so
+LOCAL_SRC_FILES_arm64 := ${NEXUS_NXC_BIN_DIR_1ST_ARCH}/libnxclient.so
 endif
 endif
 include $(BUILD_PREBUILT)
