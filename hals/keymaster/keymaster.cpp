@@ -1627,7 +1627,11 @@ static keymaster_error_t km_finish(
       if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
       if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
       if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
-      return KM_ERROR_MEMORY_ALLOCATION_FAILED;
+      keymaster_error_t final = KM_ERROR_MEMORY_ALLOCATION_FAILED;
+      if (km_op->p == KM_PURPOSE_VERIFY) {
+         final = KM_ERROR_VERIFICATION_FAILED;
+      }
+      return final;
    }
    km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
    if (km_err != BERR_SUCCESS) {
@@ -1639,7 +1643,11 @@ static keymaster_error_t km_finish(
       if (km_cfs.in_params) KM_Tag_DeleteContext(km_cfs.in_params);
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
-      return km_berr_2_kmerr(km_err);
+      keymaster_error_t final = km_berr_2_kmerr(km_err);
+      if (km_op->p == KM_PURPOSE_VERIFY) {
+         final = KM_ERROR_VERIFICATION_FAILED;
+      }
+      return final;
    }
    if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
    if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
