@@ -153,11 +153,6 @@ typedef enum {
 
 struct StandbyMonitorThread;
 
-namespace android {
-    class AudioStreamIn;
-    class AudioHardwareInput;
-};
-
 struct brcm_device {
     struct audio_hw_device adev;
 
@@ -171,7 +166,6 @@ struct brcm_device {
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
     struct StandbyMonitorThread *standbyThread;
     NEXUS_MemoryBlockHandle stc_channel_mem_hdl;
-    android::AudioHardwareInput *input; // ATVR specific
 };
 
 struct brcm_stream_out_ops {
@@ -341,10 +335,6 @@ struct brcm_stream_in {
             int fd;
         } dummy;
 #endif
-        /* ATV remote specific */
-        struct {
-            android::AudioStreamIn *impl;
-        } atvr;
     };
 
     struct brcm_device *bdev;
