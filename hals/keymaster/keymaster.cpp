@@ -73,6 +73,7 @@ struct km_op_s {
    km_operation_handle_t op;
    NEXUS_KeySlotHandle ks;
    keymaster_purpose_t p;
+   keymaster_block_mode_t b;
 };
 
 static NEXUS_KeySlotHandle km_ks_alloc(
@@ -1395,6 +1396,7 @@ static keymaster_error_t km_begin(
    km_op->ks = ks;
    km_op->op = km_out_hdl;
    km_op->p = purpose;
+   set.GetTagValue(TAG_BLOCK_MODE, &km_op->b);
    *operation_handle = (keymaster_operation_handle_t)km_op;
 
    return KM_ERROR_OK;
@@ -1628,7 +1630,7 @@ static keymaster_error_t km_finish(
       if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
       if (km_cfs.out_data.buffer) SRAI_Memory_Free(km_cfs.out_data.buffer);
       keymaster_error_t final = KM_ERROR_MEMORY_ALLOCATION_FAILED;
-      if (km_op->p == KM_PURPOSE_VERIFY) {
+      if (km_op->p == KM_PURPOSE_VERIFY || km_op->b == KM_MODE_GCM) {
          final = KM_ERROR_VERIFICATION_FAILED;
       }
       return final;
@@ -1644,7 +1646,7 @@ static keymaster_error_t km_finish(
       ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       keymaster_error_t final = km_berr_2_kmerr(km_err);
-      if (km_op->p == KM_PURPOSE_VERIFY) {
+      if (km_op->p == KM_PURPOSE_VERIFY || km_op->b == KM_MODE_GCM) {
          final = KM_ERROR_VERIFICATION_FAILED;
       }
       return final;
