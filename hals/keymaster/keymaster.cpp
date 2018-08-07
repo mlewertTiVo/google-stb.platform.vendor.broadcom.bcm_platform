@@ -570,8 +570,7 @@ static keymaster_error_t km_generate_key(
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_PURPOSE[%d], value: %u", ix, km_purpose);
    } while (true);
    if (!ix) {
-      ALOGE("km_generate_key: missing mandatory TAG_PURPOSE");
-      return KM_ERROR_INVALID_ARGUMENT;
+      ALOGW("km_generate_key: missing mandatory TAG_PURPOSE, allow to continue...");
    }
    // mandatory: (KM_TAG_USER_SECURE_ID and KM_TAG_USER_AUTH_TYPE) or KM_TAG_NO_AUTH_REQUIRED
    if (set.GetTagValue(TAG_NO_AUTH_REQUIRED)) {
