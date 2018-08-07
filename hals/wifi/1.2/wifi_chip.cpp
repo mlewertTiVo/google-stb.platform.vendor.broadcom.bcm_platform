@@ -392,9 +392,8 @@ Return<void> WifiChip::requestDriverDebugDump(
 
 Return<void> WifiChip::requestFirmwareDebugDump(
     requestFirmwareDebugDump_cb hidl_status_cb) {
-    return validateAndCall(this, WifiStatusCode::ERROR_WIFI_CHIP_INVALID,
-                           &WifiChip::requestFirmwareDebugDumpInternal,
-                           hidl_status_cb);
+    hidl_status_cb({WifiStatusCode::ERROR_NOT_SUPPORTED, ""}, {});
+    return Void();
 }
 
 Return<void> WifiChip::createApIface(createApIface_cb hidl_status_cb) {
@@ -623,15 +622,16 @@ std::pair<WifiStatus, uint32_t> WifiChip::getCapabilitiesInternal() {
     }
     std::tie(legacy_status, legacy_logger_feature_set) =
         legacy_hal_.lock()->getLoggerSupportedFeatureSet(getWlan0IfaceName());
-    if (legacy_status != legacy_hal::WIFI_SUCCESS) {
-        // Assume basic capability
-        legacy_logger_feature_set = legacy_hal::WIFI_LOGGER_MEMORY_DUMP_SUPPORTED;
-    }
+    // Override, dump not available
+    legacy_logger_feature_set &= ~legacy_hal::WIFI_LOGGER_MEMORY_DUMP_SUPPORTED;
     uint32_t hidl_caps;
     if (!hidl_struct_util::convertLegacyFeaturesToHidlChipCapabilities(
             legacy_feature_set, legacy_logger_feature_set, &hidl_caps)) {
         return {createWifiStatus(WifiStatusCode::ERROR_UNKNOWN), 0};
     }
+    if (hidl_caps == 0)
+        return {createWifiStatus(WifiStatusCode::ERROR_NOT_SUPPORTED), 0};
+
     return {createWifiStatus(WifiStatusCode::SUCCESS), hidl_caps};
 }
 
