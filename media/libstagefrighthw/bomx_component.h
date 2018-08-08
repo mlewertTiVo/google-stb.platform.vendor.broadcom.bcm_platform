@@ -257,6 +257,7 @@ protected:
     BOMX_ImagePort *m_pImagePorts[BOMX_COMPONENT_MAX_PORTS];
     BOMX_VideoPort *m_pVideoPorts[BOMX_COMPONENT_MAX_PORTS];
     BOMX_OtherPort *m_pOtherPorts[BOMX_COMPONENT_MAX_PORTS];
+    int32_t m_logMask;
 
     // If a constructor fails, mark as invalid, set the constructor error with the failure reason
     void Invalidate(OMX_ERRORTYPE errorReason) { m_currentState = m_targetState = OMX_StateInvalid; m_constructorError = errorReason; };

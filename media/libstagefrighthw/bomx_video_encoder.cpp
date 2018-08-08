@@ -49,6 +49,7 @@
 #include <cmath>
 
 #include "bomx_video_encoder.h"
+#include "bomx_log.h"
 #include "nexus_platform.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
@@ -1323,7 +1324,7 @@ NEXUS_VideoCodec BOMX_VideoEncoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
 
 NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    ALOGV("Setting Input Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_PORT), "Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -1393,7 +1394,7 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     // Queue.  For format changes, we need to be able to control this logical
     // output port independently and leave the input port active during any
     // Resolution Change.
-    ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_PORT), "Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
@@ -1413,7 +1414,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -1443,7 +1444,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
             (void)m_pVideoPorts[1]->Enable();
         }
 
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -1512,7 +1513,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -1533,12 +1534,12 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
 
     case OMX_StateWaitForResources:
     case OMX_StateInvalid:
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
         ALOGE("Unsupported state %u", newState);
@@ -2332,7 +2333,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
 
     ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
-    ALOGV("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGD_IF((m_logMask & B_LOG_VENC_IN_FEED), "comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if(pBufferHeader->nFlags & ( OMX_BUFFERFLAG_DATACORRUPT | OMX_BUFFERFLAG_EXTRADATA | OMX_BUFFERFLAG_CODECCONFIG ))
     {
@@ -2583,7 +2584,7 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
         ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
     }
 
-    ALOGV("returned %u buffers, %u attempted", count, buffersToReturn);
+    ALOGD_IF((m_logMask & B_LOG_VENC_IN_RET), "returned %u buffers, %u attempted", count, buffersToReturn);
 }
 
 void BOMX_VideoEncoder::ResetEncodedFrameList()
@@ -2772,18 +2773,21 @@ void BOMX_VideoEncoder::InputBufferProcess()
 
 void BOMX_VideoEncoder::PrintVideoEncoderStatus(void *pBufferBase)
 {
-    NEXUS_SimpleEncoderStatus EncSts;
-    NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
+    if ( (m_logMask & B_LOG_VENC_STATUS) != 0 )
+    {
+        NEXUS_SimpleEncoderStatus EncSts;
+        NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
 
-    ALOGV("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
-          pBufferBase,
-          EncSts.video.picturesReceived,
-          EncSts.video.picturesEncoded,
-          EncSts.video.picturesDroppedFRC,
-          EncSts.video.picturesDroppedHRD,
-          EncSts.video.picturesDroppedErrors,
-          EncSts.video.pictureIdLastEncoded
-         );
+        ALOGD("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
+              pBufferBase,
+              EncSts.video.picturesReceived,
+              EncSts.video.picturesEncoded,
+              EncSts.video.picturesDroppedFRC,
+              EncSts.video.picturesDroppedHRD,
+              EncSts.video.picturesDroppedErrors,
+              EncSts.video.pictureIdLastEncoded
+             );
+    }
 }
 
 void BOMX_VideoEncoder::NotifyOutputPortSettingsChanged()
@@ -2944,7 +2948,7 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
 
         /* return client buffer */
-        ALOGV("Returning Port Buffer HDR %p flags %#x ts %llu us ",
+        ALOGD_IF((m_logMask & B_LOG_VENC_OUTPUT), "Returning Port Buffer HDR %p flags %#x ts %llu us ",
               pHeader, pHeader->nFlags, pHeader->nTimeStamp);
         ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
 

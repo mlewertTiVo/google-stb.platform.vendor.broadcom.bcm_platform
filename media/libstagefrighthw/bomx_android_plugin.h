@@ -43,6 +43,8 @@
 
 #include <OMXPluginBase.h>
 
+#include "bomx_log.h"
+
 namespace android {
 
 struct BOMX_AndroidPlugin : public OMXPluginBase {
@@ -80,6 +82,8 @@ private:
     OMX_ERRORTYPE getRolesSoftAAC(
             const char *name,
             Vector<String8> *roles);
+
+    int32_t m_logMask;
 };
 
 }  // namespace android

@@ -373,7 +373,6 @@ protected:
     bool m_allocNativeHandle;
     bool m_tunnelMode;
     bool m_tunnelHfr;
-    int m_showDestripeDelay;
     int m_enableHdrForNonVp9;
     native_handle_t *m_pTunnelNativeHandle;
     uint32_t m_tunnelCurrentPts;

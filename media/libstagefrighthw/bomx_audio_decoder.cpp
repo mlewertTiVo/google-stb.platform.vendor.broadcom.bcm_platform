@@ -54,6 +54,7 @@
 #include "nexus_audio_decode_to_memory.h"
 #include "nexus_core_utils.h"
 #include "nx_ashmem.h"
+#include "bomx_log.h"
 #include "bomx_pes_formatter.h"
 
 #define BOMX_INPUT_MSG(x)
@@ -492,7 +493,6 @@ static void BOMX_AudioDecoder_PlaypumpCcErrorEvent(void *pParam)
 static void BOMX_AudioDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
-    ALOGV("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
     pDecoder->OutputFrameEvent();
     pDecoder->InputBufferTimeoutCallback();
 }
@@ -1940,7 +1940,7 @@ NEXUS_Error BOMX_AudioDecoder::StopDecoder()
 
 NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    ALOGV("%d Setting Input Port State to %s", m_instanceNum, BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_PORT), "%d Setting Input Port State to %s", m_instanceNum, BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -2139,7 +2139,7 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
 NEXUS_Error BOMX_AudioDecoder::SetOutputPortState(OMX_STATETYPE newState)
 {
     NEXUS_Error errCode;
-    ALOGV("%d Setting Output Port State to %s", m_instanceNum, BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_PORT), "%d Setting Output Port State to %s", m_instanceNum, BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
         CancelTimerId(m_inputBuffersTimerId);
@@ -2225,7 +2225,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    ALOGV("%u Begin State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_STATE), "%u Begin State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -2255,7 +2255,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             (void)m_pAudioPorts[1]->Enable();
         }
 
-        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_STATE), "%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -2321,7 +2321,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_STATE), "%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -2342,7 +2342,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_STATE), "%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
         ALOGW("%d Unsupported state %u", m_instanceNum, newState);
@@ -3161,7 +3161,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGV("%s, comp:%s %d, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), m_instanceNum, pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGD_IF((m_logMask & B_LOG_ADEC_IN_FEED), "%s, comp:%s %d, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), m_instanceNum, pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if ( m_pInputFile )
     {
@@ -3513,7 +3513,7 @@ void BOMX_AudioDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: (%d) reached zero input buffers, minputBuffersTimerId:%p",
+        ALOGD_IF((m_logMask & B_LOG_ADEC_IN_RET), "%s: (%d) reached zero input buffers, minputBuffersTimerId:%p",
               __FUNCTION__, m_instanceNum, m_inputBuffersTimerId);
         CancelTimerId(m_inputBuffersTimerId);
         m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_RETURN_INTERVAL,
@@ -3591,7 +3591,7 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
         }
     }
 
-    ALOGV("%s %d: returned %u buffers, %u available", __FUNCTION__, m_instanceNum, count, m_AvailInputBuffers);
+    ALOGD_IF((m_logMask & B_LOG_ADEC_IN_RET), "%s %d: returned %u buffers, %u available", __FUNCTION__, m_instanceNum, count, m_AvailInputBuffers);
 }
 
 bool BOMX_AudioDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
@@ -3610,6 +3610,7 @@ bool BOMX_AudioDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
 void BOMX_AudioDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
+    ALOGD_IF((m_logMask & B_LOG_ADEC_IN_RET), "%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
     ReturnInputBuffers(0, true);
 }
 
@@ -3957,7 +3958,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_eosTimeStamp = pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate);
                 }
 
-                ALOGV("%d Return output buffer TS %llu bytes %zu (%u@%u) flags 0x%x", m_instanceNum, pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
+                ALOGD_IF((m_logMask & B_LOG_ADEC_OUTPUT), "%d Return output buffer TS %llu bytes %zu (%u@%u) flags 0x%x", m_instanceNum, pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
                 ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                 // Try to return processed input buffers
                 ReturnInputBuffers(pHeader->nTimeStamp, false);
@@ -4003,7 +4004,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_eosReady = false;
                     m_eosDelivered = true;
                     m_eosTimeStamp = 0;
-                    ALOGV("%d Return EOS output buffer %llu bytes %u", m_instanceNum, pHeader->nTimeStamp, pHeader->nFilledLen);
+                    ALOGD_IF((m_logMask & B_LOG_ADEC_OUTPUT), "%d Return EOS output buffer %llu bytes %u", m_instanceNum, pHeader->nTimeStamp, pHeader->nFilledLen);
                     ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                     // Force remaining input buffers to be flushed
                     ReturnInputBuffers(0, true);
