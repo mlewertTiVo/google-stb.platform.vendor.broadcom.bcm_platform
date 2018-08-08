@@ -1247,6 +1247,46 @@ static void power_set_feature(struct power_module *module __unused, feature_t fe
     ALOGV("%s: feature=%d, state=%d", __FUNCTION__, feature, state);
 }
 
+static int power_get_stats(struct power_module *module __unused,
+                            power_state_platform_sleep_state_t *list)
+{
+    ALOGD("%s", __FUNCTION__);
+    if (list == NULL)
+        return EINVAL;
+
+    list[0] = {
+                .name = "S0.5",
+                .residency_in_msec_since_boot = 0,
+                .total_transitions = 0,
+                .supported_only_in_suspend = 0,
+                .number_of_voters = 0,
+    };
+
+    list[1] = {
+                .name = "S2",
+                .residency_in_msec_since_boot = 0,
+                .total_transitions = 0,
+                .supported_only_in_suspend = 1,
+                .number_of_voters = 0,
+    };
+
+    return 0;
+}
+
+static ssize_t power_get_num_states(struct power_module *module __unused)
+{
+    return 2; // S0.5 and S2 are reported
+}
+
+static ssize_t power_get_voter_list(struct power_module *module __unused, size_t *voter)
+{
+    if (voter == NULL)
+        return EINVAL;
+
+    voter[0] = voter[1] = 0;
+    return 0;
+}
+
 static struct hw_module_methods_t power_module_methods = {
     .open = NULL
 };
@@ -1254,7 +1294,7 @@ static struct hw_module_methods_t power_module_methods = {
 struct power_module HAL_MODULE_INFO_SYM = {
    .common = {
       .tag                = HARDWARE_MODULE_TAG,
-      .module_api_version = POWER_MODULE_API_VERSION_0_3,
+      .module_api_version = POWER_MODULE_API_VERSION_0_5,
       .hal_api_version    = HARDWARE_HAL_API_VERSION,
       .id                 = POWER_HARDWARE_MODULE_ID,
       .name               = "Brcmstb Power HAL",
@@ -1266,5 +1306,10 @@ struct power_module HAL_MODULE_INFO_SYM = {
     .init                 = power_init,
     .setInteractive       = power_set_interactive,
     .powerHint            = power_hint,
-    .setFeature           = power_set_feature
+    .setFeature           = power_set_feature,
+    .get_platform_low_power_stats
+                          = power_get_stats,
+    .get_number_of_platform_modes
+                          = power_get_num_states,
+    .get_voter_list       = power_get_voter_list,
 };
