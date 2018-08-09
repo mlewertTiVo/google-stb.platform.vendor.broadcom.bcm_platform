@@ -1278,7 +1278,7 @@ static ssize_t power_get_num_states(struct power_module *module __unused)
     return 2; // S0.5 and S2 are reported
 }
 
-static ssize_t power_get_voter_list(struct power_module *module __unused, size_t *voter)
+static int power_get_voter_list(struct power_module *module __unused, size_t *voter)
 {
     if (voter == NULL)
         return EINVAL;
