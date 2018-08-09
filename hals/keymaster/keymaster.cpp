@@ -54,6 +54,11 @@ extern "C" {
 
 #define KM_OUT_DATA_SZ (4*4096)
 
+#define KM_KS_DIV       (8)
+#define KM_KS_SHA1_DG   (20)
+#define KM_KS_SHA224_DG (28)
+#define KM_KS_SHA256_DG (32)
+
 extern "C" void* nxwrap_create_verified_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
 
@@ -70,10 +75,15 @@ struct bcm_km {
 };
 
 struct km_op_s {
-   km_operation_handle_t op;
-   NEXUS_KeySlotHandle ks;
-   keymaster_purpose_t p;
+   km_operation_handle_t  op; /* operation handle. */
+   NEXUS_KeySlotHandle    ks; /* keyslot allocated for op. */
+   keymaster_algorithm_t  a;
    keymaster_block_mode_t b;
+   keymaster_digest_t     d;
+   keymaster_purpose_t    p;
+   int32_t                s; /* key size in bytes. */
+   uint8_t                *bb;
+   int32_t                bs;
 };
 
 static NEXUS_KeySlotHandle km_ks_alloc(
@@ -110,6 +120,15 @@ static void km_ks_free(
 #endif
 }
 
+static void km_bb_free(
+   struct km_op_s *op) {
+   if (op == NULL) return;
+   if (op->bb == NULL) return;
+   free(op->bb);
+   op->bb = NULL;
+   op->bs = 0;
+}
+
 static uint8_t *km_dup_2_kmblob(
    uint8_t *buffer,
    uint32_t size) {
@@ -132,6 +151,25 @@ static uint8_t *km_dup_2_srai(
    uint8_t *dup = (uint8_t *)SRAI_Memory_Allocate(size, SRAI_MemoryType_Shared);
    if (dup) {
       memcpy(dup, buffer, size);
+   }
+   return dup;
+}
+
+static uint8_t *km_2dup_2_srai(
+   const uint8_t *buffer1,
+   uint32_t size1,
+   const uint8_t *buffer2,
+   uint32_t size2) {
+   // first must always be valid.
+   if (size1 == 0 || buffer1 == NULL) {
+      return NULL;
+   }
+   uint8_t *dup = (uint8_t *)SRAI_Memory_Allocate(size1+size2, SRAI_MemoryType_Shared);
+   if (dup) {
+      memcpy(dup, buffer1, size1);
+      if (size2 && buffer2) {
+         memcpy(dup+size1, buffer2, size2);
+      }
    }
    return dup;
 }
@@ -1316,12 +1354,14 @@ static keymaster_error_t km_begin(
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
    if (km_init_err) {
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
    }
 
    NEXUS_KeySlotHandle ks = km_ks_alloc();
    if (ks == NULL) {
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
@@ -1331,6 +1371,7 @@ static keymaster_error_t km_begin(
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_begin: failed to build set for in params");
       km_ks_free(ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
@@ -1342,11 +1383,41 @@ static keymaster_error_t km_begin(
    km_err = KM_Tag_CreateContextFromAndroidBlob(serial.get(), serial.get() + serial_len, &km_params);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(ks);
+      km_bb_free(km_op);
       free(km_op);
       ALOGE("km_begin: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
+
+   set.GetTagValue(TAG_ALGORITHM, &km_op->a);
+   set.GetTagValue(TAG_DIGEST, &km_op->d);
+   int km_key_size = 0;
+   if ((km_op->a == KM_ALGORITHM_HMAC) &&
+       ((km_op->d == KM_DIGEST_SHA1) ||
+        (km_op->d == KM_DIGEST_SHA_2_224) ||
+        (km_op->d == KM_DIGEST_SHA_2_256))) {
+      KeymasterTl_GetKeyCharacteristicsSettings km_characs;
+      KeymasterTl_GetDefaultKeyCharacteristicsSettings(&km_characs);
+      km_characs.in_key_blob.buffer = (uint8_t *)key->key_material;
+      km_characs.in_key_blob.size = key->key_material_size;
+      km_characs.in_params = km_params;
+      km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+      if (km_err == BERR_SUCCESS) {
+         km_tag_value_t* km_t = KM_Tag_FindFirst(km_characs.out_hw_enforced, SKM_TAG_KEY_SIZE);
+         if (km_t) {
+            km_key_size = km_t->value.integer;
+         } else {
+            km_t = KM_Tag_FindFirst(km_characs.out_sw_enforced, SKM_TAG_KEY_SIZE);
+            if (km_t) {
+               km_key_size = km_t->value.integer;
+            }
+         }
+         KM_Tag_DeleteContext(km_characs.out_hw_enforced);
+         KM_Tag_DeleteContext(km_characs.out_sw_enforced);
+      }
+   }
+   km_op->s = (int32_t)km_key_size;
 
    KeymasterTl_CryptoBeginSettings km_cbs;
    km_operation_handle_t km_out_hdl;
@@ -1359,6 +1430,7 @@ static keymaster_error_t km_begin(
    km_err = KeymasterTl_CryptoBegin(km_hdl->handle, &km_cbs, &km_out_hdl);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cbs.in_params) KM_Tag_DeleteContext(km_cbs.in_params);
       ALOGE("km_begin: failed crypto operation: begin, err: %u (%d)",
@@ -1417,18 +1489,21 @@ static keymaster_error_t km_update(
    if (km_hdl == NULL) {
       ALOGE("km_update: null bcm-km handle?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    if (!input) {
       ALOGE("km_update: null input?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
    if (!input_consumed) {
       ALOGE("km_update: null input consumed?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_OUTPUT_PARAMETER_NULL;
    }
@@ -1437,8 +1512,42 @@ static keymaster_error_t km_update(
    // init failed on subsequent calls post km_config.
    if (km_init_err) {
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
+   }
+
+   // intercept cases which require buffering prior to final operation to hardware.
+   if (km_op->a == KM_ALGORITHM_HMAC) {
+      if ( ((km_op->d == KM_DIGEST_SHA1) && (km_op->s/KM_KS_DIV == KM_KS_SHA1_DG)) ||
+           ((km_op->d == KM_DIGEST_SHA_2_224) && (km_op->s/KM_KS_DIV == KM_KS_SHA224_DG)) ||
+           ((km_op->d == KM_DIGEST_SHA_2_256) && (km_op->s/KM_KS_DIV == KM_KS_SHA256_DG)) ) {
+         ALOGI_IF(KM_LOG_ALL_IN, "km_update: hw-op-%" PRIu64 " (HMAC:%d|SHA:%d|DGS:%d) buffering %u bytes.",
+            km_op->op, km_op->a, km_op->d, km_op->s/KM_KS_DIV, input->data_length);
+         // create|copy into bounce buffer as appropriate.
+         if (km_op->bb == NULL) {
+            km_op->bb = (uint8_t *)malloc(sizeof(uint8_t)*input->data_length);
+            if (km_op->bb) {
+               memcpy(km_op->bb, input->data, input->data_length);
+               km_op->bs = input->data_length;
+            }
+         } else {
+            uint8_t *bb = (uint8_t *)malloc(sizeof(uint8_t)*(km_op->bs+input->data_length));
+            if (bb) {
+               memcpy(bb, km_op->bb, km_op->bs);
+               memcpy(bb+km_op->bs, input->data, input->data_length);
+               free(km_op->bb);
+               km_op->bb = bb;
+               km_op->bs += input->data_length;
+            }
+         }
+         // all consumed and no output.
+         *input_consumed = input->data_length;
+         if (output) {
+            output->data_length = 0;
+         }
+         return KM_ERROR_OK;
+      }
    }
 
    AuthorizationSet set;
@@ -1446,9 +1555,11 @@ static keymaster_error_t km_update(
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_update: failed to build set for in params");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
+
    size_t serial_len = set.SerializedSize();
    UniquePtr<uint8_t[]> serial(new uint8_t[serial_len]);
    set.Serialize(serial.get(), serial.get() + serial_len);
@@ -1459,6 +1570,7 @@ static keymaster_error_t km_update(
       ALOGE("km_update: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return km_berr_2_kmerr(km_err);
    }
@@ -1474,6 +1586,7 @@ static keymaster_error_t km_update(
        !km_cus.out_data.buffer) {
       ALOGE("km_update: failed allocating srai buffers");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
       if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
@@ -1482,6 +1595,7 @@ static keymaster_error_t km_update(
    km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
       if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
@@ -1525,6 +1639,7 @@ static keymaster_error_t km_update(
          if (!output->data) {
             output->data_length = 0;
             km_ks_free(km_op->ks);
+            km_bb_free(km_op);
             free(km_op);
             SRAI_Memory_Free(km_cus.out_data.buffer);
             ALOGE("km_finish: failed copying generated key");
@@ -1554,18 +1669,21 @@ static keymaster_error_t km_finish(
    if (km_hdl == NULL) {
       ALOGE("km_finish: null bcm-km handle?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
    if (!input) {
       ALOGE("km_finish: null input?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
    if (input->data_length > km_hdl->maxFinishInput) {
       ALOGE("km_finish: oversized input?!");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_INVALID_INPUT_LENGTH;
    }
@@ -1574,6 +1692,7 @@ static keymaster_error_t km_finish(
    // init failed on subsequent calls post km_config.
    if (km_init_err) {
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
    }
@@ -1583,6 +1702,7 @@ static keymaster_error_t km_finish(
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
       ALOGE("km_finish: failed to build set for in params");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return KM_ERROR_UNKNOWN_ERROR;
    }
@@ -1596,6 +1716,7 @@ static keymaster_error_t km_finish(
       ALOGE("km_finish: failed create-context: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       return km_berr_2_kmerr(km_err);
    }
@@ -1605,14 +1726,23 @@ static keymaster_error_t km_finish(
    km_cfs.in_params = km_params;
    km_cfs.in_signature.buffer = km_dup_2_srai(signature->data, signature->data_length);
    km_cfs.in_signature.size = signature->data_length;
-   km_cfs.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
-   km_cfs.in_data.size = input->data_length;
+   if (km_op->bb == NULL) {
+      km_cfs.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
+      km_cfs.in_data.size = input->data_length;
+   } else {
+      km_cfs.in_data.buffer = km_2dup_2_srai(
+         km_op->bb, km_op->bs, /* bounce buffer content copied first. */
+         input->data, input->data_length);
+      km_cfs.in_data.size = km_op->bs + input->data_length;
+      km_bb_free(km_op);
+   }
    km_cfs.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
    km_cfs.out_data.size = KM_OUT_DATA_SZ;
    if ((!km_cfs.in_data.buffer && input->data_length) ||
        !km_cfs.out_data.buffer) {
       ALOGE("km_finish: failed allocating srai buffers");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
       if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
@@ -1621,9 +1751,9 @@ static keymaster_error_t km_finish(
    }
    if (!km_cfs.in_signature.buffer &&
        (signature->data_length || (km_op->p == KM_PURPOSE_VERIFY))) {
-      // TODO: AEAD mode, KM_PURPOSE_DECRYPT implies KM_PURPOSE_VERIFY (?)
       ALOGE("km_finish: failed allocating mandatory signature srai buffers");
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
       if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
@@ -1637,6 +1767,7 @@ static keymaster_error_t km_finish(
    km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
+      km_bb_free(km_op);
       free(km_op);
       if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
       if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
@@ -1688,6 +1819,7 @@ static keymaster_error_t km_finish(
             if (!output->data) {
                output->data_length = 0;
                km_ks_free(km_op->ks);
+               km_bb_free(km_op);
                free(km_op);
                if (km_cfs.in_signature.buffer) SRAI_Memory_Free(km_cfs.in_signature.buffer);
                if (km_cfs.in_data.buffer) SRAI_Memory_Free(km_cfs.in_data.buffer);
@@ -1701,6 +1833,7 @@ static keymaster_error_t km_finish(
    }
 
    km_ks_free(km_op->ks);
+   km_bb_free(km_op);
    free(km_op);
    return KM_ERROR_OK;
 }
