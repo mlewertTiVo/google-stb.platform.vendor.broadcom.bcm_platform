@@ -1574,7 +1574,7 @@ static void nxserver_rmlmk(uint64_t client)
    }
 }
 
-#define NXWRAP_JOIN_V "/vendor/usr/nxwl"
+#define NXWRAP_JOIN_V "/vendor/usr/jwl"
 int main(void)
 {
     struct timespec t;
