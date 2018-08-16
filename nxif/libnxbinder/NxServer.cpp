@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
 #define LOG_TAG "bcm-nxs-b"
 
 #include <inttypes.h>
@@ -637,7 +636,7 @@ void NxServer::cbDisplayAction() {
 
 void NxServer::cbHdcp(void *context, int param) {
 #if ANDROID_ENABLE_HDMI_HDCP
-   NEXUS_Error rc;
+   int rc;
    NxClient_StandbyStatus standbyStatus;
    NxServer *pNxServer = reinterpret_cast<NxServer *>(context);
    Mutex::Autolock autoLock(pNxServer->mLock);
@@ -649,54 +648,12 @@ void NxServer::cbHdcp(void *context, int param) {
       return;
    }
 
-   // set content stream type to 1 if connected to 2.2 receiver with only 2.2 downstream
+   // bit of useless callback at the moment...
    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
-      NEXUS_PlatformConfiguration platformConfig;
-      NEXUS_HdmiOutputHdcpStatus hdmiOutputHdcpStatus;
-      NEXUS_HdmiOutputHdcpSettings hdmiOutputHdcpSettings;
-
-      NEXUS_Platform_GetConfiguration(&platformConfig);
-      rc = NEXUS_HdmiOutput_GetHdcpStatus(platformConfig.outputs.hdmi[0], &hdmiOutputHdcpStatus);
+      NxClient_DisplayStatus status;
+      rc = NxClient_GetDisplayStatus(&status);
       if (rc) {
-         ALOGE("%s: Error %d getting HDCP status", __PRETTY_FUNCTION__, rc);
          return;
-      }
-
-      ALOGV("%s: hdcpState %d, %s, %s", __PRETTY_FUNCTION__, hdmiOutputHdcpStatus.hdcpState,
-         hdmiOutputHdcpStatus.isHdcpRepeater?"Repeater":"Receiver",
-         hdmiOutputHdcpStatus.hdcp2_2Features?
-            (hdmiOutputHdcpStatus.isHdcpRepeater?
-               (hdmiOutputHdcpStatus.hdcp2_2RxInfo.hdcp1_xDeviceDownstream?"2.2(1.x)":"2.2(2.2)"):
-               "2.2"):
-            "1.x");
-
-      if (hdmiOutputHdcpStatus.hdcp2_2Features &&
-          (hdmiOutputHdcpStatus.hdcpState == NEXUS_HdmiOutputHdcpState_eEncryptionEnabled)) {
-         if (hdmiOutputHdcpStatus.isHdcpRepeater &&
-             !hdmiOutputHdcpStatus.hdcp2_2RxInfo.hdcp1_xDeviceDownstream) {
-            NEXUS_HdmiOutput_GetHdcpSettings(platformConfig.outputs.hdmi[0], &hdmiOutputHdcpSettings);
-            if (hdmiOutputHdcpSettings.hdcp2xContentStreamControl == NEXUS_Hdcp2xContentStream_eType1) {
-               ALOGV("Content stream type already %d", hdmiOutputHdcpSettings.hdcp2xContentStreamControl);
-               return;
-            }
-
-            hdmiOutputHdcpSettings.hdcp2xContentStreamControl = NEXUS_Hdcp2xContentStream_eType1;
-
-            ALOGV("Set content stream type to %d", hdmiOutputHdcpSettings.hdcp2xContentStreamControl);
-            rc = NEXUS_HdmiOutput_SetHdcpSettings(platformConfig.outputs.hdmi[0], &hdmiOutputHdcpSettings);
-            if (rc) {
-               ALOGE("%s: error %d setting content stream control", __PRETTY_FUNCTION__, rc);
-               return;
-            }
-
-            rc = NEXUS_HdmiOutput_StartHdcpAuthentication(platformConfig.outputs.hdmi[0]);
-            if (rc) {
-               ALOGE("%s: error %d starting authentication", __PRETTY_FUNCTION__, rc);
-               return;
-            }
-         } else {
-            ALOGV("%s: Not changing HDCP settings", __PRETTY_FUNCTION__);
-         }
       }
    }
 #else
