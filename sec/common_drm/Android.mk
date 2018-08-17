@@ -13,6 +13,8 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
+MY_LOCAL_PATH := $(LOCAL_PATH)
+
 #-------------
 # libcmndrm.so
 #-------------
@@ -77,10 +79,15 @@ endif
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
 endif
+ifeq ($(NEXUS_SECURITY_API_VERSION),2)
+RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_secv2
+endif
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
+# update LOCAL_PATH as it gets altered above
+LOCAL_PATH := $(MY_LOCAL_PATH)
 ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
