@@ -48,15 +48,41 @@ StandbyMonitorThread::StandbyMonitorThread() : mMutex("BrcmAudio::StandbyMonitor
         mContexts[i] = NULL;
     }
     mNumCallbacks = 0;
+    mStandbyId = 0;
 }
 
 StandbyMonitorThread::~StandbyMonitorThread()
 {
 }
 
-int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, void *context)
+int StandbyMonitorThread::Start()
 {
     android::status_t status;
+    android::Mutex::Autolock _l(mMutex);
+
+    mStandbyId = NxClient_RegisterAcknowledgeStandby();
+    ALOGD("%s: RegisterAcknowledgeStandby() = %d", __FUNCTION__, mStandbyId);
+
+    /* Start running monitor thread */
+    status = this->run("BcmAudioStandbyMon");
+    if (status != android::OK) {
+        ALOGE("%s: error starting standby thread", __FUNCTION__);
+        NxClient_UnregisterAcknowledgeStandby(mStandbyId);
+        return -ENOSYS;
+    }
+    return 0;
+}
+
+void StandbyMonitorThread::Exit()
+{
+    android::Mutex::Autolock _l(mMutex);
+    requestExitAndWait();
+    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
+    ALOGD("%s: UnregisterAcknowledgeStandby(%d)", __FUNCTION__, mStandbyId);
+}
+
+int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, void *context)
+{
     int i;
     android::Mutex::Autolock _l(mMutex);
 
@@ -73,17 +99,7 @@ int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, 
     mCallbacks[i] = callback;
     mContexts[i] = context;
     mNumCallbacks++;
-    if (mNumCallbacks == 1) {
-        /* Start running monitor thread */
-        status = this->run("BcmAudioStandbyMon");
-        if (status != android::OK){
-            ALOGE("%s: error starting standby thread", __FUNCTION__);
-            mCallbacks[i] = NULL;
-            mContexts[i] = NULL;
-            mNumCallbacks--;
-            return -ENOSYS;
-        }
-    }
+
     ALOGV("%s: Callback %d/%d registered", __FUNCTION__, i, mNumCallbacks);
     return i;
 }
@@ -110,11 +126,6 @@ void StandbyMonitorThread::UnregisterCallback(int id)
     mContexts[id] = NULL;
     mNumCallbacks--;
     ALOGV("%s: Callback %d/%d unregistered", __FUNCTION__, id, mNumCallbacks);
-
-    if (mNumCallbacks == 0) {
-        /* requestExitAndWait() creates a deadlock in the Thread library */
-        requestExit();
-    }
 }
 
 /* Standby monitor thread */
@@ -123,12 +134,9 @@ bool StandbyMonitorThread::threadLoop()
     NEXUS_Error rc;
     int i;
     NxClient_StandbyStatus standbyStatus;
-    unsigned mStandbyId = NxClient_RegisterAcknowledgeStandby();
 
-    ALOGD("%s: RegisterAcknowledgeStandby() = %d", __FUNCTION__, mStandbyId);
-
-    while (!exitPending()) {
-        if ((mMutex.tryLock() == 0) && mNumCallbacks > 0) {
+    while (isRunning()) {
+        if (mMutex.tryLock() == 0) {
             rc = NxClient_GetStandbyStatus(&standbyStatus);
 
             if (rc == NEXUS_SUCCESS && standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
@@ -151,8 +159,6 @@ bool StandbyMonitorThread::threadLoop()
         }
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
-    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
-    ALOGD("%s: UnregisterAcknowledgeStandby(%d)", __FUNCTION__, mStandbyId);
     return false;
 }
 
