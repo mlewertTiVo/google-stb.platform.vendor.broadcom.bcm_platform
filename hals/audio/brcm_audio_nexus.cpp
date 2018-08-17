@@ -49,6 +49,11 @@
 
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
+    8000,
+    11025,
+    16000,
+    22050,
+    24000,
     32000,
     44100,
     48000,
@@ -537,8 +542,11 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
         config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
     }
 
-    /* Only allow default config for others */
-    config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
+    if (config->channel_mask == 0 ||
+       ((config->channel_mask != AUDIO_CHANNEL_OUT_STEREO) && (config->channel_mask != AUDIO_CHANNEL_OUT_MONO))) {
+        config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
+    }
+
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->framesPlayedTotal = 0;
@@ -680,6 +688,23 @@ static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int
     return 0;
 }
 
+static char *nexus_bout_get_parameters (struct brcm_stream_out *bout, const char *keys)
+{
+    struct str_parms *query = str_parms_create_str(keys);
+    struct str_parms *result = str_parms_create();
+    char* result_str;
+    (void) bout;
+
+    /* supported sample formats */
+    if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS)) {
+        str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_FORMATS, "AUDIO_FORMAT_PCM_16_BIT");
+    }
+
+    result_str = str_parms_to_str(result);
+    ALOGV("%s: result = %s", __FUNCTION__, result_str);
+    return result_str;
+}
+
 struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_open = nexus_bout_open,
     .do_bout_close = nexus_bout_close,
@@ -691,7 +716,7 @@ struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_get_render_position = nexus_bout_get_render_position,
     .do_bout_get_presentation_position = nexus_bout_get_presentation_position,
     .do_bout_dump = nexus_bout_dump,
-    .do_bout_get_parameters = NULL,
+    .do_bout_get_parameters = nexus_bout_get_parameters,
     .do_bout_pause = NULL,
     .do_bout_resume = NULL,
     .do_bout_drain = NULL,
