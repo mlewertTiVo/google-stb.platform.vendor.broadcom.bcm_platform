@@ -196,7 +196,7 @@ Return<void> bp3::status(
 #endif
 
 out_leave:
-   if (session) bp3_session_end(NULL, 0, NULL, NULL, NULL, NULL);
+   if (session) bp3_session_end(NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL);
    SAGE_app_leave_nexus();
 out:
    if (!rc) str.setToExternal(output, strlen(output));
@@ -382,7 +382,10 @@ Return<int32_t> bp3::provision(
       goto out;
    }
    reset(curl, &post, &last);
-   errCode = bp3_session_end(ccf.memory, ccf.size, &logbuf, &logsize, &status, &statusSize);
+   errCode = bp3_session_end(ccf.memory, ccf.size,
+                             &logbuf, &logsize,
+                             &status, &statusSize,
+                             NULL, NULL);
    session = NULL;
    if (ccf.memory) free(ccf.memory);
    if (errCode != 0)
@@ -429,7 +432,7 @@ out:
       rc = -1;
    if (logbuf) free(logbuf);
    if (session)
-      bp3_session_end(NULL, 0, NULL, NULL, NULL, NULL);
+      bp3_session_end(NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL);
    if (post) curl_formfree(post);
    curl_slist_free_all(headers);
    if (curl) curl_easy_cleanup(curl);
