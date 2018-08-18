@@ -509,10 +509,10 @@ static int brcm_gk_open(
    gk_hdl->dev.common.module  = (struct hw_module_t*) module;
    gk_hdl->dev.common.close   = brcm_gk_close;
 
-   gk_hdl->dev.enroll            = brcm_gk_enroll,
-   gk_hdl->dev.verify            = brcm_gk_verify,
-   gk_hdl->dev.delete_user       = nullptr,
-   gk_hdl->dev.delete_all_users  = nullptr,
+   gk_hdl->dev.enroll            = brcm_gk_enroll;
+   gk_hdl->dev.verify            = brcm_gk_verify;
+   gk_hdl->dev.delete_user       = nullptr;
+   gk_hdl->dev.delete_all_users  = nullptr;
 
    *device = (hw_device_t*) &gk_hdl->dev.common;
    return 0;
