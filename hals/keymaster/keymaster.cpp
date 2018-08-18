@@ -15,7 +15,8 @@
  */
 
 //#define LOG_NDEBUG 0
-#define KM_LOG_ALL_IN 1
+#define KM_LOG_ALL_IN  1
+#define KM_LOG_ALL_OUT 1
 
 #define LOG_TAG "bcm-km"
 #include <log/log.h>
@@ -58,6 +59,8 @@ extern "C" {
 #define KM_KS_SHA1_DG   (20)
 #define KM_KS_SHA224_DG (28)
 #define KM_KS_SHA256_DG (32)
+
+#define KM_IN_MAX_CHALLENGE_SZ (128)
 
 extern "C" void* nxwrap_create_verified_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
@@ -1130,6 +1133,8 @@ static keymaster_error_t km_attest_key(
       ALOGE("km_attest_key: null output?!");
       return KM_ERROR_OUTPUT_PARAMETER_NULL;
    }
+   cert_chain->entry_count = 0;
+   cert_chain->entries = nullptr;
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
@@ -1147,6 +1152,16 @@ static keymaster_error_t km_attest_key(
    if (!set.Contains(TAG_ATTESTATION_APPLICATION_ID)) {
       ALOGE("km_attest_key: missing TAG_ATTESTATION_APPLICATION_ID");
       return KM_ERROR_ATTESTATION_APPLICATION_ID_MISSING;
+   }
+
+   if (set.Contains(TAG_ATTESTATION_CHALLENGE)) {
+      keymaster_blob_t km_challenge;
+      set.GetTagValue(TAG_ATTESTATION_CHALLENGE, &km_challenge);
+      if (km_challenge.data_length > KM_IN_MAX_CHALLENGE_SZ) {
+         ALOGE("km_attest_key: TAG_ATTESTATION_CHALLENGE of size %zu is larger than max-allowed %zu",
+            km_challenge.data_length, KM_IN_MAX_CHALLENGE_SZ);
+         return KM_ERROR_INVALID_INPUT_LENGTH;
+      }
    }
 
    BERR_Code km_err;
@@ -1174,12 +1189,15 @@ static keymaster_error_t km_attest_key(
    if (km_attest.in_params) KM_Tag_DeleteContext(km_attest.in_params);
    // copy key in the passed in blob, passing ownership.
    cert_chain->entry_count = km_attest.out_cert_chain.num;
+   ALOGI_IF(KM_LOG_ALL_OUT, "km_attest_key: cert chain has %zu entries", cert_chain->entry_count);
    cert_chain->entries = reinterpret_cast<keymaster_blob_t*>(malloc(sizeof(keymaster_blob_t)*cert_chain->entry_count));
    for (i = 0 ; i < (int)cert_chain->entry_count ; i++) {
       cert_chain->entries[i].data_length = km_attest.out_cert_chain.certificates[i].length;
       cert_chain->entries[i].data = km_dup_2_kmblob(
          &km_attest.out_cert_chain_buffer.buffer[km_attest.out_cert_chain.certificates[i].offset],
          km_attest.out_cert_chain.certificates[i].length);
+      ALOGI_IF(KM_LOG_ALL_OUT, "km_attest_key: cert chain[%d]: sz: %d, data: %p",
+         i, cert_chain->entries[i].data_length, cert_chain->entries[i].data);
       if (!cert_chain->entries[i].data) {
          break;
       }
