@@ -643,10 +643,6 @@ static keymaster_error_t km_generate_key(
    if (insert_no_auth) {
       KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
    }
-   // insert a "all applications" tag if none specified.
-   if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
-      KM_Tag_AddBool(km_params, SKM_TAG_ALL_APPLICATIONS, true);
-   }
    // insert a creation time because there is no wall clock in sage.
    if (!set.Contains(TAG_CREATION_DATETIME)) {
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
@@ -926,10 +922,6 @@ static keymaster_error_t km_import_key(
    // insert 'no auth required' if nothing specified.
    if (insert_no_auth) {
       KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
-   }
-   // insert a "all applications" tag if none specified.
-   if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
-      KM_Tag_AddBool(km_params, SKM_TAG_ALL_APPLICATIONS, true);
    }
    // insert a creation time because there is no wall clock in sage.
    if (!set.Contains(TAG_CREATION_DATETIME)) {
