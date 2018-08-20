@@ -55,6 +55,9 @@
 #include "nexus_surface_compositor.h"
 #include "bomx_video_decoder_stats.h"
 #include "bomx_pes_formatter.h"
+#include "bomx_avc_parser.h"
+#include "bomx_hevc_parser.h"
+#include "bomx_mpeg2_parser.h"
 #include <stdio.h>
 #include <cutils/native_handle.h>
 #include <utils/List.h>
@@ -178,6 +181,18 @@ struct BOMX_VideoSurfaceIndex
    bool used;
    void *user;
    int  hwc_cli;
+};
+
+struct BOMX_ColorAspects
+{
+    bool bValid;
+    ColorAspects colorAspects;
+};
+
+struct BOMX_HdrInfo
+{
+    bool bValid;
+    HDRStaticInfo hdrInfo;
 };
 
 class BOMX_VideoDecoder : public BOMX_Component
@@ -430,10 +445,13 @@ protected:
     bool m_ptsReceived;
 
     NEXUS_VideoDecoderStreamInformation m_videoStreamInfo;
-    HDRStaticInfo m_hdrStaticInfo;
-    bool m_hdrStaticInfoSet;
-    ColorAspects m_colorAspects;
-    bool m_colorAspectsSet;
+    BOMX_HdrInfo m_hdrInfoFwks;
+    BOMX_HdrInfo m_hdrInfoStream;
+    BOMX_HdrInfo m_hdrInfoFinal;
+    bool m_describeHdrColorInfoDisabled;
+    BOMX_ColorAspects m_colorAspectsFwks;
+    BOMX_ColorAspects m_colorAspectsStream;
+    BOMX_ColorAspects m_colorAspectsFinal;
 
     bool m_redux;
     int m_indexSurface;
@@ -448,6 +466,10 @@ protected:
     NEXUS_VideoCodec GetNexusCodec();
     NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);
     void ColorAspectsFromNexusStreamInfo(ColorAspects *colorAspects);
+    void HdrInfoFromNexusStreamInfo(HDRStaticInfo *hdrInfo);
+    void SetStreamColorAspects(int32_t primaries, int32_t transfer, int32_t coeffs, bool fullRange);
+    void GenerateFinalColorAspects();
+    void GenerateFinalHdrInfo();
 
     NEXUS_Error SetInputPortState(OMX_STATETYPE newState);
     NEXUS_Error SetOutputPortState(OMX_STATETYPE newState);

@@ -42,44 +42,19 @@
  * Module Description:
  *
  **************************************************************************/
-#ifndef BOMX_LOG_H__
-#define BOMX_LOG_H__
+#ifndef BOMX_HEVC_PARSER_H__
+#define BOMX_HEVC_PARSER_H__
 
+#include "nexus_platform.h"
 
-#define B_PROPERTY_LOG_MASK     ("dyn.nx.media.log.mask")
-#define B_LOG_MASK_DEFAULT      (0)
+typedef struct BOMX_HEVC_VUIInfo
+{
+    int32_t colorPrimaries;
+    int32_t transferChar;
+    int32_t matrixCoeff;
+    bool bFullRange;
+} BOMX_HEVC_VUIInfo;
 
-/* Video decoder (12-bit) (bit 0-11) */
-#define B_LOG_VDEC_BASE         (0)
-#define B_LOG_VDEC_IN_FEED      (1<<(B_LOG_VDEC_BASE))      /* Input feeding */
-#define B_LOG_VDEC_IN_RET       (1<<(B_LOG_VDEC_BASE+1))    /* Input returning */
-#define B_LOG_VDEC_OUTPUT       (1<<(B_LOG_VDEC_BASE+2))    /* Output */
-#define B_LOG_VDEC_TRANS_STATE  (1<<(B_LOG_VDEC_BASE+3))    /* State transitions */
-#define B_LOG_VDEC_TRANS_PORT   (1<<(B_LOG_VDEC_BASE+4))    /* Port state transitions */
-#define B_LOG_VDEC_COLOR_INFO   (1<<(B_LOG_VDEC_BASE+5))    /* Color info */
-#define B_LOG_VDEC_STC          (1<<(B_LOG_VDEC_BASE+6))    /* STC (for tunneled decoder) */
-#define B_LOG_VDEC_CODEC_CFG    (1<<(B_LOG_VDEC_BASE+7))    /* Codec configuration parser */
+bool BOMX_HEVC_ParseVUI(const uint8_t *pData, size_t length, BOMX_HEVC_VUIInfo *pInfo, bool bLog);
 
-/* Video encoder (8-bit) (bit 12-19) */
-#define B_LOG_VENC_BASE         (12)
-#define B_LOG_VENC_IN_FEED      (1<<(B_LOG_VENC_BASE))      /* Input feeding */
-#define B_LOG_VENC_IN_RET       (1<<(B_LOG_VENC_BASE+1))    /* Input returning */
-#define B_LOG_VENC_OUTPUT       (1<<(B_LOG_VENC_BASE+2))    /* Output */
-#define B_LOG_VENC_TRANS_STATE  (1<<(B_LOG_VENC_BASE+3))    /* State transitions */
-#define B_LOG_VENC_TRANS_PORT   (1<<(B_LOG_VENC_BASE+4))    /* Port state transitions */
-#define B_LOG_VENC_STATUS       (1<<(B_LOG_VENC_BASE+5))    /* Encoder status */
-
-/* Audio decoder (8-bit) (bit 20-27) */
-#define B_LOG_ADEC_BASE         (20)
-#define B_LOG_ADEC_IN_FEED      (1<<(B_LOG_ADEC_BASE))      /* Input feeding */
-#define B_LOG_ADEC_IN_RET       (1<<(B_LOG_ADEC_BASE+1))    /* Input returning */
-#define B_LOG_ADEC_OUTPUT       (1<<(B_LOG_ADEC_BASE+2))    /* Output */
-#define B_LOG_ADEC_TRANS_STATE  (1<<(B_LOG_ADEC_BASE+3))    /* State transitions */
-#define B_LOG_ADEC_TRANS_PORT   (1<<(B_LOG_ADEC_BASE+4))    /* Port state transitions */
-
-/* Misc (4-bit) (bit 28-31) */
-#define B_LOG_MISC_BASE         (28)
-#define B_LOG_MISC_COMP_INST    (1<<(B_LOG_MISC_BASE))      /* Component instantiation/destruction */
-
-
-#endif /* #ifndef BOMX_LOG_H__*/
+#endif /* #ifndef BOMX_HEVC_PARSER_H__ */

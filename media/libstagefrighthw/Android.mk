@@ -135,7 +135,7 @@ LOCAL_SRC_FILES := \
     bomx_port.cpp
 
 # Component instances
-LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_pes_formatter.cpp
+LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_avc_parser.cpp bomx_hevc_parser.cpp bomx_mpeg2_parser.cpp bomx_pes_formatter.cpp
 LOCAL_SRC_FILES += bomx_audio_decoder.cpp bomx_aac_parser.cpp
 
 LOCAL_C_INCLUDES := \
