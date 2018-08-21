@@ -937,9 +937,10 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:fb:%d::%dx%d::%s:%p:%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:fb:%d::%dx%d::%s:%p:%s:%zu -> %p::%d (b:%p)",
             i, scs.width, scs.height, dh?"d-cma":"gfx", ch,
             hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
    }
    hwc2->ext->u.ext.bfb = true;
@@ -961,8 +962,9 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.yvi.s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:yvi::%dx%d::%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:yvi::%dx%d::%s:%zu -> %p::%d (b:%p)",
             scs.width, scs.height, dh?"d-cma":"gfx",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
@@ -983,8 +985,9 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.icb.s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:icb::%dx%d::%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:icb::%dx%d::%s:%zu -> %p::%d (b:%p)",
             scs.width, scs.height, dh?"d-cma":"gfx",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.icb.s, hwc2->ext->u.ext.icb.fd, bh);
    }
 
