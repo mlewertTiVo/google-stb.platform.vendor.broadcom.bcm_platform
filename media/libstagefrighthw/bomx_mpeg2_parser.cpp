@@ -145,7 +145,7 @@ bool BOMX_MPEG2_ParseSeqDispExt(const uint8_t *pData, size_t length, BOMX_MPEG2_
 
         scode = bmedia_video_scan_scode(cursor, 0xFFFFFFFFul);
         pos = batom_cursor_pos(cursor);
-        ALOGD_IF(bLog, "scode %#x at %u", scode, pos);
+        ALOGD_IF(bLog, "scode %#x at %zu", scode, pos);
         if(scode==0) {
             return false;
         }
