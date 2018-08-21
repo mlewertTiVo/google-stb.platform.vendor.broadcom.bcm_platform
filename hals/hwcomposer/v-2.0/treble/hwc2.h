@@ -151,6 +151,7 @@ struct hwc2_reg_cb_t {
 /* display configuration unit. */
 struct hwc2_dsp_cfg_t {
    struct hwc2_dsp_cfg_t *next;
+   uint32_t              hdl;
    uint32_t              w;
    uint32_t              h;
    uint32_t              vsync;

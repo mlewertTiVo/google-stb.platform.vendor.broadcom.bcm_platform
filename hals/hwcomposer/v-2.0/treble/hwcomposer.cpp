@@ -596,6 +596,7 @@ static void hwc2_cfg_collect(
    if (cfg) {
       NEXUS_VideoFormat_GetInfo(s->format, &vi);
       cfg->next  = NULL;
+      cfg->hdl   = (uint32_t)(intptr_t)cfg;
       cfg->w     = hwc2_afb_bound(dsp, false, vi.width);
       cfg->ew    = vi.width;
       cfg->h     = hwc2_afb_bound(dsp, true, vi.height);
@@ -606,9 +607,9 @@ static void hwc2_cfg_collect(
       dsp->aCfg = dsp->cfgs;
 
       ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
-               "[%s]:[acfg]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
+               "[%s]:[acfg]:%" PRIu64 ":%" PRIu32 ":%ux%u:(%ux%u):%ufps\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-               (uint64_t)(intptr_t)dsp,
+               (uint64_t)(intptr_t)dsp, cfg->hdl,
                cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
    }
    cfg_c = dsp->cfgs;
@@ -630,9 +631,9 @@ static void hwc2_cfg_collect(
                 (vi.height >= dsp->gfbhxl) && (cfg_s->eh >= dsp->gfbhxl)) {
                skip = true;
                ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
-                        "[%s]:[skip]:%" PRIu64 ":%ux%u,%ufps::use:%ux%u,%ufps\n",
+                        "[%s]:[skip]:%" PRIu64 ":%" PRIu32 "::%ux%u,%ufps::use:%ux%u,%ufps\n",
                         (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                        (uint64_t)(intptr_t)dsp,
+                        (uint64_t)(intptr_t)dsp, cfg->hdl,
                         vi.width, vi.height, vi.verticalFreq/100,
                         cfg_s->ew, cfg_s->eh, hwc2_vsync2fps(cfg_s->vsync));
             }
@@ -647,6 +648,7 @@ static void hwc2_cfg_collect(
          if (cfg) {
             j++;
             cfg->next  = NULL;
+            cfg->hdl   = (uint32_t)(intptr_t)cfg;
             cfg->w     = hwc2_afb_bound(dsp, false, vi.width);
             cfg->ew    = vi.width;
             cfg->h     = hwc2_afb_bound(dsp, true, vi.height);
@@ -654,9 +656,9 @@ static void hwc2_cfg_collect(
             cfg->vsync = hwc2_fps2vsync(vi.verticalFreq/100);
 
             ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
-                     "[%s]:[cfg:%d]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
+                     "[%s]:[cfg:%d]:%" PRIu64 ":%" PRIu32 ":%ux%u:(%ux%u):%ufps\n",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     j, (uint64_t)(intptr_t)dsp,
+                     j, (uint64_t)(intptr_t)dsp, cfg->hdl,
                      cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
 
             cfg_c->next = cfg;
@@ -2767,7 +2769,7 @@ static int32_t hwc2_gActCfg(
          *outConfig = (hwc2_config_t)0;
          return ret;
       } else {
-         *outConfig = (hwc2_config_t)(intptr_t)dsp->aCfg;
+         *outConfig = (hwc2_config_t)dsp->aCfg->hdl;
          pthread_mutex_unlock(&dsp->mtx_cfg);
       }
    } else {
@@ -3088,7 +3090,13 @@ static int32_t hwc2_dspAttr(
       goto out;
    }
 
-   cfg = (struct hwc2_dsp_cfg_t *)(intptr_t)config;
+   cfg = dsp->cfgs;
+   while (cfg != NULL) {
+      if (config == (hwc2_config_t)cfg->hdl)
+         break;
+      cfg = cfg->next;
+   };
+
    if (cfg == NULL) {
       ret = HWC2_ERROR_BAD_CONFIG;
       goto out;
@@ -3230,7 +3238,7 @@ static int32_t hwc2_dspCfg(
 
    while (cfg != NULL) {
       if (outConfigs != NULL) {
-         outConfigs[*outNumConfigs] = (hwc2_config_t)(intptr_t)cfg;
+         outConfigs[*outNumConfigs] = (hwc2_config_t)cfg->hdl;
       }
       *outNumConfigs += 1;
       cfg = cfg->next;
@@ -4339,7 +4347,7 @@ static int32_t hwc2_sActCfg(
    }
    cfg = dsp->cfgs;
    while (cfg != NULL) {
-      if (config == (hwc2_config_t)(intptr_t)cfg)
+      if (config == (hwc2_config_t)cfg->hdl)
          break;
       cfg = cfg->next;
    };
