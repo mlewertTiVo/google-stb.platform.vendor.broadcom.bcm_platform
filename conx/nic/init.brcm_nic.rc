@@ -1,31 +1,14 @@
 on post-fs-data
-    # dhcp
-    mkdir /data/misc/dhcp 0770 dhcp dhcp
-    chmod 0770 /data/misc/dhcp
-    chown dhcp dhcp /data/misc/dhcp
-
-    # wifi
-    mkdir /data/misc/wifi 0775 wifi wifi
-    chmod 0775 /data/misc/wifi
-    chown wifi wifi /data/misc/wifi
-    mkdir /data/misc/wifi/sockets 0775 wifi wifi
-    chmod 0775 /data/misc/wifi/sockets
-    chown wifi wifi /data/misc/wifi/sockets
-    chmod 0660 /data/misc/wifi/wpa_supplicant.conf
-    chown wifi wifi /data/misc/wifi/wpa_supplicant.conf
-
-    mkdir /data/misc/android 0770 wifi wifi
     mkdir /data/vendor/wifi 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
 
-on property:dyn.nx.state=loaded
+on post-fs
+    wait_for_prop dyn.nx.state memcfg
     insmod /vendor/lib/modules/wlplat.ko
     insmod /vendor/lib/modules/wl.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
-
-on boot
 
 service wpa_supplicant /vendor/bin/hw/wpa_supplicant \
     -O/data/vendor/wifi/wpa/sockets \
