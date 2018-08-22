@@ -2685,24 +2685,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 }
                 break;
             case OMX_VIDEO_CodingAVC:
-                switch ( pProfileLevel->nProfileIndex )
-                {
-                case 0:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileBaseline;
-                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
-                    break;
-                case 1:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
-                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
-                    break;
-                case 2:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileHigh;
-                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
-                    break;
-                default:
+            {
+                NEXUS_VideoDecoderCodecCapabilities videoCaps;
+                OMX_U32 avcProfilesSupported[] = { (OMX_U32)OMX_VIDEO_AVCProfileBaseline,
+                                                   (OMX_U32)OMX_VIDEO_AVCProfileMain,
+                                                   (OMX_U32)OMX_VIDEO_AVCProfileHigh
+                                                 };
+                if ( pProfileLevel->nProfileIndex >= sizeof(avcProfilesSupported)/sizeof(OMX_U32) )
                     return OMX_ErrorNoMore;
-                }
+
+                NEXUS_VideoDecoder_GetCodecCapabilities(NULL, NEXUS_VideoCodec_eH264, &videoCaps);
+                ALOGV("%s: max profile:%u, level:%u", __FUNCTION__, videoCaps.protocolProfile, videoCaps.protocolLevel);
+                pProfileLevel->eProfile = avcProfilesSupported[pProfileLevel->nProfileIndex];
+                pProfileLevel->eLevel = (OMX_U32)BOMX_AvcLevelFromNexus(videoCaps.protocolLevel);
                 break;
+            }
             case OMX_VIDEO_CodingVP8:
                 if ( pProfileLevel->nProfileIndex > 0 )
                 {
