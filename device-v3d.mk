@@ -30,8 +30,13 @@ V3D_ANDROID_LD_1ST_ARCH := -target aarch64-linux-android -B${B_REFSW_CROSS_COMPI
 V3D_ANDROID_DEFINES_2ND_ARCH += -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPILE_PATH_2ND_ARCH}
 V3D_ANDROID_LD_2ND_ARCH := -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPILE_PATH_2ND_ARCH}
 else
+ifeq ($(LOCAL_ANDROID_64BIT_ONLY),y)
+V3D_ANDROID_DEFINES_1ST_ARCH += -target aarch64-linux-android -B${B_REFSW_CROSS_COMPILE_PATH_1ST_ARCH}
+V3D_ANDROID_LD_1ST_ARCH := -target aarch64-linux-android -B${B_REFSW_CROSS_COMPILE_PATH_1ST_ARCH}
+else
 V3D_ANDROID_DEFINES_1ST_ARCH += -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPILE_PATH_1ST_ARCH}
 V3D_ANDROID_LD_1ST_ARCH := -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPILE_PATH_1ST_ARCH}
+endif
 endif
 endif
 

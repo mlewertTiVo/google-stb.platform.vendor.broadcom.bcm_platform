@@ -145,6 +145,7 @@
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nx.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nx.nxserver.hdcp2x_keys"
+#define NX_CFG_THERMAL                 "ro.nx.nxserver.thermal"
 
 #define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
@@ -688,10 +689,10 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client &&
             g_app.clients[i].client == client) {
-            ALOGW("nx-RE.connect(%d): '%s'::%p::%d", i,
+            ALOGW("nx-RE.connect(%d): '%s'::%d::%p", i,
                   g_app.clients[i].joinSettings.name,
-                  g_app.clients[i].client,
-                  g_app.clients[i].joinSettings.mode);
+                  g_app.clients[i].joinSettings.mode,
+                  g_app.clients[i].client);
             goto out_lock;
         }
     }
@@ -707,10 +708,11 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
                g_app.connected = APP_MAX_CLIENTS;
             }
             ALOGI_IF(NX_CLIENT_USAGE_LOG,
-               "connect[%u]:%u::%p::'%s'::%p", i,
+               "connect[%u]:%u::%p::'%s'::%d::%p", i,
                g_app.clients[i].pid,
                g_app.clients[i].handle,
                g_app.clients[i].joinSettings.name,
+               g_app.clients[i].joinSettings.mode,
                g_app.clients[i].client);
             break;
         }
@@ -1045,6 +1047,7 @@ static nxserver_t init_nxserver(void)
     char value[PROPERTY_VALUE_MAX];
     char key_hdcp1x[PROPERTY_VALUE_MAX];
     char key_hdcp2x[PROPERTY_VALUE_MAX];
+    char cfg_thermal[PROPERTY_VALUE_MAX];
     int ix, jx;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
@@ -1289,6 +1292,18 @@ static nxserver_t init_nxserver(void)
        memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
        sprintf(key_hdcp2x, "dyn.nx.hdcp.force");
        property_set(key_hdcp2x, "0");
+    }
+
+    /* -thermal_config_file thermal-configuration */
+    memset(cfg_thermal, 0, sizeof(cfg_thermal));
+    property_get(NX_CFG_THERMAL, cfg_thermal, NULL);
+    if (strlen(cfg_thermal)) {
+       struct stat sbuf;
+       if (stat(cfg_thermal, &sbuf) == -1) {
+          ALOGW("WARNING: thermal configured (%s), but not present!", cfg_thermal);
+       } else {
+          settings.thermal.thermal_config_file = cfg_thermal;
+       }
     }
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
@@ -1559,6 +1574,7 @@ static void nxserver_rmlmk(uint64_t client)
    }
 }
 
+#define NXWRAP_JOIN_V "/vendor/usr/jwl"
 int main(void)
 {
     struct timespec t;
@@ -1660,6 +1676,10 @@ int main(void)
 
     ALOGI("connecting ourselves.");
     NxClient_GetDefaultJoinSettings(&joinSettings);
+    if ((joinSettings.mode != NEXUS_ClientMode_eVerified) &&
+        !access(NXWRAP_JOIN_V, R_OK)) {
+      joinSettings.mode = NEXUS_ClientMode_eVerified;
+    }
     rc = NxClient_Join(&joinSettings);
     if (rc != NEXUS_SUCCESS) {
        ALOGE("failed to join the server!");

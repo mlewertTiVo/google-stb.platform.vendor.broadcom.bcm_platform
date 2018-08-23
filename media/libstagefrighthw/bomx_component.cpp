@@ -50,12 +50,14 @@
 #define LOG_TAG "bomx_component"
 
 #include "bomx_component.h"
+#include "bomx_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <utils/threads.h>
 #include <cutils/sched_policy.h>
+#include <cutils/properties.h>
 
 #define B_THREAD_EXIT_TIMEOUT           5000
 
@@ -367,6 +369,8 @@ BOMX_Component::BOMX_Component(
     pComponentType->ComponentRoleEnum = BOMX_Component_ComponentRoleEnum;
 
     SetRole("unknown");
+
+    m_logMask = property_get_int32(B_PROPERTY_LOG_MASK, B_LOG_MASK_DEFAULT);
 
     // Currently, each component requires its own thread - it's by far the easiest way to
     // Implement the command queue/response handling

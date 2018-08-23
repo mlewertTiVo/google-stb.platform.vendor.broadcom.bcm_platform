@@ -85,18 +85,20 @@ NEXUS_Error BOMX_AllocSecureBuffer(size_t size, bool allocClearBuffer, NEXUS_Mem
         NEXUS_MemoryBlock_Free(hMemBlock);
         return nx_rc;
     }
-
     pSecBufferSt = (BOMX_SecBufferSt*)pMemory;
     memset(pSecBufferSt, 0, sizeof(*pSecBufferSt));
     // Allocate secure buffer
-    pSecBufferSt->pSecureBuff = SRAI_Memory_Allocate(size, SRAI_MemoryType_SagePrivate);
-    if (pSecBufferSt->pSecureBuff == NULL)
+    uint8_t *secureBuff = SRAI_Memory_Allocate(size, SRAI_MemoryType_SagePrivate);
+    if (secureBuff == NULL)
     {
         ALOGE("%s: Failed to allocate secure buffer", __FUNCTION__);
         NEXUS_MemoryBlock_Unlock(hMemBlock);
         NEXUS_MemoryBlock_Free(hMemBlock);
         return NEXUS_OUT_OF_DEVICE_MEMORY;
     }
+    pSecBufferSt->pSecureBuff = secureBuff;
+    pSecBufferSt->hSecureBuff = NEXUS_MemoryBlock_FromAddress(secureBuff);
+    NEXUS_Platform_SetSharedHandle(pSecBufferSt->hSecureBuff, true);
     if (allocClearBuffer)
         pSecBufferSt->clearBuffSize = size;
     NEXUS_Platform_SetSharedHandle(hMemBlock, true);
@@ -121,6 +123,7 @@ void BOMX_FreeSecureBuffer(NEXUS_MemoryBlockHandle hSecureBuffer)
         return;
     }
     pSecureBufferSt = (BOMX_SecBufferSt*)pMemory;
+    NEXUS_Platform_SetSharedHandle(pSecureBufferSt->hSecureBuff, false);
     SRAI_Memory_Free(pSecureBufferSt->pSecureBuff);
     NEXUS_MemoryBlock_Unlock(hSecureBuffer);
     NEXUS_MemoryBlock_Free(hSecureBuffer);

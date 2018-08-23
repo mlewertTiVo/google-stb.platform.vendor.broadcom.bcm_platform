@@ -1,0 +1,17 @@
+package bcm.hardware.sfhak@1.0;
+
+interface ISfHak {
+    /**
+     * Gets A/V Pid channel handles
+     */
+    getVideoPidChannelHandle() generates (uint64_t h);
+    getAudioPidChannelHandle() generates (uint64_t h);
+
+    /**
+     * Sets A/V Pid channel handles
+     */
+    setVideoPidChannelHandle(uint64_t h) generates (Status status);
+    setAudioPidChannelHandle(uint64_t h) generates (Status status);
+};
+
+

@@ -74,6 +74,7 @@ static void reset(CURL *curl, struct curl_httppost **post, struct curl_httppost 
    curl_easy_reset(curl);
    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+   curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 }
 
 static size_t write_mem_callback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -272,7 +273,12 @@ Return<int32_t> bp3::provision(
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &apiTokenKey);
       rc = curl_easy_perform(curl);
       if (apiVer == 1) {
-         if (rc) continue;
+         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+         if (rc || (response_code == 400 || response_code == 401 || response_code == 404)) {
+            ALOGE("Authentication on server %s failed: %lu (%s)",
+               srvUrl.c_str(), response_code, curl_easy_strerror((CURLcode)rc));
+            goto out;
+         }
          cJSON *root = cJSON_Parse((const char *)apiTokenKey.memory);
          char *token = cJSON_GetObjectItem(root, "token")->valuestring;
          char *apiKey = cJSON_GetObjectItem(root, "apiKey")->valuestring;
@@ -296,6 +302,12 @@ Return<int32_t> bp3::provision(
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &apiTokenKey);
 
          rc = curl_easy_perform(curl);
+         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+         if (rc || (response_code == 400 || response_code == 401 || response_code == 404)) {
+            ALOGE("Authentication token on server %s failed: %lu (%s)",
+               srvUrl.c_str(), response_code, curl_easy_strerror((CURLcode)rc));
+            goto out;
+         }
          cJSON *root = cJSON_Parse((const char *)apiTokenKey.memory);
          char *token = cJSON_GetObjectItem(root, "token")->valuestring;
          apitoken = strdup(token);
@@ -330,7 +342,11 @@ Return<int32_t> bp3::provision(
    }
    curl_easy_setopt(curl, CURLOPT_URL, buf);
    ADD_PART("otpId", "0x%x%08x", otpIdHi, otpIdLo)
-   ADD_PART("otpSelect", "%zu", BP3_OTPKeyTypeA)
+#ifdef BP3_TA_FEATURE_READ_SUPPORT
+   ADD_PART("otpSelect", "%u", BP3_OTPKeyTypeA)
+#else
+   ADD_PART("otpSelect", "%u", 0)
+#endif
    ADD_PART("prodId", "0x%x", prodId)
    ADD_PART("secCode", "0x%x", securityCode & 0x03FFC000)
    {
@@ -360,10 +376,17 @@ Return<int32_t> bp3::provision(
    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_mem_callback);
    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &ccf);
    rc = curl_easy_perform(curl);
+   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+   if (rc || (response_code == 400 || response_code == 401 || response_code == 404)) {
+      ALOGE("Create CCF failed (srv: %s): %lu (%s)", srvUrl.c_str(), response_code, curl_easy_strerror((CURLcode)rc));
+      goto out;
+   }
    reset(curl, &post, &last);
    errCode = bp3_session_end(ccf.memory, ccf.size, &logbuf, &logsize, &status, &statusSize);
    session = NULL;
    if (ccf.memory) free(ccf.memory);
+   if (errCode != 0)
+      ALOGW("Provision failed with error %d", errCode);
 
    if (apiVer == 0)
       snprintf(buf, sizeof(buf), "%s/api/provision/result", srvUrl.c_str());
@@ -373,10 +396,10 @@ Return<int32_t> bp3::provision(
    }
    curl_easy_setopt(curl, CURLOPT_URL, buf);
    for (uint32_t i = 0; i < statusSize; i++) {
-      ADD_PART("status", "%zu", status[i])
+      ADD_PART("status", "%u", status[i])
    }
    free(status);
-   ADD_PART("errCode", "%zu", errCode)
+   ADD_PART("errCode", "%d", errCode)
 
    if (logsize > 0) {
       curl_formadd(&post, &last,
@@ -395,11 +418,16 @@ Return<int32_t> bp3::provision(
 
    curl_easy_setopt(curl, CURLOPT_HTTPPOST, post);
    rc = curl_easy_perform(curl);
-   if (logbuf) free(logbuf);
+   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+   if (rc || (response_code == 400 || response_code == 401 || response_code == 404)) {
+      ALOGE("Upload log failed: %lu (%s)", response_code, curl_easy_strerror((CURLcode)rc));
+      goto out;
+   }
 
 out:
    if ((response_code == 400) || (response_code == 401) || (response_code == 404))
       rc = -1;
+   if (logbuf) free(logbuf);
    if (session)
       bp3_session_end(NULL, 0, NULL, NULL, NULL, NULL);
    if (post) curl_formfree(post);
@@ -409,6 +437,7 @@ out:
    if (nxwrap != NULL)
       nxwrap_destroy_client(nxwrap);
    nxwrap = NULL;
+
    return rc;
 }
 

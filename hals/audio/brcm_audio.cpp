@@ -54,12 +54,6 @@ struct output_hdr {
     uint32_t length;    // not including header
 };
 
-namespace android {
-
-extern AudioHardwareInput gAudioHardwareInput;
-
-}
-
 /*
  * Utility Functions
  */
@@ -124,9 +118,6 @@ static brcm_devices_in_t get_brcm_devices_in(audio_devices_t devices)
     switch (devices) {
     case AUDIO_DEVICE_IN_BUILTIN_MIC:
         return BRCM_DEVICE_IN_BUILTIN;
-    case AUDIO_DEVICE_IN_WIRED_HEADSET:
-    case AUDIO_DEVICE_IN_DEFAULT:
-        return BRCM_DEVICE_IN_ATVR;
     default:
         return BRCM_DEVICE_IN_MAX;
     }
@@ -300,7 +291,7 @@ static int bout_set_parameters(struct audio_stream *stream,
                     } else if (!bout->tunneled) {
                         ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
                               __FUNCTION__, hw_sync_id);
-                        ret = -ENOENT;
+                        ret = -EINVAL;
                     }
                 }
             }
@@ -1346,9 +1337,6 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
     case BRCM_DEVICE_IN_BUILTIN:
         bin->ops = builtin_bin_ops;
         break;
-    case BRCM_DEVICE_IN_ATVR:
-        bin->ops = atvr_bin_ops;
-        break;
     case BRCM_DEVICE_IN_USB:
     default:
         ALOGE("%s: at %d, invalid devices %d\n",
@@ -1550,7 +1538,6 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev->standbyThread = new StandbyMonitorThread();
 
-    bdev->input = &gAudioHardwareInput;
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;
 }

@@ -56,8 +56,7 @@ extern "C" {
 #define GR_YV12                 (1<<2)
 #define GR_HWTEX                (1<<3)
 #define GR_BLOB                 (1<<4)
-#define GR_FP                   (1<<5)
-#define GR_YV12_SW              (1<<6)
+#define GR_YV12_SW              (1<<5)
 
 /*****************************************************************************/
 
@@ -130,7 +129,6 @@ struct private_handle_int_t {
    int         flags;
    int         pid;
    int         oglStride;
-   int         oglFormat;
    int         oglSize;
    int         usage;
    int         alignment;
@@ -149,7 +147,7 @@ struct private_handle_int_t {
 
     private_handle_int_t(int pdata, int sdata, int flags) :
         pdata(pdata), sdata(sdata), magic(sMagic), flags(flags),
-        pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
+        pid(getpid()), oglStride(0), oglSize(0),
         usage(0), alignment(0),
         mgmt_mode(GR_MGMT_MODE_LOCKED), fmt_set(GR_NONE),
         nxSurfaceAddress(0), nxSurfacePhysicalAddress(0)

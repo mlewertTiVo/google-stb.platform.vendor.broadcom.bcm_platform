@@ -13,8 +13,6 @@
 # limitations under the License.
 LOCAL_PATH := $(call my-dir)
 WIFI_HAL_ROOT := ../../../../../../hardware/interfaces/wifi/1.2/default
-WIFI_HIDL_FEATURE_DISABLE_AP := y
-
 
 ###
 ### android.hardware.wifi static library

@@ -42,8 +42,7 @@
 
 // Verbose messages removed
 //#define LOG_NDEBUG 0
-
-#define LOG_TAG "Brcmstb-HDMI-CEC"
+#define LOG_TAG "bcm-hdmi-cec"
 
 #include <errno.h>
 #include <utils/Log.h>
@@ -740,12 +739,22 @@ status_t NexusHdmiCecDevice::initialise()
     mCecHandle  = pPlatformConfig->outputs.cec[0];
     mHdmiHandle = pPlatformConfig->outputs.hdmi[0];
     BKNI_Free(pPlatformConfig);
+
+    if (mHdmiHandle == NULL) {
+       goto out_error;
+    }
+
     if (mCecHandle == NULL) {
         NEXUS_Cec_GetDefaultSettings(&cecSettings);
         mCecHandle = NEXUS_Cec_Open(0, &cecSettings);
         if (mCecHandle == NULL) {
             goto out_error;
         }
+    }
+
+    errCode = NEXUS_Cec_SetHdmiOutput(mCecHandle, mHdmiHandle);
+    if (errCode) {
+       goto out_error;
     }
 
     errCode = NEXUS_HdmiOutput_GetStatus(mHdmiHandle, &hdmiStatus);
@@ -805,8 +814,10 @@ status_t NexusHdmiCecDevice::initialise()
        goto out_error;
     }
     mLogicalAddress = cecStatus.logicalAddress;
-    if (cecStatus.ready) {
-       char looperName[] = "Hdmi Cec  x Message Looper";
+
+    if ((cecStatus.physicalAddress[0] != 0xFF) &&
+        (cecStatus.physicalAddress[1] != 0xFF)) {
+       char looperName[] = "Hdmi Cec Rx|Tx Msgs";
 
        looperName[9] = 'R';
        mHdmiCecRxMessageLooper = new ALooper;

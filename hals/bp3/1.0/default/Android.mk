@@ -1,6 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(SAGE_SUPPORT),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 include $(MAGNUM_TOP)/portinginterface/hsm/bhsm_defs.inc
 
@@ -51,3 +52,5 @@ LOCAL_SHARED_LIBRARIES := \
     libnxwrap
 
 include $(BUILD_EXECUTABLE)
+endif
+

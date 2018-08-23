@@ -1,0 +1,35 @@
+URL: https://github.com/client9/stringencoders
+Version: v3.10.3
+License: BSD
+License File: LICENSE
+
+Description:
+This directory contains open source code for modp base64 encode and decode
+functions from https://github.com/client9/stringencoders.
+
+Additional Notes:
+Note that the directory structure in third_party/stringencoders mirrors that of
+stringencoders-v3.10.3, therefore, the include files are placed in ./src
+instead of ./include.
+
+The following instructions demonstrate how modp_b64_data.h and modp_b64w_data.h
+are generated. modp_b64_data.h and modp_b64w_data.h contain conversion tables
+to generate standard base64 and web safe encoded base64 strings respectively.
+
+For standard base64 files
+  1. git clone https://github.com/client9/stringencoders.git
+  2. cd stringencoders
+  3. ./bootstrap.sh
+  4. ./configure
+  5. make
+  6. make check
+  7. now copy modp_b64_data.h to third_party/stringencoders/src/.
+  8. copy src/modp_b64.c to third_party/stringencoders/src/*.cpp
+  9. copy src/modp_b64.h to third_party/stringencoders/src/.
+
+For web safe base64 files, repeat 1-9 above with the exception of
+4, 7-9.
+  4. ./configure --with-b64w-chars='-_='
+  7. now copy modp_b64w_data.h to third_party/stringencoders/src/.
+  8. copy src/modp_b64w.c to third_party/stringencoders/src/*.cpp
+  9. copy src/modp_b64w.h to third_party/stringencoders/src/.

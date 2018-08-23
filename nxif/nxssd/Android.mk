@@ -4,7 +4,7 @@ include $(CLEAR_VARS)
 ifneq ($(ANDROID_SUPPORTS_RPMB),n)
 ifneq ($(SAGE_SUPPORT),n)
 
-LOCAL_C_INCLUDES := ${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/ssd
+LOCAL_C_INCLUDES := ${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/ssd
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir

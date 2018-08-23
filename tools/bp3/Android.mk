@@ -72,8 +72,8 @@ SRCS = $(APP_TOP)/utils/sage_app_utils.c
 SRCS += $(APP_TOP)/app/bp3_platform_host.c
 SRCS += $(APP_TOP)/app/bp3_module_host.c
 SRCS += $(APP_TOP)/app/main.c
-SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3_host.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c 
-SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/quick_ssdp.c $(REFSW_TOP)/BSEAV/tools/bp3/civetweb.c cJSON.c
+SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/bp3_host.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3.c $(REFSW_TOP)/BSEAV/tools/bp3/bp3_features.c
+SRCS += $(REFSW_TOP)/BSEAV/tools/bp3/quick_ssdp.c civetweb.c cJSON.c
 
 LOCAL_SRC_FILES := $(SRCS)
 

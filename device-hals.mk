@@ -4,12 +4,13 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/audio/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/boot_control/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/consumerir/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dpthak/1.0/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcext/1.0/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcext/1.0/default/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gatekeeper/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gpu/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/keymaster/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/lights/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/memtrack/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk
@@ -20,7 +21,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/vulkan/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/wifi/1.2/Android.mk
 
 ifneq ($(filter $(ANDROID_DEVICE_SUPPORTS_BP3),y),)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/bp3/1.0/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/bp3/1.0/default/Android.mk
 endif
 
 endif

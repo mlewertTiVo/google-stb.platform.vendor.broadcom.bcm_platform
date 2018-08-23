@@ -58,6 +58,7 @@
 #include "nexus_video_decoder.h"
 #include "nexus_core_utils.h"
 #include "nx_ashmem.h"
+#include "bomx_log.h"
 #include "bomx_pes_formatter.h"
 #if defined(SECURE_DECODER_ON)
 #include "nexus_sage.h"
@@ -81,7 +82,6 @@ using namespace bcm::hardware::dpthak::V1_0;
                                                                     //    storing the captures.
 #define B_PROPERTY_ENABLE_METADATA ("ro.nx.media.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("ro.nx.media.vdec_hfrvideo_tunnel")
-#define B_PROPERTY_SHOW_DESTRIPE_DELAY ("ro.nx.media.vdec_show_destripe_delay")
 #define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("ro.nx.media.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nx.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
@@ -89,9 +89,9 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("ro.nx.media.stat.earlydrop_thres")
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 #define B_PROPERTY_DTU ("ro.nx.capable.dtu")
-#define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.vdec.main.virt")
+#define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.media.vdec.main.virt")
 #define B_PROPERTY_SYS_DISPLAY_SIZE ("dyn.nx.display-size")
-#define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.hwtex.reset_port")
+#define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.media.hwtex.reset_port")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -138,7 +138,6 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_DEC_ACTIVE_STATE_ACTIVE_SECURE                    (2)
 
 #define B_YV12_ALIGNMENT (16)
-#define B_YUV_PITCH_ALIGNMENT (4)       // matches the same alignment from BPXL_P_PITCH_ALIGNMENT
 
 #define B_UHD_DISPLAY ("3840x2160")     // marker for having a uhd display connected.
 
@@ -1438,7 +1437,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_allocNativeHandle(secure),
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
-    m_showDestripeDelay(0),
     m_enableHdrForNonVp9(0),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
@@ -1798,7 +1796,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        {
            ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
            g_decActiveStateLock.unlock();
-           this->Invalidate(OMX_ErrorUndefined);
+           this->Invalidate(OMX_ErrorInsufficientResources);
            return;
        }
 
@@ -1932,7 +1930,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
     m_enableHdrForNonVp9 = property_get_int32(B_PROPERTY_ENABLE_HDR_FOR_NON_VP9, 0);
 
     memset(value, 0, sizeof(value));
@@ -3209,6 +3206,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         m_adaptivePlaybackEnabled = pAdaptive->bEnable == OMX_TRUE ? true : false;
+        if ( m_metadataEnabled || !m_adaptivePlaybackEnabled )
+        {
+            ALOGI("Ignore setting prepareForAdaptivePlayback (%s)", m_metadataEnabled ? "metadata" : "non-adaptive" );
+            return OMX_ErrorNone;
+        }
+
         // Update crop and port format
         OMX_PARAM_PORTDEFINITIONTYPE portDef;
         m_pVideoPorts[1]->GetDefinition(&portDef);
@@ -3352,7 +3355,7 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
 
 NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    ALOGV("Setting Input Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_PORT), "Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -3417,7 +3420,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if (m_stcResumePending) {
                 // resume stc if we left it paused
                 m_stcResumePending = false;
-                ALOGV("Restoring stc channel");
+                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Restoring stc channel");
                 NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
             }
             m_videoStreamInfo.valid = false;
@@ -3780,7 +3783,7 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     // Queue.  For format changes, we need to be able to control this logical
     // output port independently and leave the input port active during any
     // Resolution Change.
-    ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_PORT), "Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
         CancelTimerId(m_formatChangeTimerId);
@@ -3821,7 +3824,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_STATE), "Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -3862,7 +3865,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
 
         // TODO: Hide video window?
 
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -3930,7 +3933,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -3951,7 +3954,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
         ALOGW("Unsupported state %u", newState);
@@ -4056,10 +4059,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     // Reset stc sync only if it hasn't changed its last value.
                     uint32_t stcSync;
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                    ALOGV("Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
                     if (stcSync == m_stcSyncValue) {
                         NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
-                        ALOGV("Setting sync stc to invalid value");
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Setting sync stc to invalid value");
                     }
                 }
             }
@@ -4430,7 +4433,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eY8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
-            surfaceSettings.pitch = (pPortDef->format.video.nStride + (B_YUV_PITCH_ALIGNMENT-1)) & ~(B_YUV_PITCH_ALIGNMENT-1);
+            surfaceSettings.pitch = (pPortDef->format.video.nStride + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1);
             surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.yMemBlkFd);
             if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
@@ -4449,7 +4452,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCb8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
-            surfaceSettings.pitch = (pPortDef->format.video.eColorFormat == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)) ? (pPortDef->format.video.nStride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1) : (pPortDef->format.video.nStride/2 + (B_YUV_PITCH_ALIGNMENT-1)) & ~(B_YUV_PITCH_ALIGNMENT-1);
+            surfaceSettings.pitch = (pPortDef->format.video.eColorFormat == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)) ? (pPortDef->format.video.nStride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1) : (pPortDef->format.video.nStride/2 + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1);
             surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
             if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
@@ -5234,7 +5237,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->complete = false;
     --m_AvailInputBuffers;
 
-    ALOGV("%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers);
+    ALOGD_IF((m_logMask & B_LOG_VDEC_IN_FEED), "%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers);
     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen, m_AvailInputBuffers);
 
     if ( m_pInputFile )
@@ -5790,7 +5793,7 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
                                     BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
         }
     }
-    ALOGV("%s: returned %u buffers, %u max, %u available, %u queued, ptsDiff %u, mode %u, returnRate:%u",
+    ALOGD_IF((m_logMask & B_LOG_VDEC_IN_RET), "%s: returned %u buffers, %u max, %u available, %u queued, ptsDiff %u, mode %u, returnRate:%u",
         __FUNCTION__, count, maxCount, m_AvailInputBuffers, queuedInputBuffers, ptsDiff, mode, returnRate);
 }
 
@@ -5864,40 +5867,43 @@ void BOMX_VideoDecoder::StreamChangedEvent()
         NEXUS_SimpleVideoDecoder_GetStreamInformation(m_hSimpleVideoDecoder, &streamInfo);
         if (!streamInfo.valid)
         {
-            ALOGV("%s: invalid stream information", __FUNCTION__);
+            ALOGD_IF((m_logMask & B_LOG_VDEC_COLOR_INFO), "%s: invalid stream information", __FUNCTION__);
             return;
         }
 
-        ALOGV("%s: stream information", __FUNCTION__);
-        ALOGV("eotf:%u", streamInfo.eotf);
-        ALOGV("transferCharacteristics:%u", streamInfo.transferCharacteristics);
-        ALOGV("color depth:%u", streamInfo.colorDepth);
-        ALOGV("input content light level: (%u, %u)",
-                streamInfo.contentLightLevel.max,
-                streamInfo.contentLightLevel.maxFrameAverage);
+        if ( (m_logMask & B_LOG_VDEC_COLOR_INFO) != 0 )
+        {
+            ALOGD("%s: stream information", __FUNCTION__);
+            ALOGD("eotf:%u", streamInfo.eotf);
+            ALOGD("transferCharacteristics:%u", streamInfo.transferCharacteristics);
+            ALOGD("color depth:%u", streamInfo.colorDepth);
+            ALOGD("input content light level: (%u, %u)",
+                    streamInfo.contentLightLevel.max,
+                    streamInfo.contentLightLevel.maxFrameAverage);
 
-        ALOGV("red (%u, %u)",
-                streamInfo.masteringDisplayColorVolume.redPrimary.x,
-                streamInfo.masteringDisplayColorVolume.redPrimary.y);
-        ALOGV("green (%u, %u)",
-                streamInfo.masteringDisplayColorVolume.greenPrimary.x,
-                streamInfo.masteringDisplayColorVolume.greenPrimary.y);
-        ALOGV("blue (%u, %u)",
-                streamInfo.masteringDisplayColorVolume.bluePrimary.x,
-                streamInfo.masteringDisplayColorVolume.bluePrimary.y);
-        ALOGV("white (%u, %u)",
-                streamInfo.masteringDisplayColorVolume.whitePoint.x,
-                streamInfo.masteringDisplayColorVolume.whitePoint.y);
-        ALOGV("luma (%u, %u)",
-                streamInfo.masteringDisplayColorVolume.luminance.max,
-                streamInfo.masteringDisplayColorVolume.luminance.min);
-       m_videoStreamInfo = streamInfo;
+            ALOGD("red (%u, %u)",
+                    streamInfo.masteringDisplayColorVolume.redPrimary.x,
+                    streamInfo.masteringDisplayColorVolume.redPrimary.y);
+            ALOGD("green (%u, %u)",
+                    streamInfo.masteringDisplayColorVolume.greenPrimary.x,
+                    streamInfo.masteringDisplayColorVolume.greenPrimary.y);
+            ALOGD("blue (%u, %u)",
+                    streamInfo.masteringDisplayColorVolume.bluePrimary.x,
+                    streamInfo.masteringDisplayColorVolume.bluePrimary.y);
+            ALOGD("white (%u, %u)",
+                    streamInfo.masteringDisplayColorVolume.whitePoint.x,
+                    streamInfo.masteringDisplayColorVolume.whitePoint.y);
+            ALOGD("luma (%u, %u)",
+                    streamInfo.masteringDisplayColorVolume.luminance.max,
+                    streamInfo.masteringDisplayColorVolume.luminance.min);
+        }
+        m_videoStreamInfo = streamInfo;
 
-       // Trigger event for framework to update both HDR and ColorAspects information
-       if ( m_callbacks.EventHandler )
-       {
-           (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexParamDescribeHdrColorInfo, NULL);
-       }
+        // Trigger event for framework to update both HDR and ColorAspects information
+        if ( m_callbacks.EventHandler )
+        {
+            (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexParamDescribeHdrColorInfo, NULL);
+        }
     }
 }
 
@@ -6111,6 +6117,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
                 return OMX_ErrorUnsupportedIndex;
             }
+            else if ( m_metadataEnabled && (g_extensions[i].index == OMX_IndexParamPrepareForAdaptivePlayback) )
+            {
+                ALOGD("Interface %s not supported in metadata mode", g_extensions[i].pName);
+                return OMX_ErrorUnsupportedIndex;
+            }
             else
             {
                 *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
@@ -6210,7 +6221,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             // overwrite fields obtained from the stream
             ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
             ColorAspects *pAspects = &pColorAspects->sAspects;
-            ALOGV("ColorAspects from stream [R:%u, P:%u, M:%u, T:%u]",
+            ALOGD_IF((m_logMask & B_LOG_VDEC_COLOR_INFO), "ColorAspects from stream [R:%u, P:%u, M:%u, T:%u]",
                 pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
         }
 
@@ -6623,7 +6634,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 if (stcSync != B_STC_SYNC_INVALID_VALUE) {
                     resumeDecoder = true;
                     m_stcSyncValue = stcSync;
-                    ALOGV("%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
                 } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
                     ALOGW("%s: timeout waiting for stc", __FUNCTION__);
                     resumeDecoder = true;
@@ -6640,7 +6651,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                        ALOGE("%s: error setting stc rate to 0", __FUNCTION__);
                    if (stcSync != B_STC_SYNC_INVALID_VALUE) {
                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
-                       ALOGV("%s: setting startPts:%u", __FUNCTION__, stcSync);
+                       ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u", __FUNCTION__, stcSync);
                        if (errCode != NEXUS_SUCCESS)
                            ALOGE("%s: error setting start pts", __FUNCTION__);
                    }
@@ -6655,7 +6666,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
             if (m_stcResumePending) {
                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-               ALOGV("Trying to resume, pts:%u, stc:%u", status.pts, stcSync);
+               ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u", status.pts, stcSync);
                if (status.pts >= stcSync) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
@@ -6713,7 +6724,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 renderEvent.nSystemTimeNs = now;
                 renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
                 (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
-                ALOGV("Rendering ts=%lld pts=%u now=%" PRIu64 "",
+                ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Rendering ts=%lld pts=%u now=%" PRIu64 "",
                         omxHeader.nTimeStamp, status.pts, now);
 
                 EstimateFrameRate(omxHeader.nTimeStamp);
@@ -7196,7 +7207,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %p FB %p HDR %p flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
+                ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Returning Port Buffer ts %lld us serial %u pInfo %p FB %p HDR %p flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
 
                 EstimateFrameRate(pHeader->nTimeStamp);
                 {

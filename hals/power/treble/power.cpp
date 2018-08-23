@@ -73,7 +73,7 @@ static const char * PROPERTY_PM_TP3_EN                    = "ro.nx.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.nx.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.nx.pm.cpufreq_scale_en";
 static const char * PROPERTY_PM_WOL_EN                    = "ro.nx.pm.wol.en";
-static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.nx.pm.wol.mdns.en";
+static const char * PROPERTY_PM_WOL_SCREEN_ON_EN          = "ro.nx.pm.wol.screen.on.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
 static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
@@ -89,8 +89,8 @@ static const int8_t DEFAULT_PROPERTY_PM_TP2_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CPU3 during standby
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
-static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
-static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
+static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 1;     // Enable Linux wake up by the WoLAN event
+static const int8_t DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN  = 0;     // Disable Android screen on WoLAN event
 static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
 static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
@@ -301,9 +301,9 @@ static bool power_get_property_wol_en()
     return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
 }
 
-static bool power_get_property_wol_mdns_en()
+static bool power_get_property_wol_screen_on_en()
 {
-    return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
+    return property_get_bool(PROPERTY_PM_WOL_SCREEN_ON_EN, DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN);
 }
 
 static nxwrap_pwr_state power_get_off_state()
@@ -380,6 +380,7 @@ static status_t power_set_enet_wol()
               ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, powerNetInterfaces[i]);
               status = -EAGAIN;
            }
+           break; // Stop after the first interface present
         }
     }
 
@@ -406,12 +407,12 @@ static status_t power_set_wol_mode()
 {
     unsigned int full_wol_en;
 
-    // Handle Android WoLAN enable/disable property
-    // If enabled, a WoLAN event will wake up Android
+    // Handle Android WoLAN screen on enable/disable property
+    // If enabled, a WoLAN event will wake up Android and turn on the screen
     // Otherwise, Android PM won't be notified and
     // device will return back to low power state
     if (sysfs_get(SYS_FULL_WOL_WAKEUP, &full_wol_en) == NO_ERROR) {
-        bool full_wol_en_pr = power_get_property_wol_en();
+        bool full_wol_en_pr = power_get_property_wol_screen_on_en();
 
         if (full_wol_en_pr != full_wol_en) {
             if (sysfs_set(SYS_FULL_WOL_WAKEUP, full_wol_en_pr) != NO_ERROR) {
@@ -430,8 +431,13 @@ static status_t power_set_wol_mode()
         ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
     }
 
-    // Create a monitor thread to poll when the network interface is UP...
-    return power_create_thread("WoL monitor", power_wol_monitor_thread);
+    if (power_get_property_wol_en()) {
+        // Create a monitor thread to poll when the network interface is UP...
+        return power_create_thread("WoL monitor", power_wol_monitor_thread);
+    }
+    else {
+        return NO_ERROR;
+    }
 }
 
 static status_t power_get_sw_lid_state(bool *down)
@@ -542,12 +548,13 @@ static void power_init(struct power_module *module __unused)
         power_set_sw_lid_state(SW_LID_STATE_UP);
     }
 
+#ifdef NEXUS_HAS_GPIO
     if (gNexusPower->initialiseGpios(gPowerState) != NO_ERROR) {
         ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
         goto power_init_fail;
     }
-
     gpios_initialised = true;
+#endif
 
     // Create the doze timer...
     se.sigev_value.sival_int = 0;
@@ -576,7 +583,9 @@ static void power_init(struct power_module *module __unused)
 power_init_fail:
     if (gNexusPower.get()) {
         if (gpios_initialised) {
+#ifdef NEXUS_HAS_GPIO
             gNexusPower->uninitialiseGpios();
+#endif
         }
         gNexusPower = NULL;
     }
@@ -1113,7 +1122,9 @@ static void *power_event_monitor_thread(void *arg __unused)
                                 else if (event == DROID_PM_EVENT_BT_WAKE_ON) {
                                     ALOGV("%s: Received a BT_WAKE Asserted event", __FUNCTION__);
                                     if (gNexusPower.get()) {
+#ifdef NEXUS_HAS_GPIO
                                         gNexusPower->setGpiosInterruptWakeManager(gPowerState, NexusPower::NexusGpio::GpioInterruptWakeManager_eBt, true);
+#endif
                                     }
                                 }
                                 else if (event == DROID_PM_EVENT_BT_WAKE_OFF) {
@@ -1236,6 +1247,46 @@ static void power_set_feature(struct power_module *module __unused, feature_t fe
     ALOGV("%s: feature=%d, state=%d", __FUNCTION__, feature, state);
 }
 
+static int power_get_stats(struct power_module *module __unused,
+                            power_state_platform_sleep_state_t *list)
+{
+    ALOGD("%s", __FUNCTION__);
+    if (list == NULL)
+        return EINVAL;
+
+    list[0] = {
+                .name = "S0.5",
+                .residency_in_msec_since_boot = 0,
+                .total_transitions = 0,
+                .supported_only_in_suspend = 0,
+                .number_of_voters = 0,
+    };
+
+    list[1] = {
+                .name = "S2",
+                .residency_in_msec_since_boot = 0,
+                .total_transitions = 0,
+                .supported_only_in_suspend = 1,
+                .number_of_voters = 0,
+    };
+
+    return 0;
+}
+
+static ssize_t power_get_num_states(struct power_module *module __unused)
+{
+    return 2; // S0.5 and S2 are reported
+}
+
+static int power_get_voter_list(struct power_module *module __unused, size_t *voter)
+{
+    if (voter == NULL)
+        return EINVAL;
+
+    voter[0] = voter[1] = 0;
+    return 0;
+}
+
 static struct hw_module_methods_t power_module_methods = {
     .open = NULL
 };
@@ -1243,7 +1294,7 @@ static struct hw_module_methods_t power_module_methods = {
 struct power_module HAL_MODULE_INFO_SYM = {
    .common = {
       .tag                = HARDWARE_MODULE_TAG,
-      .module_api_version = POWER_MODULE_API_VERSION_0_3,
+      .module_api_version = POWER_MODULE_API_VERSION_0_5,
       .hal_api_version    = HARDWARE_HAL_API_VERSION,
       .id                 = POWER_HARDWARE_MODULE_ID,
       .name               = "Brcmstb Power HAL",
@@ -1255,5 +1306,10 @@ struct power_module HAL_MODULE_INFO_SYM = {
     .init                 = power_init,
     .setInteractive       = power_set_interactive,
     .powerHint            = power_hint,
-    .setFeature           = power_set_feature
+    .setFeature           = power_set_feature,
+    .get_platform_low_power_stats
+                          = power_get_stats,
+    .get_number_of_platform_modes
+                          = power_get_num_states,
+    .get_voter_list       = power_get_voter_list,
 };

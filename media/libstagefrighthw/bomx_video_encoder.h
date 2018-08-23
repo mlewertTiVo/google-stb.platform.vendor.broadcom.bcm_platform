@@ -286,6 +286,7 @@ protected:
     NEXUS_Graphics2DHandle m_hGraphics2d;
 
     OMX_VIDEO_PARAM_AVCTYPE m_sAvcVideoParams;
+    OMX_VIDEO_PARAM_VP8TYPE m_sVp8VideoParams;
     OMX_VIDEO_PARAM_BITRATETYPE m_sVideoBitrateParams;
 
     BOMX_BufferTracker *m_pBufferTracker;
@@ -366,8 +367,10 @@ protected:
     NEXUS_Error PushInputEosFrame();
     OMX_ERRORTYPE BuildInputFrame(OMX_BUFFERHEADERTYPE *);
     OMX_ERRORTYPE BuildDummyFrame();
-    NEXUS_VideoCodecLevel ConvertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE );
-    NEXUS_VideoCodecProfile ConvertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE );
+    NEXUS_VideoCodecLevel ConvertOmxAvcLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE );
+    NEXUS_VideoCodecProfile ConvertOmxAvcProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE );
+    NEXUS_VideoCodecLevel ConvertOmxVp8LevelTypetoNexus(OMX_VIDEO_VP8LEVELTYPE );
+    NEXUS_VideoCodecProfile ConvertOmxVp8ProfileTypetoNexus(OMX_VIDEO_VP8PROFILETYPE );
     void NotifyOutputPortSettingsChanged();
 
     void ReturnInputBuffers(bool returnAll = false);
@@ -379,18 +382,15 @@ protected:
     NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     void FreeInputBuffer(void*& pBuffer);
     bool GraphicsCheckpoint();
-    NEXUS_Error ConvertYv12To422p(NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, bool);
+    NEXUS_Error ConvertYuv420To422p(NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, NEXUS_SurfaceHandle, bool);
     NEXUS_Error ExtractGrallocBuffer(private_handle_t *, NEXUS_SurfaceHandle);
     NEXUS_Error ExtractNexusBuffer(uint8_t *, unsigned int, unsigned, NEXUS_SurfaceHandle);
-
-
 
     bool ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *, NEXUS_SurfaceHandle);
     bool GetCodecConfig(void *pBufferBase, const NEXUS_VideoEncoderDescriptor *, size_t , const NEXUS_VideoEncoderDescriptor *, size_t );
     bool HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *, size_t, const NEXUS_VideoEncoderDescriptor *, size_t, size_t *);
 
     NEXUS_Error UpdateEncoderSettings();
-    OMX_VIDEO_AVCLEVELTYPE GetMaxLevelAvc(OMX_VIDEO_AVCPROFILETYPE profile);
 
 private:
 

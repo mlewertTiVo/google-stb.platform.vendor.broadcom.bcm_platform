@@ -49,6 +49,7 @@
 #include <cmath>
 
 #include "bomx_video_encoder.h"
+#include "bomx_log.h"
 #include "nexus_platform.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
@@ -621,6 +622,14 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel31;
     m_sAvcVideoParams.nAllowedPictureTypes = (OMX_U32)OMX_VIDEO_PictureTypeI|(OMX_U32)OMX_VIDEO_PictureTypeP|(OMX_U32)OMX_VIDEO_PictureTypeB|(OMX_U32)OMX_VIDEO_PictureTypeEI|(OMX_U32)OMX_VIDEO_PictureTypeEP;
 
+    /* set VP8 defaults */
+    // Much of this structure is not relevant.  Zero everything except for profile and level. Error resilient mode is more for video conferencing.
+    memset(&m_sVp8VideoParams, 0, sizeof(OMX_VIDEO_PARAM_VP8TYPE));
+    BOMX_STRUCT_INIT(&m_sVp8VideoParams);
+    m_sVp8VideoParams.nPortIndex = m_videoPortBase + 1;
+    m_sVp8VideoParams.eProfile = OMX_VIDEO_VP8ProfileMain;
+    m_sVp8VideoParams.eLevel = OMX_VIDEO_VP8Level_Version3;
+
     /* set video bitrate defaults */
     memset(&m_sVideoBitrateParams, 0, sizeof(OMX_VIDEO_PARAM_BITRATETYPE));
     BOMX_STRUCT_INIT(&m_sVideoBitrateParams);
@@ -776,6 +785,18 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         pAvc->nAllowedPictureTypes = m_sAvcVideoParams.nAllowedPictureTypes;
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamVideoVp8:
+    {
+        OMX_VIDEO_PARAM_VP8TYPE *pVp8 = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
+        ALOGV("GetParameter OMX_IndexParamVideoVp8");
+        BOMX_STRUCT_VALIDATE(pVp8);
+        if ( pVp8->nPortIndex != m_videoPortBase + 1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        *pVp8 = m_sVp8VideoParams;
+        return OMX_ErrorNone;
+    }
     case OMX_IndexParamVideoBitrate:
     {
         OMX_VIDEO_PARAM_BITRATETYPE *pBitrate = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
@@ -847,12 +868,16 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         {
             switch ( (int)GetCodec() )
             {
-            default:
-                // Only certain codecs support this interface
-                break;
             case OMX_VIDEO_CodingAVC:
                 pProfileLevel->eProfile = m_sAvcVideoParams.eProfile;
                 pProfileLevel->eLevel = m_sAvcVideoParams.eLevel;
+                break;
+            case OMX_VIDEO_CodingVP8:
+                pProfileLevel->eProfile = m_sVp8VideoParams.eProfile;
+                pProfileLevel->eLevel = m_sVp8VideoParams.eLevel;
+                break;
+            default:
+                // Only certain codecs support this interface
                 break;
             }
         }
@@ -1037,7 +1062,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         }
         else
         {
-            ALOGV("Set Input Port Color Format to %u (%#x)", pFormat->eColorFormat, pFormat->eColorFormat);
+            ALOGV("Set Input Port Color Format to %u (%#x) rate=%u comp=%d", pFormat->eColorFormat, pFormat->eColorFormat, pFormat->xFramerate, pFormat->eCompressionFormat);
             // Per the OMX spec you are supposed to initialize the port defs to defaults when changing format
             // Leave buffer size parameters alone and update color format/framerate.
             OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
@@ -1133,6 +1158,21 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         ALOGV("Profile = %d, Level = %d", pParam->eProfile, pParam->eLevel);
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamVideoVp8:
+    {
+        OMX_VIDEO_PARAM_VP8TYPE *pParam = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
+        ALOGV("SetParameter OMX_IndexParamVideoVp8");
+        BOMX_STRUCT_VALIDATE(pParam);
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
+        {
+            ALOGE("output port only");
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        BKNI_Memcpy(&m_sVp8VideoParams, pParam, sizeof(OMX_VIDEO_PARAM_VP8TYPE));
+        ALOGV("Profile = %d, Level = %d", pParam->eProfile, pParam->eLevel);
+        return OMX_ErrorNone;
+    }
     case OMX_IndexParamVideoBitrate:
     {
         OMX_VIDEO_PARAM_BITRATETYPE *pParam = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
@@ -1181,10 +1221,12 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         m_nativeGraphicsEnabled = pEnableParams->enable == OMX_TRUE ? true : false;
 
         // Mode has changed.  Set appropriate output color format.
+        OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = (OMX_PARAM_PORTDEFINITIONTYPE *)m_pVideoPorts[0]->GetDefinition();
         OMX_VIDEO_PARAM_PORTFORMATTYPE portFormat;
         BOMX_STRUCT_INIT(&portFormat);
         portFormat.nPortIndex = m_videoPortBase;
-        portFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
+        portFormat.eCompressionFormat = pPortDef->format.video.eCompressionFormat;
+        portFormat.xFramerate = pPortDef->format.video.xFramerate;
         if ( m_nativeGraphicsEnabled )
         {
             // In this mode, the color format should be an android HAL format.
@@ -1282,7 +1324,7 @@ NEXUS_VideoCodec BOMX_VideoEncoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
 
 NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    ALOGV("Setting Input Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_PORT), "Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -1352,7 +1394,7 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     // Queue.  For format changes, we need to be able to control this logical
     // output port independently and leave the input port active during any
     // Resolution Change.
-    ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_PORT), "Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
@@ -1372,7 +1414,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+    ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -1402,7 +1444,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
             (void)m_pVideoPorts[1]->Enable();
         }
 
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -1471,7 +1513,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -1492,12 +1534,12 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
 
     case OMX_StateWaitForResources:
     case OMX_StateInvalid:
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGD_IF((m_logMask & B_LOG_VENC_TRANS_STATE), "End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
         ALOGE("Unsupported state %u", newState);
@@ -1546,8 +1588,29 @@ OMX_ERRORTYPE BOMX_VideoEncoder::CommandFlush(
             // Input port
             if ( IsEncoderStarted() )
             {
-                (void)SetInputPortState(OMX_StateIdle);
-                (void)SetInputPortState(StateGet());
+                NEXUS_VideoImageInputSurfaceSettings surfSettings;
+                NEXUS_Error errCode;
+
+                NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+                errCode = NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+                if ( errCode )
+                {
+                    ALOGE("Error flushing input surfaces (%d)", errCode);
+                    return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+                }
+
+                ReturnInputBuffers(true);
+                m_pBufferTracker->Flush();
+
+                // Reset frame rate estimator
+                OMX_U32 newFrameRate = 0;
+                m_frameRateTracker.CheckForNewFrameRate(newFrameRate);
+                if ( newFrameRate == 0 )
+                {
+                    newFrameRate = (OMX_U32)B_DEFAULT_OUTPUT_FRAMERATE;
+                }
+                m_frameRateTracker.Reset();
+                m_frameRateTracker.Start(newFrameRate);
             }
         }
         else
@@ -2270,7 +2333,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
 
     ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
-    ALOGV("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGD_IF((m_logMask & B_LOG_VENC_IN_FEED), "comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if(pBufferHeader->nFlags & ( OMX_BUFFERFLAG_DATACORRUPT | OMX_BUFFERFLAG_EXTRADATA | OMX_BUFFERFLAG_CODECCONFIG ))
     {
@@ -2521,7 +2584,7 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
         ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
     }
 
-    ALOGV("returned %u buffers, %u attempted", count, buffersToReturn);
+    ALOGD_IF((m_logMask & B_LOG_VENC_IN_RET), "returned %u buffers, %u attempted", count, buffersToReturn);
 }
 
 void BOMX_VideoEncoder::ResetEncodedFrameList()
@@ -2710,18 +2773,21 @@ void BOMX_VideoEncoder::InputBufferProcess()
 
 void BOMX_VideoEncoder::PrintVideoEncoderStatus(void *pBufferBase)
 {
-    NEXUS_SimpleEncoderStatus EncSts;
-    NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
+    if ( (m_logMask & B_LOG_VENC_STATUS) != 0 )
+    {
+        NEXUS_SimpleEncoderStatus EncSts;
+        NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
 
-    ALOGV("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
-          pBufferBase,
-          EncSts.video.picturesReceived,
-          EncSts.video.picturesEncoded,
-          EncSts.video.picturesDroppedFRC,
-          EncSts.video.picturesDroppedHRD,
-          EncSts.video.picturesDroppedErrors,
-          EncSts.video.pictureIdLastEncoded
-         );
+        ALOGD("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
+              pBufferBase,
+              EncSts.video.picturesReceived,
+              EncSts.video.picturesEncoded,
+              EncSts.video.picturesDroppedFRC,
+              EncSts.video.picturesDroppedHRD,
+              EncSts.video.picturesDroppedErrors,
+              EncSts.video.pictureIdLastEncoded
+             );
+    }
 }
 
 void BOMX_VideoEncoder::NotifyOutputPortSettingsChanged()
@@ -2882,7 +2948,7 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
 
         /* return client buffer */
-        ALOGV("Returning Port Buffer HDR %p flags %#x ts %llu us ",
+        ALOGD_IF((m_logMask & B_LOG_VENC_OUTPUT), "Returning Port Buffer HDR %p flags %#x ts %llu us ",
               pHeader, pHeader->nFlags, pHeader->nTimeStamp);
         ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
 
@@ -2965,27 +3031,27 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
     return bRet;
 }
 
-typedef struct _OMX_TO_NEXUS_PROFILE_TYPE_
+typedef struct _OMX_AVC_TO_NEXUS_PROFILE_TYPE_
 {
     OMX_VIDEO_AVCPROFILETYPE omxProfile;
     NEXUS_VideoCodecProfile nexusProfile;
-} OMX_TO_NEXUS_PROFILE_TYPE;
+} OMX_AVC_TO_NEXUS_PROFILE_TYPE;
 
-typedef struct _OMX_TO_NEXUS_LEVEL_TYPE_
+typedef struct _OMX_AVC_TO_NEXUS_LEVEL_TYPE_
 {
     OMX_VIDEO_AVCLEVELTYPE omxLevel;
     NEXUS_VideoCodecLevel nexusLevel;
-} OMX_TO_NEXUS_LEVEL_TYPE;
+} OMX_AVC_TO_NEXUS_LEVEL_TYPE;
 
 
-static const OMX_TO_NEXUS_PROFILE_TYPE ProfileMapTable[] =
+static const OMX_AVC_TO_NEXUS_PROFILE_TYPE AvcProfileMapTable[] =
 {
     {OMX_VIDEO_AVCProfileBaseline,      NEXUS_VideoCodecProfile_eBaseline},
     {OMX_VIDEO_AVCProfileMain,          NEXUS_VideoCodecProfile_eMain},
     {OMX_VIDEO_AVCProfileHigh,          NEXUS_VideoCodecProfile_eHigh}
 };
 
-static const OMX_TO_NEXUS_LEVEL_TYPE LevelMapTable[] =
+static const OMX_AVC_TO_NEXUS_LEVEL_TYPE AvcLevelMapTable[] =
 {
     {OMX_VIDEO_AVCLevel1,                NEXUS_VideoCodecLevel_e10},
     {OMX_VIDEO_AVCLevel1b,               NEXUS_VideoCodecLevel_e1B},
@@ -3005,23 +3071,71 @@ static const OMX_TO_NEXUS_LEVEL_TYPE LevelMapTable[] =
     {OMX_VIDEO_AVCLevel51,               NEXUS_VideoCodecLevel_e51},
 };
 
-NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
+NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOmxAvcProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
 {
-    for (unsigned int i = 0; i < sizeof(ProfileMapTable)/sizeof(ProfileMapTable[0]); i++)
+    for (unsigned int i = 0; i < sizeof(AvcProfileMapTable)/sizeof(AvcProfileMapTable[0]); i++)
     {
-        if (ProfileMapTable[i].omxProfile==profile)
-            return ProfileMapTable[i].nexusProfile;
+        if (AvcProfileMapTable[i].omxProfile==profile)
+            return AvcProfileMapTable[i].nexusProfile;
     }
 
     return NEXUS_VideoCodecProfile_eBaseline;
 }
 
-NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
+NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOmxAvcLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
 {
-    for(unsigned int i = 0; i < sizeof(LevelMapTable)/sizeof(LevelMapTable[0]); i++)
+    for(unsigned int i = 0; i < sizeof(AvcLevelMapTable)/sizeof(AvcLevelMapTable[0]); i++)
     {
-        if(LevelMapTable[i].omxLevel==level)
-            return LevelMapTable[i].nexusLevel;
+        if(AvcLevelMapTable[i].omxLevel==level)
+            return AvcLevelMapTable[i].nexusLevel;
+    }
+
+    return NEXUS_VideoCodecLevel_e31;
+}
+
+typedef struct _OMX_VP8_TO_NEXUS_PROFILE_TYPE_
+{
+    OMX_VIDEO_VP8PROFILETYPE omxProfile;
+    NEXUS_VideoCodecProfile nexusProfile;
+} OMX_VP8_TO_NEXUS_PROFILE_TYPE;
+
+typedef struct _OMX_VP8_TO_NEXUS_LEVEL_TYPE_
+{
+    OMX_VIDEO_VP8LEVELTYPE omxLevel;
+    NEXUS_VideoCodecLevel nexusLevel;
+} OMX_VP8_TO_NEXUS_LEVEL_TYPE;
+
+
+static const OMX_VP8_TO_NEXUS_PROFILE_TYPE Vp8ProfileMapTable[] =
+{
+    {OMX_VIDEO_VP8ProfileMain,           NEXUS_VideoCodecProfile_eMain},
+};
+
+static const OMX_VP8_TO_NEXUS_LEVEL_TYPE Vp8LevelMapTable[] =
+{
+    {OMX_VIDEO_VP8Level_Version0,        NEXUS_VideoCodecLevel_e00},
+    {OMX_VIDEO_VP8Level_Version1,        NEXUS_VideoCodecLevel_e10},
+    {OMX_VIDEO_VP8Level_Version2,        NEXUS_VideoCodecLevel_e20},
+    {OMX_VIDEO_VP8Level_Version3,        NEXUS_VideoCodecLevel_e30},
+};
+
+NEXUS_VideoCodecProfile BOMX_VideoEncoder::ConvertOmxVp8ProfileTypetoNexus(OMX_VIDEO_VP8PROFILETYPE profile)
+{
+    for (unsigned int i = 0; i < sizeof(Vp8ProfileMapTable)/sizeof(Vp8ProfileMapTable[0]); i++)
+    {
+        if (Vp8ProfileMapTable[i].omxProfile==profile)
+            return Vp8ProfileMapTable[i].nexusProfile;
+    }
+
+    return NEXUS_VideoCodecProfile_eBaseline;
+}
+
+NEXUS_VideoCodecLevel BOMX_VideoEncoder::ConvertOmxVp8LevelTypetoNexus(OMX_VIDEO_VP8LEVELTYPE level)
+{
+    for(unsigned int i = 0; i < sizeof(Vp8LevelMapTable)/sizeof(Vp8LevelMapTable[0]); i++)
+    {
+        if(Vp8LevelMapTable[i].omxLevel==level)
+            return Vp8LevelMapTable[i].nexusLevel;
     }
 
     return NEXUS_VideoCodecLevel_e31;
@@ -3088,14 +3202,16 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     {
     case NEXUS_VideoCodec_eH264:
     {
-        encoderStartSettings.output.video.settings.profile = ConvertOMXProfileTypetoNexus(m_sAvcVideoParams.eProfile);
-        encoderStartSettings.output.video.settings.level = ConvertOMXLevelTypetoNexus(m_sAvcVideoParams.eLevel);
+        encoderStartSettings.output.video.settings.profile = ConvertOmxAvcProfileTypetoNexus(m_sAvcVideoParams.eProfile);
+        encoderStartSettings.output.video.settings.level = ConvertOmxAvcLevelTypetoNexus(m_sAvcVideoParams.eLevel);
         encoderStartSettings.output.video.settings.nonRealTime = true;
         encoderStartSettings.output.video.settings.interlaced = false;
         break;
     }
     case NEXUS_VideoCodec_eVp8:
     {
+        encoderStartSettings.output.video.settings.profile = ConvertOmxVp8ProfileTypetoNexus(m_sVp8VideoParams.eProfile);
+        encoderStartSettings.output.video.settings.level = ConvertOmxVp8LevelTypetoNexus(m_sVp8VideoParams.eLevel);
         encoderStartSettings.output.video.settings.nonRealTime = true;
         encoderStartSettings.output.video.settings.interlaced = false;
         break;
@@ -3264,7 +3380,7 @@ NEXUS_SurfaceHandle BOMX_VideoEncoder::CreateSurface(
               BOMX_BERR_TRACE(BERR_UNKNOWN);
               return NULL;
           }
-          createSettings.pixelMemoryOffset = offset;
+          createSettings.pixelMemoryOffset = 0; // "offset" must be 0 at this point
        }
        else
        {
@@ -3308,6 +3424,8 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
           pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08);
 
     BOMX_ImageSurfaceNode *pNode;
+    void *slock;
+    int stride = ((2 * pPortDef->format.video.nFrameWidth) + (BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_YCBCR422-1);
     for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
     {
         pNode = new BOMX_ImageSurfaceNode;
@@ -3320,7 +3438,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
         pNode->hSurface = CreateSurface(
                               pPortDef->format.video.nFrameWidth,
                               pPortDef->format.video.nFrameHeight,
-                              2 * pPortDef->format.video.nFrameWidth,
+                              stride,
                               NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08,
                               0,
                               0,
@@ -3336,6 +3454,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
 
         BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
         m_nImageSurfaceFreeListLen++;
+        NEXUS_Surface_Lock(pNode->hSurface, &slock);
 
     }
     ALOGV("%d Nexus surfaces created", m_nImageSurfaceFreeListLen);
@@ -3574,6 +3693,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
 
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList)) )
     {
+        NEXUS_Surface_Unlock(pNode->hSurface);
         BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
         BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
@@ -3582,6 +3702,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
 
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList)) )
     {
+        NEXUS_Surface_Unlock(pNode->hSurface);
         BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
         BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
@@ -4137,7 +4258,7 @@ bool BOMX_VideoEncoder::GraphicsCheckpoint()
     return ret;
 }
 
-NEXUS_Error BOMX_VideoEncoder::ConvertYv12To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
+NEXUS_Error BOMX_VideoEncoder::ConvertYuv420To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
@@ -4268,7 +4389,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-    int stride, cstride, alignment = 4;
+    int stride, cstride, alignment = BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER;
     uint8_t *y_addr, *cr_addr, *cb_addr;
     unsigned cr_offset, cb_offset;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
@@ -4332,7 +4453,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 
     ALOGV("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
 
-    ConvertYv12To422p(srcCb, srcCr, srcY, hDst, false);
+    ConvertYuv420To422p(srcCb, srcCr, srcY, hDst, false);
 
     NEXUS_Surface_Flush(hDst);
 
@@ -4384,29 +4505,42 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     ALOGV("%s: pShareData:%p, width:%u, height:%u, format:%u, stride:%u", __FUNCTION__,
           pSharedData, width, height, cFormat, stride);
 
-    if (HAL_PIXEL_FORMAT_YV12 == cFormat)
+    if (HAL_PIXEL_FORMAT_YV12 == cFormat || HAL_PIXEL_FORMAT_YCBCR_420_888 == cFormat)
     {
         int stride, cstride;
         unsigned cr_offset, cb_offset;
         NEXUS_SurfaceHandle srcCb, srcCr, srcY;
         void *slock;
         size_t size;
-        int alignment = 16; /* hardcoded for this format. */
 
-        stride = (width + (alignment-1)) & ~(alignment-1);
-        cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
-        cr_offset = stride * height;
-        cb_offset = (height/2) * ((stride/2 + (alignment-1)) & ~(alignment-1));
+        if (HAL_PIXEL_FORMAT_YV12 == cFormat)
+        {
+            int alignment = 16; /* hardcoded for this format. */
 
-        ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
-              width, height, stride, cr_offset, cb_offset);
+            stride = (width + (alignment-1)) & ~(alignment-1);
+            cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
+            cr_offset = stride * height;
+            cb_offset = (height/2) * cstride;
+            size = cr_offset + (cstride * height);
+        }
+        else
+        {
+            // 4:2:0 YCbCr
+            stride = width;
+            cstride = stride / 2;
+            cb_offset = stride * height;
+            cr_offset = (height/2) * cstride;
+            size = cb_offset + (cstride * height);
+        }
+        ALOGV("%s: %s (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
+              (HAL_PIXEL_FORMAT_YV12 == cFormat) ? "yv12" : "yuv420", width, height, stride, cr_offset, cb_offset);
 
         if ( NULL != m_pInputDumpFile )
         {
             void *pInputMem;
             rc = NEXUS_MemoryBlock_Lock(planeHandle, &pInputMem);
             ALOG_ASSERT(!rc);
-            fwrite(pInputMem, cr_offset + (cstride * height), 1, m_pInputDumpFile);
+            fwrite(pInputMem, size, 1, m_pInputDumpFile);
             NEXUS_MemoryBlock_Unlock(planeHandle);
         }
 
@@ -4450,7 +4584,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
 
         ALOGV("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
 
-        ConvertYv12To422p(srcCb, srcCr, srcY, hDst, true);
+        ConvertYuv420To422p(srcCb, srcCr, srcY, hDst, true);
 
         NEXUS_Surface_Flush(hDst);
 
@@ -4524,7 +4658,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%p",
               pixelFormat, pAddr, planeHandle);
 
-        hSrc = CreateSurface(width, height, stride, pixelFormat, planeHandle, 0, NULL, NULL);
+        hSrc = CreateSurface(width, height, (stride + (BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1)) & ~(BOMX_NEXUS_SURFACE_ALIGNMENT_OTHER-1), pixelFormat, planeHandle, 0, NULL, NULL);
         if ( NULL == hSrc )
         {
             ALOGE("Unable to allocate color format conversion surface");
@@ -4585,7 +4719,7 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
 
     NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
 
-    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
+    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;
     encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
     encoderSettings.video.refreshRate = B_DEFAULT_VIDEO_REFRESH_RATE;
 

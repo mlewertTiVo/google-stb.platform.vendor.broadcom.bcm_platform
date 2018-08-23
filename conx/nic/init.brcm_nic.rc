@@ -28,8 +28,8 @@ on property:dyn.nx.state=loaded
 on boot
 
 service wpa_supplicant /vendor/bin/hw/wpa_supplicant \
-    -O/data/misc/wifi/sockets \
-    -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
+    -O/data/vendor/wifi/wpa/sockets \
+    -e/data/vendor/wifi/entropy.bin -g@android:wpa_wlan0
     #   we will start as root and wpa_supplicant will switch to user wifi
     #   after setting up the capabilities required for WEXT
     #   user wifi

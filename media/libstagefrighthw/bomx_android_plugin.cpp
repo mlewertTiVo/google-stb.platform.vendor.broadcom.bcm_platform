@@ -47,6 +47,7 @@
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <utils/Log.h>
+#include <cutils/properties.h>
 #include <media/stagefright/omx/SoftOMXComponent.h>
 
 #include <media/openmax/OMX_Core.h>
@@ -70,6 +71,8 @@ BOMX_AndroidPlugin::BOMX_AndroidPlugin()
     {
         ALOGE("OMX_Init failed!");
     }
+
+    m_logMask = property_get_int32(B_PROPERTY_LOG_MASK, B_LOG_MASK_DEFAULT);
 }
 
 BOMX_AndroidPlugin::~BOMX_AndroidPlugin()
@@ -86,7 +89,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::makeComponentInstance(
 {
     OMX_ERRORTYPE omxErr;
 
-    ALOGV("OMX_GetHandle(%s)", name);
+    ALOGD_IF((m_logMask & B_LOG_MISC_COMP_INST), "OMX_GetHandle(%s)", name);
     if (strcmp(name, "OMX.broadcom.audio_decoder.aac") == 0) {
         return allocateSoftAAC(name, callbacks, appData, component);
     }
@@ -108,7 +111,6 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::destroyComponentInstance(
     OMX_VERSIONTYPE specVersion;
     OMX_UUIDTYPE componentUUID;
 
-    ALOGV("OMX_FreeHandle(%p)", component);
     // Revise this later. We use the weak assumption that the softaac
     // decoder doesn't implement this function and bcm decoders do.
     if (component->GetComponentVersion == NULL) {
@@ -125,6 +127,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::destroyComponentInstance(
         return deAllocateSoftAAC(component);
     }
 
+    ALOGD_IF((m_logMask & B_LOG_MISC_COMP_INST), "OMX_FreeHandle(%s)", componentName);
     omxErr = OMX_FreeHandle(reinterpret_cast<OMX_HANDLETYPE *>(component));
     if ( OMX_ErrorNone != omxErr )
     {
@@ -263,6 +266,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::deAllocateSoftAAC(
         (SoftOMXComponent *)
             ((OMX_COMPONENTTYPE *)component)->pComponentPrivate;
 
+    ALOGD_IF((m_logMask & B_LOG_MISC_COMP_INST), "OMX_FreeHandle(OMX.broadcom.audio_decoder.aac)");
     me->prepareForDestruction();
 
     void *libHandle = me->libHandle();

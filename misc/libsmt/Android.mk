@@ -25,7 +25,7 @@ LOCAL_SRC_FILES := \
     BSEAV/lib/security/sage/manufacturing/src/sage_manufacturing_api.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/manufacturing/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/manufacturing/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/manufacturing \
