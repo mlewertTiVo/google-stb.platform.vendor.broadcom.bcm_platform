@@ -365,6 +365,25 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p", __FUNCTION__, bout);
 
+    // Restore auto mode for MS11
+    if (!bout->started && bout->dolbyMs11 &&
+        !(property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
+          property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false))) {
+        NxClient_AudioSettings audioSettings;
+
+        NxClient_GetAudioSettings(&audioSettings);
+        if ( (audioSettings.hdmi.outputMode != NxClient_AudioOutputMode_eAuto) ||
+             (audioSettings.spdif.outputMode != NxClient_AudioOutputMode_eAuto) ) {
+            ALOGI("%s: Force auto output", __FUNCTION__);
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+            ret = NxClient_SetAudioSettings(&audioSettings);
+            if (ret) {
+                ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
+            }
+        }
+    }
+
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_SimpleAudioDecoderSettings settings;
 
@@ -1270,7 +1289,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false)) {
             NxClient_AudioSettings audioSettings;
 
-            ALOGI("Force PCM output");
+            ALOGI("%s: Force PCM output", __FUNCTION__);
             NxClient_GetAudioSettings(&audioSettings);
             bout->nexus.direct.savedHDMIOutputMode = audioSettings.hdmi.outputMode;
             bout->nexus.direct.savedSPDIFOutputMode = audioSettings.spdif.outputMode;
@@ -1291,21 +1310,6 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
-    // Restore auto mode for MS11
-    if (bout->dolbyMs11 &&
-        !(property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
-          property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false))) {
-        NxClient_AudioSettings audioSettings;
-
-        ALOGI("Force auto output");
-        NxClient_GetAudioSettings(&audioSettings);
-        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
-        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
-        ret = NxClient_SetAudioSettings(&audioSettings);
-        if (ret) {
-            ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
-        }
-    }
     return 0;
 
 err_pid:
@@ -1350,11 +1354,14 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
     } else if (bout->dolbyMs11) { // Force PCM mode for MS11
         NxClient_AudioSettings audioSettings;
 
-        ALOGI("Force PCM output");
         NxClient_GetAudioSettings(&audioSettings);
-        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
-        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
-        NxClient_SetAudioSettings(&audioSettings);
+        if ( (audioSettings.hdmi.outputMode != NxClient_AudioOutputMode_ePcm) ||
+             (audioSettings.spdif.outputMode != NxClient_AudioOutputMode_ePcm) ) {
+            ALOGI("%s: Force PCM output", __FUNCTION__);
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+            NxClient_SetAudioSettings(&audioSettings);
+        }
     }
 
     if (bout->nexus.direct.playpump_mode) {

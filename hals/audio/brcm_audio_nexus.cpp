@@ -349,6 +349,23 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
+    /* Force PCM mode for MS11 */
+    if (!bout->started && bout->dolbyMs11) {
+        NxClient_AudioSettings audioSettings;
+
+        NxClient_GetAudioSettings(&audioSettings);
+        if ( (audioSettings.hdmi.outputMode != NxClient_AudioOutputMode_ePcm) ||
+             (audioSettings.spdif.outputMode != NxClient_AudioOutputMode_ePcm) ) {
+            ALOGI("%s: Force PCM output", __FUNCTION__);
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+            ret = NxClient_SetAudioSettings(&audioSettings);
+            if (ret) {
+                ALOGE("%s: Error setting PCM mode, ret = %d", __FUNCTION__, ret);
+            }
+        }
+    }
+
     NEXUS_SimpleAudioPlayback_GetDefaultStartSettings(&start_settings);
 
     start_settings.bitsPerSample =
@@ -555,20 +572,6 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    config->format,
                                    popcount(config->channel_mask),
                                    NEXUS_OUT_BUFFER_DURATION_MS);
-
-    /* Force PCM mode for MS11 */
-    if (bout->dolbyMs11) {
-        NxClient_AudioSettings audioSettings;
-
-        ALOGI("Force PCM output");
-        NxClient_GetAudioSettings(&audioSettings);
-        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
-        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
-        ret = NxClient_SetAudioSettings(&audioSettings);
-        if (ret) {
-            ALOGE("%s: Error setting PCM mode, ret = %d", __FUNCTION__, ret);
-        }
-    }
 
     /* Allocate simpleAudioPlayback */
     NxClient_GetDefaultAllocSettings(&allocSettings);
