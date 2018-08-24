@@ -70,45 +70,6 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_PROPRIETARY_MODULE := true
-
-ifeq ($(TARGET_BUILD_VARIANT),user)
-RELEASE_PREBUILTS := release_prebuilts/user
-else
-RELEASE_PREBUILTS := release_prebuilts/userdebug
-endif
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
-endif
-ifeq ($(NEXUS_SECURITY_API_VERSION),2)
-RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_secv2
-endif
-
-# Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
-# use prebuilt library if one exists
-# update LOCAL_PATH as it gets altered above
-LOCAL_PATH := $(MY_LOCAL_PATH)
-ifeq ($(TARGET_2ND_ARCH),arm)
-LOCAL_MULTILIB := 32
-# LOCAL_MULTILIB := both
-LOCAL_MODULE_TARGET_ARCH := arm arm64
-# fix me!
-LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-else
-ifeq ($(LOCAL_ARM_AARCH64_NOT_ABI_COMPATIBLE),y)
-LOCAL_MODULE_TARGET_ARCH := arm
-else
-LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
-endif
-# fix me!
-LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-endif
-include $(BUILD_PREBUILT)
-
-else
-# compile library from source
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 include $(LOCAL_PATH)/drm/playready/playready.inc
@@ -153,7 +114,6 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 
 include $(BUILD_SHARED_LIBRARY)
-endif
 endif
 
 ifeq ($(SAGE_SUPPORT), y)
