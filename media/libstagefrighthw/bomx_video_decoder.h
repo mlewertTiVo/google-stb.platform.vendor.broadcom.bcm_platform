@@ -143,7 +143,7 @@ struct BOMX_VideoDecoderFrameBuffer
     BOMX_VideoDecoderFrameBufferState state;
     NEXUS_VideoDecoderFrameStatus frameStatus;
     NEXUS_StripedSurfaceHandle hStripedSurface;
-    private_handle_t *pPrivateHandle;
+    void *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
     bool display;
 };
@@ -505,7 +505,7 @@ protected:
     bool GraphicsCheckpoint();
     void CopyAlignedSurfaceToClient(uint8_t *pClientMemory, const uint8_t *pSurfaceMemory, uint16_t height, unsigned int pitch, OMX_S32 stride);
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
-    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
+    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(VideoDecoderOutputMetaData *pMetadata);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
     OMX_ERRORTYPE DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface);
 
