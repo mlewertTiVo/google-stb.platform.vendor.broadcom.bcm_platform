@@ -141,7 +141,7 @@ struct BOMX_VideoDecoderFrameBuffer
     BOMX_VideoDecoderFrameBufferState state;
     NEXUS_VideoDecoderFrameStatus frameStatus;
     NEXUS_StripedSurfaceHandle hStripedSurface;
-    private_handle_t *pPrivateHandle;
+    void *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
     bool display;
 };
@@ -485,7 +485,7 @@ protected:
     void ReturnDecodedFrames();
     bool GraphicsCheckpoint();
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
-    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
+    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(VideoDecoderOutputMetaData *pMetadata);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
     OMX_ERRORTYPE DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface);
 

@@ -4839,9 +4839,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             BOMX_VideoDecoder_MemUnlock((private_handle_t *)pInfo->typeInfo.native.pPrivateHandle);
             break;
         case BOMX_VideoDecoderOutputBufferType_eMetadata:
-            if ( pInfo->typeInfo.metadata.pMetadata->pHandle )
+            if ( pInfo->typeInfo.metadata.pMetadata )
             {
-                pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+                pFrameBuffer = FindFrameBuffer(pInfo->typeInfo.metadata.pMetadata);
             }
             else
             {
@@ -5404,9 +5404,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         }
 
         ALOG_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
-        if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
+        if ( NULL != pInfo->typeInfo.metadata.pMetadata )
         {
-            pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+            pFrameBuffer = FindFrameBuffer(pInfo->typeInfo.metadata.pMetadata);
         }
         else
         {
@@ -6580,7 +6580,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) could
                     // end up permanently in the allocated list if the application is playing video in a loop.
                     if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata){
-                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                        pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
                     }
                 }
                 else
@@ -6609,13 +6609,15 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // accurate information is passed throughout the gralloc buffer path.
                             if ( !portReset && m_forcePortResetOnHwTex )
                             {
+                                int fmtSet = 0;
                                 if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
                                 {
-                                    pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                                    pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
+                                    fmtSet = ((private_handle_t *)(pInfo->typeInfo.metadata.pMetadata->pHandle))->fmt_set;
                                 }
                                 if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                                      ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
-                                      ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX)))
+                                      ((fmtSet & GR_HWTEX) == GR_HWTEX)))
                                 {
                                     ALOGI("Hw Texture - force port reset %ux%u -> %lux%lu",
                                           m_outputWidth, m_outputHeight,
@@ -6693,15 +6695,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
 
                     // Setting private handle for meta mode ahead of time
+                    int fmtSet = 0;
                     if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
                     {
-                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                        pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
+                        fmtSet = ((private_handle_t *)(pInfo->typeInfo.metadata.pMetadata->pHandle))->fmt_set;
                     }
 
                     // Don't try to create a striped surface for secure video
                     if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
-                           ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
+                           ((fmtSet & GR_HWTEX) == GR_HWTEX) ) )
                     {
                         pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
                         if ( pBuffer->hStripedSurface )
@@ -6806,10 +6810,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         {
                             void *pMemory;
                             PSHARED_DATA pSharedData;
-                            BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                            VideoDecoderOutputMetaData *pMetadata = (VideoDecoderOutputMetaData *)pBuffer->pPrivateHandle;
+                            private_handle_t *pPrivateHandle = (private_handle_t *)(pMetadata->pHandle);
+                            BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
-                                ALOGW("Unable to convert SHARED_DATA physical address %p", pBuffer->pPrivateHandle);
+                                ALOGW("Unable to convert SHARED_DATA physical address %p", pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -6858,7 +6864,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     ALOGI_IF(LOG_SAND_TO_HWTEX,
                                        "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit::%d",
                                        pBuffer->frameStatus.serialNumber,
-                                       pBuffer->pPrivateHandle,
+                                       pPrivateHandle,
                                        pBuffer->hStripedSurface,
                                        pSharedData->container.vImageWidth,
                                        pSharedData->container.vImageHeight,
@@ -6877,7 +6883,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
-                            BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
+                            BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
                         }
                         break;
                     default:
@@ -7035,7 +7041,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
                 {
-                    BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                    private_handle_t *pPrivateHandle = (private_handle_t *)pBuffer->pPrivateHandle;
+                    BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
                     if ( pMemory )
                     {
                         pSharedData = (PSHARED_DATA)pMemory;
@@ -7048,7 +7055,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                         hStripedSurface = pSharedData->container.stripedSurface;
                         pSharedData->container.stripedSurface = NULL;
                     }
-                    BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
+                    BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
                 }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
@@ -7284,14 +7291,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     return OMX_ErrorNone;
 }
 
-BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_t *pPrivateHandle)
+BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(VideoDecoderOutputMetaData *pMetadata)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
-    ALOG_ASSERT(NULL != pPrivateHandle);
+    ALOG_ASSERT(NULL != pMetadata);
 
     // Scan allocated frame list for matching private handle
     for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
-          NULL != pFrameBuffer && pFrameBuffer->pPrivateHandle != pPrivateHandle;
+          NULL != pFrameBuffer && pFrameBuffer->pPrivateHandle != pMetadata;
           pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
 
     return pFrameBuffer;

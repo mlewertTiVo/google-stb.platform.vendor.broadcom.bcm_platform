@@ -300,6 +300,23 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
+    // Restore auto mode for MS11
+    if (!bout->started && bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
+        NxClient_AudioSettings audioSettings;
+
+        NxClient_GetAudioSettings(&audioSettings);
+        if ( (audioSettings.hdmi.outputMode != NxClient_AudioOutputMode_eAuto) ||
+             (audioSettings.spdif.outputMode != NxClient_AudioOutputMode_eAuto) ) {
+            ALOGI("%s: Force auto output", __FUNCTION__);
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+            ret = NxClient_SetAudioSettings(&audioSettings);
+            if (ret) {
+                ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
+            }
+        }
+    }
+
     // defer start until first write request
     if (!bout->nexus.tunnel.first_write)
         return 0;
@@ -1165,20 +1182,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         bout->nexus.tunnel.pes_debug = NULL;
     }
 
-    // Restore auto mode for MS11
-    if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
-        NxClient_AudioSettings audioSettings;
-
-        ALOGI("Force auto output");
-        NxClient_GetAudioSettings(&audioSettings);
-        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
-        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
-        ret = NxClient_SetAudioSettings(&audioSettings);
-        if (ret) {
-            ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
-        }
-    }
-
     return 0;
 
 err_pid:
@@ -1210,11 +1213,14 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
     if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
         NxClient_AudioSettings audioSettings;
 
-        ALOGI("Force PCM output");
         NxClient_GetAudioSettings(&audioSettings);
-        audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
-        audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
-        NxClient_SetAudioSettings(&audioSettings);
+        if ( (audioSettings.hdmi.outputMode != NxClient_AudioOutputMode_ePcm) ||
+             (audioSettings.spdif.outputMode != NxClient_AudioOutputMode_ePcm) ) {
+            ALOGI("%s: Force PCM output", __FUNCTION__);
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+            NxClient_SetAudioSettings(&audioSettings);
+        }
     }
 
     nexus_tunnel_bout_stop(bout);
