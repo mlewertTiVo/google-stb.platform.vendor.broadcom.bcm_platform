@@ -1,7 +1,7 @@
 /******************************************************************************
- * (c) 2017 Broadcom
+ *    (c)2018 Broadcom Corporation
  *
- * This program is the proprietary software of Broadcom and/or its licensors,
+ * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,70 +36,46 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#define LOG_TAG "nxcec"
-//#define LOG_NDEBUG 0
+#ifndef VENDOR_BCM_PROPS__HWCOMPOSER
+#define VENDOR_BCM_PROPS__HWCOMPOSER
 
-#include <utils/Log.h>
-#include <string.h>
-#include <cutils/atomic.h>
-#include <utils/Errors.h>
-#include "cutils/properties.h"
-#include <nxcec.h>
-#include "vendor_bcm_props.h"
+/* properties used by the hwcomposer subsytem. */
 
-extern "C" nxcec_cec_device_type nxcec_to_cec_device_type(const char *device) {
-   int type = atoi(device);
+#define BCM_RO_HWC2_EXT_GLES                          "ro.nx.hwc2.ext.gles"
+#define BCM_RO_HWC2_EXT_AFB_W                         "ro.nx.hwc2.afb.w"
+#define BCM_RO_HWC2_EXT_AFB_H                         "ro.nx.hwc2.afb.h"
+#define BCM_RO_HWC2_EXT_NFB_W                         "ro.nx.hwc2.nfb.w"
+#define BCM_RO_HWC2_EXT_NFB_H                         "ro.nx.hwc2.nfb.h"
+#define BCM_RO_HWC2_GFB_MAX_W                         "ro.nx.hwc2.gfb.w"
+#define BCM_RO_HWC2_GFB_MAX_H                         "ro.nx.hwc2.gfb.h"
+#define BCM_RO_HWC2_SF_LCD_DENSITY                    "ro.nx.sf.lcd_density"
 
-   switch (type) {
-   case -1: return eCecDeviceType_eInactive; break;
-   case  0: return eCecDeviceType_eTv; break;
-   case  1: return eCecDeviceType_eRecordingDevice; break;
-   case  2: return eCecDeviceType_eReserved; break;
-   case  3: return eCecDeviceType_eTuner; break;
-   case  4: return eCecDeviceType_ePlaybackDevice; break;
-   case  5: return eCecDeviceType_eAudioSystem; break;
-   case  6: return eCecDeviceType_ePureCecSwitch; break;
-   case  7: return eCecDeviceType_eVideoProcessor; break;
-   default: return eCecDeviceType_eInvalid;
-   }
-}
+#define BCM_DYN_HWC2_DUMP_SET                         "dyn.nx.hwc2.dump.data"
+#define BCM_DYN_HWC2_DUMP_NOW                         "dyn.nx.hwc2.dump.this"
+#define BCM_DYN_HWC2_VIDOUT_FMT                       "dyn.nx.vidout.hwc"
 
-extern "C" nxcec_cec_device_type nxcec_get_cec_device_type() {
-   char value[PROPERTY_VALUE_MAX];
-   nxcec_cec_device_type type = eCecDeviceType_eInvalid;
+/* logging inside hwc.
+ *
+ * set the property mask (setprop <name> <value>), then issue "dumpsys SurfaceFlinger"
+ * to apply changes.  logs will start to show under "logcat -s bcm-hwc:v".
+ *
+ * log masks bitset are defined in hwc2.h.
+ */
+#define BCM_DYN_HWC2_LOG_GLB                           "dyn.nx.hwc2.log.mask"
+#define BCM_DYN_HWC2_LOG_EXT                           "dyn.nx.hwc2.log.ext.mask"
+#define BCM_DYN_HWC2_LOG_VD                            "dyn.nx.hwc2.log.vd.mask"
 
-   if (property_get(BCM_RO_HDMI_DEVICE_TYPE, value, NULL)) {
-      type = nxcec_to_cec_device_type(value);
-   }
-   return type;
-}
 
-extern "C" bool nxcec_is_cec_enabled() {
-   return property_get_bool(BCM_PERSIST_HDMI_ENABLE_CEC,
-                            DEFAULT_PROPERTY_HDMI_ENABLE_CEC);
-}
+/* tweaks for hwc behavior. */
 
-extern "C" bool nxcec_get_cec_xmit_stdby() {
-   return property_get_bool(BCM_PERSIST_HDMI_TX_STANDBY_CEC,
-                            DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC);
-}
+#define BCM_RO_HWC2_TWEAK_FBCOMP                       "ro.nx.hwc2.tweak.fbcomp"
+#define BCM_RO_HWC2_TWEAK_NOCB                         "ro.nx.hwc2.tweak.nocb"
+#define BCM_RO_HWC2_TWEAK_FEOTF                        "ro.nx.hwc2.tweak.force_eotf"
+#define BCM_RO_HWC2_TWEAK_HPD0                         "ro.nx.hwc2.tweak.hpd0"
 
-extern "C" bool nxcec_get_cec_xmit_viewon() {
-   return property_get_bool(BCM_PERSIST_HDMI_TX_VIEW_ON_CEC,
-                            DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC);
-}
+#define BCM_DYN_HWC2_TWEAK_EOTF                        "dyn.nx.hwc2.tweak.eotf"
+#define BCM_DYN_HWC2_TWEAK_PLMOFF                      "dyn.nx.hwc2.tweak.plmoff"
+#define BCM_DYN_HWC2_TWEAK_SGLES                       "dyn.nx.hwc2.tweak.sgles"
 
-extern "C" bool nxcec_is_cec_autowake_enabled() {
-   return property_get_bool(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC,
-                            DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC);
-}
+#endif /* VENDOR_BCM_PROPS__HWCOMPOSER */
 
-extern "C" bool nxcec_set_cec_autowake_enabled(bool enabled) {
-   char value[PROPERTY_VALUE_MAX];
-   snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
-   if (property_set(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
-      return false;
-   } else {
-      return true;
-   }
-}

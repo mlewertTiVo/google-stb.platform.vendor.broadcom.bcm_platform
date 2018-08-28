@@ -42,6 +42,7 @@
 
 #include "sage_srai.h"
 #include <keymaster_tl.h>
+#include "vendor_bcm_props.h"
 extern "C" {
 #include <sage_manufacturing_api.h>
 #include "nexus_security_datatypes.h"
@@ -442,11 +443,11 @@ static int km_init(struct bcm_km *km_hdl) {
          }
       }
       ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl final: (%x) %u.", km_err, km_err);
-      property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
+      property_set(BCM_DYN_KM_STATE, (km_err == BERR_SUCCESS) ? "init" : "ended");
       return km_berr_2_interr(km_err);
    }
 
-   property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
+   property_set(BCM_DYN_KM_STATE, (km_err == BERR_SUCCESS) ? "init" : "ended");
    return 0;
 }
 
@@ -1915,14 +1916,14 @@ static int km_open(
 
    // busy loop wait for nexus readiness, without valid client, the
    // keymaster cannot function.
-   property_get("dyn.nx.state", nexus, "");
+   property_get(BCM_DYN_NX_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "loaded", strlen("loaded")))
          break;
       else {
          ALOGW("nexus not ready for keymaster, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.state", nexus, "");
+         property_get(BCM_DYN_NX_STATE, nexus, "");
       }
    }
    void *nexus_client = nxwrap_create_verified_client(&km_hdl->nxwrap);
@@ -1933,7 +1934,7 @@ static int km_open(
    }
    // busy loop wait for ssd readiness (rpmb), without rpmb, the
    // keymaster may not fully function, but should work to some degree.
-   property_get("dyn.nx.ssd.state", nexus, "");
+   property_get(BCM_DYN_SSD_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "init", strlen("init"))) {
          // all is well.
@@ -1947,7 +1948,7 @@ static int km_open(
          // something is wrong, ssd may not even be present.
          ALOGW("ssd not ready for keymaster, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.ssd.state", nexus, "");
+         property_get(BCM_DYN_SSD_STATE, nexus, "");
          c++;
          if (c > c_max) {
             ALOGE("keymaster timeout waiting for ssd service, proceed without.");

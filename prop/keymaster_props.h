@@ -1,7 +1,7 @@
 /******************************************************************************
- * (c) 2017 Broadcom
+ *    (c)2018 Broadcom Corporation
  *
- * This program is the proprietary software of Broadcom and/or its licensors,
+ * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,70 +36,15 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#define LOG_TAG "nxcec"
-//#define LOG_NDEBUG 0
+#ifndef VENDOR_BCM_PROPS__KEYMASTER
+#define VENDOR_BCM_PROPS__KEYMASTER
 
-#include <utils/Log.h>
-#include <string.h>
-#include <cutils/atomic.h>
-#include <utils/Errors.h>
-#include "cutils/properties.h"
-#include <nxcec.h>
-#include "vendor_bcm_props.h"
+/* properties used by the keymaster, gatekeeper and ssd (rpmb|vfs) subsystems. */
 
-extern "C" nxcec_cec_device_type nxcec_to_cec_device_type(const char *device) {
-   int type = atoi(device);
+#define BCM_DYN_KM_STATE                                "dyn.nx.km.state"
+#define BCM_DYN_SSD_STATE                               "dyn.nx.ssd.state"
 
-   switch (type) {
-   case -1: return eCecDeviceType_eInactive; break;
-   case  0: return eCecDeviceType_eTv; break;
-   case  1: return eCecDeviceType_eRecordingDevice; break;
-   case  2: return eCecDeviceType_eReserved; break;
-   case  3: return eCecDeviceType_eTuner; break;
-   case  4: return eCecDeviceType_ePlaybackDevice; break;
-   case  5: return eCecDeviceType_eAudioSystem; break;
-   case  6: return eCecDeviceType_ePureCecSwitch; break;
-   case  7: return eCecDeviceType_eVideoProcessor; break;
-   default: return eCecDeviceType_eInvalid;
-   }
-}
+#define BCM_PERSIST_SSD_FORMAT_RPMB                     "persist.nx.ssd.rpmb.fmt"
+#define BCM_PERSIST_SSD_FORMAT_VFS                      "persist.nx.ssd.vfs.fmt"
 
-extern "C" nxcec_cec_device_type nxcec_get_cec_device_type() {
-   char value[PROPERTY_VALUE_MAX];
-   nxcec_cec_device_type type = eCecDeviceType_eInvalid;
-
-   if (property_get(BCM_RO_HDMI_DEVICE_TYPE, value, NULL)) {
-      type = nxcec_to_cec_device_type(value);
-   }
-   return type;
-}
-
-extern "C" bool nxcec_is_cec_enabled() {
-   return property_get_bool(BCM_PERSIST_HDMI_ENABLE_CEC,
-                            DEFAULT_PROPERTY_HDMI_ENABLE_CEC);
-}
-
-extern "C" bool nxcec_get_cec_xmit_stdby() {
-   return property_get_bool(BCM_PERSIST_HDMI_TX_STANDBY_CEC,
-                            DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC);
-}
-
-extern "C" bool nxcec_get_cec_xmit_viewon() {
-   return property_get_bool(BCM_PERSIST_HDMI_TX_VIEW_ON_CEC,
-                            DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC);
-}
-
-extern "C" bool nxcec_is_cec_autowake_enabled() {
-   return property_get_bool(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC,
-                            DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC);
-}
-
-extern "C" bool nxcec_set_cec_autowake_enabled(bool enabled) {
-   char value[PROPERTY_VALUE_MAX];
-   snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
-   if (property_set(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
-      return false;
-   } else {
-      return true;
-   }
-}
+#endif /* VENDOR_BCM_PROPS__KEYMASTER */

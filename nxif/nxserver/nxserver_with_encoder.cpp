@@ -64,12 +64,10 @@
 #include <cutils/sched_policy.h>
 #include "nxserver.h"
 #include "nxclient.h"
+#include "vendor_bcm_props.h"
 
 #define ENCODER_RES_WIDTH_DEFAULT      (1280)
 #define ENCODER_RES_HEIGHT_DEFAULT     (720)
-#define ENCODER_RES_WIDTH_PROP         "ro.nx.enc.max.width"
-#define ENCODER_RES_HEIGHT_PROP        "ro.nx.enc.max.height"
-#define ENCODER_ENABLE_ALL             "ro.nx.enc.all"
 
 bool has_encoder(void) {
    return true;
@@ -82,7 +80,7 @@ void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettin
    /* only use a single one unless we have special needs for
     * more (all of them): typically in headless mode.
     */
-   bool all = (property_get_int32(ENCODER_ENABLE_ALL, 0) > 0) ? true : false;
+   bool all = (property_get_int32(BCM_RO_NX_ENC_ENABLE_ALL, 0) > 0) ? true : false;
    if (!all) {
       for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
          pMemConfigSettings->videoEncoder[i].used = false;
@@ -91,9 +89,9 @@ void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettin
    for (i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
       if (pMemConfigSettings->videoEncoder[i].used) {
          pMemConfigSettings->videoEncoder[i].maxWidth =
-            property_get_int32(ENCODER_RES_WIDTH_PROP , ENCODER_RES_WIDTH_DEFAULT);
+            property_get_int32(BCM_RO_NX_ENC_RES_WIDTH, ENCODER_RES_WIDTH_DEFAULT);
          pMemConfigSettings->videoEncoder[i].maxHeight =
-            property_get_int32(ENCODER_RES_HEIGHT_PROP, ENCODER_RES_HEIGHT_DEFAULT);
+            property_get_int32(BCM_RO_NX_ENC_RES_HEIGHT, ENCODER_RES_HEIGHT_DEFAULT);
       }
    }
 }
@@ -101,7 +99,7 @@ void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettin
 bool keep_display_for_encoder(int disp_ix, NEXUS_PlatformCapabilities *pPlatformCap)
 {
    int i = 0;
-   bool all = (property_get_int32(ENCODER_ENABLE_ALL, 0) > 0) ? true : false;
+   bool all = (property_get_int32(BCM_RO_NX_ENC_ENABLE_ALL, 0) > 0) ? true : false;
 
    if (pPlatformCap->display[disp_ix].supported && pPlatformCap->display[disp_ix].encoder) {
       if (all) {

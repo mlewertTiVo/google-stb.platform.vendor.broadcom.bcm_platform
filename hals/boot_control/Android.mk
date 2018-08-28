@@ -51,6 +51,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder 
 endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/system/core/fs_mgr/include_fstab
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_HEADER_LIBRARIES := liblog_headers
 # fix warnings!
@@ -73,6 +74,8 @@ LOCAL_SHARED_LIBRARIES := liblog \
 LOCAL_WHOLE_STATIC_LIBRARIES := libcutils
 LOCAL_STATIC_LIBRARIES := libfstab
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_HEADER_LIBRARIES := liblog_headers
 # fix warnings!
 LOCAL_CFLAGS += -Werror

@@ -51,14 +51,12 @@
 #include "ssd_vfs.h"
 #include "ssd_rpmb.h"
 #include "ssd_tl.h"
+#include "vendor_bcm_props.h"
 
 #include "nxclient.h"
 #include "nexus_memory.h"
 
 #include <log/log.h>
-
-#define SSD_FORMAT_PROP_RPMB  "persist.nx.ssd.rpmb.fmt"
-#define SSD_FORMAT_PROP_VFS   "persist.nx.ssd.vfs.fmt"
 
 /* infinite timeout waiting for sage to asks us to do something. */
 #define SSD_WAIT_TIMEOUT (-1)
@@ -201,8 +199,8 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     SRAI_Settings sraiSettings;
     BSAGElib_InOutContainer *container = NULL;
     int rpmb = 1;
-    bool rpmb_format = property_get_bool(SSD_FORMAT_PROP_RPMB, 0);
-    bool vfs_format = property_get_bool(SSD_FORMAT_PROP_VFS, 0);
+    bool rpmb_format = property_get_bool(BCM_PERSIST_SSD_FORMAT_RPMB, 0);
+    bool vfs_format = property_get_bool(BCM_PERSIST_SSD_FORMAT_VFS, 0);
 
     ALOGD("Initialising SSD TA\n");
 
@@ -310,7 +308,7 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
             ALOGE("Error initialising RPMB partition\n");
         } else {
            if (rpmb_format) {
-              property_set(SSD_FORMAT_PROP_RPMB, "0");
+              property_set(BCM_PERSIST_SSD_FORMAT_RPMB, "0");
            }
         }
     }
@@ -343,7 +341,7 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
             goto errorExit;
         } else {
            if (vfs_format) {
-              property_set(SSD_FORMAT_PROP_VFS, "0");
+              property_set(BCM_PERSIST_SSD_FORMAT_VFS, "0");
            }
         }
     } else if (rc == BSAGE_ERR_ALREADY_INITIALIZED) {

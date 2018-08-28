@@ -49,6 +49,7 @@
 #include "gk.h"
 
 #include <gatekeeper_tl.h>
+#include "vendor_bcm_props.h"
 extern "C" {
 #include <sage_manufacturing_api.h>
 #include "nexus_security_datatypes.h"
@@ -398,14 +399,14 @@ static int brcm_gk_open(
 
    // busy loop wait for nexus readiness, without valid client, the
    // gatekeeper cannot function.
-   property_get("dyn.nx.state", nexus, "");
+   property_get(BCM_DYN_NX_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "loaded", strlen("loaded")))
          break;
       else {
          ALOGW("nexus not ready for gatekeeper, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.state", nexus, "");
+         property_get(BCM_DYN_NX_STATE, nexus, "");
       }
    }
    void *nexus_client = nxwrap_create_verified_client(&gk_hdl->nxwrap);
@@ -416,7 +417,7 @@ static int brcm_gk_open(
    }
    // busy loop wait for keymaster readiness, the gatekeeper is linked
    // to the keymaster through the TA service effectively.
-   property_get("dyn.nx.km.state", nexus, "");
+   property_get(BCM_DYN_KM_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "init", strlen("init"))) {
          // all is well.
@@ -430,7 +431,7 @@ static int brcm_gk_open(
          // something is wrong, ssd may not even be present.
          ALOGW("keymaster not ready for gatekeeper, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.km.state", nexus, "");
+         property_get(BCM_DYN_KM_STATE, nexus, "");
          c++;
          if (c > c_max) {
             ALOGE("gatekeeper timeout waiting for keymaster service, proceed without.");

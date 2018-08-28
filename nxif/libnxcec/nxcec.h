@@ -42,6 +42,7 @@
 #include <utils/threads.h>
 #include <utils/Errors.h>
 #include "nxclient.h"
+#include "vendor_bcm_props.h"
 
 typedef enum {
    eCecDeviceType_eInactive = -1,
@@ -57,17 +58,11 @@ typedef enum {
    eCecDeviceType_eMax = eCecDeviceType_eInvalid
 } nxcec_cec_device_type;
 
-#define PROPERTY_HDMI_ENABLE_CEC                "persist.nx.hdmi.enable_cec"
 #define DEFAULT_PROPERTY_HDMI_ENABLE_CEC        1
-#define PROPERTY_HDMI_TX_STANDBY_CEC            "persist.nx.hdmi.tx_standby_cec"
 #define DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC    0
-#define PROPERTY_HDMI_TX_VIEW_ON_CEC            "persist.nx.hdmi.tx_view_on_cec"
 #define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    0
-#define PROPERTY_HDMI_AUTO_WAKEUP_CEC           "persist.nx.hdmi.auto_wake_cec"
 #define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   1
-#define PROPERTY_HDMI_HOTPLUG_WAKEUP            "ro.nx.hdmi.wake_on_hotplug"
 #define DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP    0
-#define PROPERTY_HDMI_CEC_VENDOR_ID             "ro.nx.hdmi.cec_vendor_id"
 #define DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID     0x18C086
 
 #define HDMI_CEC_MESSAGE_BODY_MAX_LENGTH        16

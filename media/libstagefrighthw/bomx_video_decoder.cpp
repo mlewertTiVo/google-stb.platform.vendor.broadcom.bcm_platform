@@ -67,32 +67,13 @@
 #if defined(BCM_FULL_TREBLE)
 #include <bcm/hardware/dpthak/1.0/IDptHak.h>
 #endif
+#include "vendor_bcm_props.h"
 
 #if defined(BCM_FULL_TREBLE)
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::dpthak::V1_0;
 #endif
-
-// Runtime Properties
-#define B_PROPERTY_PES_DEBUG ("ro.nx.media.vdec_pes_debug")
-#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.vdec_input_debug")
-#define B_PROPERTY_OUTPUT_DEBUG ("ro.nx.media.vdec_output_debug")    // Available for non-secure decoding in standard/metadata mode.
-                                                                    // WARNING: Enabling this feature would save raw YUV decoded output
-                                                                    //    to the userdata partition. Make sure there is enough space for
-                                                                    //    storing the captures.
-#define B_PROPERTY_ENABLE_METADATA ("ro.nx.media.vdec_enable_metadata")
-#define B_PROPERTY_TUNNELED_HFRVIDEO ("ro.nx.media.vdec_hfrvideo_tunnel")
-#define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("ro.nx.media.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
-#define B_PROPERTY_MEMBLK_ALLOC ("ro.nx.ashmem.devname")
-#define B_PROPERTY_SVP ("ro.nx.svp")
-#define B_PROPERTY_HW_SYNC_FAKE ("ro.nx.media.hw_sync.fake")
-#define B_PROPERTY_EARLYDROP_THRESHOLD ("ro.nx.media.stat.earlydrop_thres")
-#define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
-#define B_PROPERTY_DTU ("ro.nx.capable.dtu")
-#define B_PROPERTY_VDEV_MAIN_VIRT ("dyn.nx.media.vdec.main.virt")
-#define B_PROPERTY_SYS_DISPLAY_SIZE ("dyn.nx.display-size")
-#define B_PROPERTY_PORT_RESET_ON_HWTEX ("dyn.nx.media.hwtex.reset_port")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -456,7 +437,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     }
 
     // VP9 can be disabled by this property
-    if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
+    if ( property_get_int32(BCM_RO_NX_TRIM_VP9, 0) )
     {
         ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
         goto error;
@@ -1119,7 +1100,7 @@ static int BOMX_VideoDecoder_OpenMemoryInterface(void)
    memset(device, 0, sizeof(device));
    memset(name, 0, sizeof(name));
 
-   property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
+   property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
    if (strlen(device)) {
       strcpy(name, "/dev/");
       strcat(name, device);
@@ -1248,13 +1229,13 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    NEXUS_MemoryStatus memoryStatus;
    char value[PROPERTY_VALUE_MAX];
 
-   if (property_get_int32(B_PROPERTY_DISABLE_RUNTIME_HEAPS, 0))
+   if (property_get_int32(BCM_RO_MEDIA_DISABLE_RUNTIME_HEAPS, 0))
    {
       return false;
    }
 
    memset(value, 0, sizeof(value));
-   property_get(B_PROPERTY_SVP, value, "play");
+   property_get(BCM_RO_NX_SVP, value, "play");
    if (strncmp(value, "none", strlen("none")))
    {
       NEXUS_Platform_GetConfiguration(&platformConfig);
@@ -1511,7 +1492,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
-    m_forcePortResetOnHwTex = property_get_bool(B_PROPERTY_PORT_RESET_ON_HWTEX, 1);
+    m_forcePortResetOnHwTex = property_get_bool(BCM_DYN_MEDIA_PORT_RESET_ON_HWTEX, 1);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -1521,13 +1502,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     // ... for the moment, redux decoder cannot be virtualized, so the two are mutually exclusive.
     if (!m_redux)
     {
-       if (property_get_int32(B_PROPERTY_VDEV_MAIN_VIRT, 0))
+       if (property_get_int32(BCM_DYN_MEDIA_VDEV_MAIN_VIRT, 0))
        {
            m_virtual = true;
            // reset because from there on the next decoders would also be virtualized if needed
            // and in case the application is not well behaved we do not want to be locked in this
            // state.
-           property_set(B_PROPERTY_VDEV_MAIN_VIRT, "0");
+           property_set(BCM_DYN_MEDIA_VDEV_MAIN_VIRT, "0");
        }
        else if (g_mainDecoderVirtualSession > 0)
        {
@@ -1782,7 +1763,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     m_nexusClient = m_pNxWrap->client();
 
-    if (property_get_int32(B_PROPERTY_DTU, 0))
+    if (property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
     {
         // guaranteed by the dtu.
         m_secureRuntimeHeaps = m_secureDecoder;
@@ -1906,7 +1887,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     ALOGI("%s; max decoder height:%u width:%u", m_virtual?"virtualized":"full", m_maxDecoderWidth, m_maxDecoderHeight);
 
     memset(value, 0, sizeof(value));
-    property_get(B_PROPERTY_SVP, value, "play");
+    property_get(BCM_RO_NX_SVP, value, "play");
     if (strncmp(value, "none", strlen("none")))
     {
        connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
@@ -1939,10 +1920,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_enableHdrForNonVp9 = property_get_int32(B_PROPERTY_ENABLE_HDR_FOR_NON_VP9, 0);
+    m_enableHdrForNonVp9 = property_get_int32(BCM_RO_MEDIA_ENABLE_HDR_FOR_NON_VP9, 0);
 
     memset(value, 0, sizeof(value));
-    property_get(B_PROPERTY_SYS_DISPLAY_SIZE, value, NULL);
+    property_get(BCM_DYN_NX_DISPLAY_SIZE, value, NULL);
     if (!strncmp(value, B_UHD_DISPLAY, strlen(B_UHD_DISPLAY)))
     {
        uhdDisplay = true;
@@ -2089,9 +2070,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBcmvHeader[3] = 'V';
 
     int32_t pesDebug, inputDebug, outputDebug;
-    pesDebug = property_get_int32(B_PROPERTY_PES_DEBUG, 0);
-    inputDebug = property_get_int32(B_PROPERTY_INPUT_DEBUG, 0);
-    outputDebug = property_get_int32(B_PROPERTY_OUTPUT_DEBUG, 0);
+    pesDebug = property_get_int32(BCM_RO_MEDIA_VDEC_PES_DEBUG, 0);
+    inputDebug = property_get_int32(BCM_RO_MEDIA_VDEC_INPUT_DEBUG, 0);
+    outputDebug = property_get_int32(BCM_RO_MEDIA_VDEC_OUTPUT_DEBUG, 0);
     // Setup file to debug input, output, or PES data packing if required
     if ( pesDebug || inputDebug || outputDebug )
     {
@@ -2180,7 +2161,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
        m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
 
-       m_tunnelHfr = ( property_get_int32(B_PROPERTY_TUNNELED_HFRVIDEO, 0) != 0 );
+       m_tunnelHfr = ( property_get_int32(BCM_RO_MEDIA_TUNNELED_HFRVIDEO, 0) != 0 );
     }
     else
     {
@@ -2209,7 +2190,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     BKNI_Memset(&m_colorAspectsFinal, 0, sizeof(m_colorAspectsFinal));
 
     // Threshold that we consider a drop as early for stat tracking purpose.
-    m_earlyDropThresholdMs = property_get_int32(B_PROPERTY_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
+    m_earlyDropThresholdMs = property_get_int32(BCM_RO_MEDIA_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
 
     // Create the internal display thread
     if ( pthread_create(&m_hDisplayThread, NULL, BOMX_DisplayThread, static_cast <void *> (this)) != 0 )
@@ -3713,7 +3694,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
                 if (m_tunnelMode)
                 {
-                    if (!property_get_int32(B_PROPERTY_HW_SYNC_FAKE, 0))
+                    if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0))
                     {
                         errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
                         if ( errCode )
@@ -3727,7 +3708,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 {
                     return BOMX_BERR_TRACE(errCode);
                 }
-                if (!property_get_int32(B_PROPERTY_DTU, 0))
+                if (!property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
                 {
                    NEXUS_SimpleVideoDecoderClientSettings videoDecoderClientsettings;
                    NEXUS_SimpleVideoDecoder_GetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
@@ -6305,7 +6286,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
     {
         if ( !strcmp(g_extensions[i].pName, cParameterName) )
         {
-            if ( (g_extensions[i].index == OMX_IndexParamStoreMetaDataInBuffers) && (0 == property_get_int32(B_PROPERTY_ENABLE_METADATA, 1)) )
+            if ( (g_extensions[i].index == OMX_IndexParamStoreMetaDataInBuffers) && (0 == property_get_int32(BCM_RO_MEDIA_ENABLE_METADATA, 1)) )
             {
                 ALOGD("Metadata output disabled");
                 // Drop out here to reduce spam in logcat

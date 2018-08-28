@@ -44,6 +44,7 @@
 #include "nexusirhandler.h"
 #include "nexusirinput.h"
 #include "nexusirmap.h"
+#include "vendor_bcm_props.h"
 
 #include <cutils/properties.h>
 #include <log/log.h>
@@ -52,9 +53,7 @@
 #define NS_TO_MS(t) (nsecs_t(t) / (1000 * 1000))
 #define DEFAULT_TIMEOUT MS_TO_NS(250)
 
-#define WAKEUP_KEY "ro.nx.ir_remote.wakeup.button"
 #define IR_NAME_NEXUS_REMOTE "mtkinp"
-#define IR_NAME "ro.nx.ir_remote.name"
 
 NexusIrHandler::NexusIrHandler() :
         m_mode(NEXUS_IrInputMode_eRemoteA),
@@ -90,10 +89,10 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     uint32_t power_key = NEXUSIRINPUT_NO_KEY;
     uint32_t power_key_two = NEXUSIRINPUT_NO_KEY;
 
-    unsigned wakeup_key = property_get_int32(WAKEUP_KEY, 0);
+    unsigned wakeup_key = property_get_int32(BCM_RO_NX_WAKEUP_KEY, 0);
     char ir_name[PROPERTY_VALUE_MAX];
 
-    property_get(IR_NAME, ir_name, IR_NAME_NEXUS_REMOTE);
+    property_get(BCM_RO_NX_IR_NAME, ir_name, IR_NAME_NEXUS_REMOTE);
 
     for (size_t i = 0; success && (i < size); ++i)
     {

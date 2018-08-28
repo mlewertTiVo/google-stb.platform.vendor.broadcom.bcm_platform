@@ -241,13 +241,13 @@ static void hwc2_eval_log(
    struct hwc2_bcm_device_t *hwc2) {
 
   if (hwc2) {
-     hwc2->lm = property_get_int32(HWC2_LOG_GLB, 0);
+     hwc2->lm = property_get_int32(BCM_DYN_HWC2_LOG_GLB, 0);
   }
   if (hwc2->ext) {
-     hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
+     hwc2->ext->lm = property_get_int32(BCM_DYN_HWC2_LOG_EXT, 0);
   }
   if (hwc2->vd) {
-     hwc2->vd->lm = property_get_int32(HWC2_LOG_VD, 0);
+     hwc2->vd->lm = property_get_int32(BCM_DYN_HWC2_LOG_VD, 0);
   }
   return;
 }
@@ -259,25 +259,25 @@ static bool hwc2_enabled(
 
    switch (tweak) {
    case hwc2_tweak_fb_compressed:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.fbcomp", 0);
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_FBCOMP, 0);
    break;
    case hwc2_tweak_pip_alpha_hole:
       r = !!HWC2_PAH;
    break;
    case hwc2_tweak_bypass_disable:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_NOCB, 0);
    break;
    case hwc2_tweak_plm_off:
-      r = (bool)property_get_bool("dyn.nx.hwc2.tweak.plmoff", 0);
+      r = (bool)property_get_bool(BCM_DYN_HWC2_TWEAK_PLMOFF, 0);
    break;
    case hwc2_tweak_scale_gles:
-      r = (bool)property_get_bool("dyn.nx.hwc2.tweak.sgles", 0);
+      r = (bool)property_get_bool(BCM_DYN_HWC2_TWEAK_SGLES, 0);
    break;
    case hwc2_tweak_forced_eotf:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_FEOTF, 1);
    break;
    case hwc2_tweak_hdp0:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.hpd0", 0);
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_HPD0, 0);
    break;
    case hwc2_tweak_odv_alpha_hole:
       r = !!HWC2_ODV;
@@ -296,13 +296,13 @@ static int32_t hwc2_setting(
 
    switch (tweak) {
    case hwc2_tweak_eotf:
-      r = property_get_int32("dyn.nx.hwc2.tweak.eotf", 0);
+      r = property_get_int32(BCM_DYN_HWC2_TWEAK_EOTF, 0);
    break;
    case hwc2_tweak_dump_enabled:
-      r = property_get_int32(HWC2_DUMP_SET, 0);
+      r = property_get_int32(BCM_DYN_HWC2_DUMP_SET, 0);
    break;
    case hwc2_tweak_dump_this:
-      r = property_get_int32(HWC2_DUMP_NOW, 0);
+      r = property_get_int32(BCM_DYN_HWC2_DUMP_NOW, 0);
    break;
    default:
    break;
@@ -916,8 +916,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = false;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
+      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
@@ -950,8 +950,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
+      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -973,8 +973,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
+      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -1225,7 +1225,7 @@ static void hwc2_setup_memif(
       memset(device, 0, sizeof(device));
       memset(hwc2->memif, 0, sizeof(hwc2->memif));
 
-      property_get(HWC2_MEMIF_DEV, device, NULL);
+      property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
       if (strlen(device)) {
          strcpy(hwc2->memif, "/dev/");
          strcat(hwc2->memif, device);
@@ -1454,7 +1454,7 @@ static void hwc2_set_acfg(
       /* prevent automatic selection of 'better' display resolution.
        */
       sprintf(fmt_str, "%d", fmt);
-      property_set(HWC2_VIDOUT_FMT, fmt_str);
+      property_set(BCM_DYN_HWC2_VIDOUT_FMT, fmt_str);
       NxClient_SetDisplaySettings(&settings);
       /* the resulting display change callback should take care of updating
        * the composition mode.
@@ -2051,13 +2051,13 @@ static void hwc2_setup_vd(
    pthread_mutexattr_t mattr;
    int num;
 
-   hwc2->vd->lm = property_get_int32(HWC2_LOG_VD, 0);
+   hwc2->vd->lm = property_get_int32(BCM_DYN_HWC2_LOG_VD, 0);
    hwc2->vd->tlm = HWC2_TLM_MAGIC;
 
-   hwc2->vd->gfbwxl = property_get_int32(HWC2_GFB_MAX_W, HWC2_FB_MAX_W);
-   hwc2->vd->gfbhxl = property_get_int32(HWC2_GFB_MAX_H, HWC2_FB_MAX_H);
-   hwc2->vd->gfbwsm = property_get_int32(HWC2_GFB_MAX_W, HWC2_FB_MIN_W);
-   hwc2->vd->gfbhsm = property_get_int32(HWC2_GFB_MAX_H, HWC2_FB_MIN_H);
+   hwc2->vd->gfbwxl = property_get_int32(BCM_RO_HWC2_GFB_MAX_W, HWC2_FB_MAX_W);
+   hwc2->vd->gfbhxl = property_get_int32(BCM_RO_HWC2_GFB_MAX_H, HWC2_FB_MAX_H);
+   hwc2->vd->gfbwsm = property_get_int32(BCM_RO_HWC2_GFB_MAX_W, HWC2_FB_MIN_W);
+   hwc2->vd->gfbhsm = property_get_int32(BCM_RO_HWC2_GFB_MAX_H, HWC2_FB_MIN_H);
 
    if (!HWC2_VD_GLES) {
       BKNI_CreateEvent(&hwc2->vd->cmp_evt);
@@ -6552,7 +6552,7 @@ static uint32_t hwc2_afb_min(
     * only support the ATV bound density that make sense, fallback is
     * always 1080p.
     */
-   int32_t d = property_get_int32("ro.nx.sf.lcd_density", 0);
+   int32_t d = property_get_int32(BCM_RO_HWC2_SF_LCD_DENSITY, 0);
    uint32_t v = 0;
 
    switch (d) {
@@ -6595,12 +6595,12 @@ static void hwc2_setup_ext(
    snprintf(hwc2->ext->name, sizeof(hwc2->ext->name), "stbHD0");
    hwc2->ext->tlm = HWC2_TLM_MAGIC;
    hwc2->ext->type = HWC2_DISPLAY_TYPE_PHYSICAL;
-   hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
-   hwc2->ext->gfbwxl = property_get_int32(HWC2_GFB_MAX_W, HWC2_FB_MAX_W);
-   hwc2->ext->gfbhxl = property_get_int32(HWC2_GFB_MAX_H, HWC2_FB_MAX_H);
+   hwc2->ext->lm = property_get_int32(BCM_DYN_HWC2_LOG_EXT, 0);
+   hwc2->ext->gfbwxl = property_get_int32(BCM_RO_HWC2_GFB_MAX_W, HWC2_FB_MAX_W);
+   hwc2->ext->gfbhxl = property_get_int32(BCM_RO_HWC2_GFB_MAX_H, HWC2_FB_MAX_H);
    hwc2->ext->gfbwsm = hwc2_afb_min(false, hwc2->ext->gfbwxl);
    hwc2->ext->gfbhsm = hwc2_afb_min(true, hwc2->ext->gfbhxl);
-   hwc2->ext->u.ext.gles = property_get_bool(HWC2_EXT_GLES, 0);
+   hwc2->ext->u.ext.gles = property_get_bool(BCM_RO_HWC2_EXT_GLES, 0);
    if (hwc2->ext->u.ext.gles) {
       ALOGI("[ext]: fallback to gles composition\n");
    }
@@ -6608,8 +6608,8 @@ static void hwc2_setup_ext(
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
       hwc2->ext->cfgs->next  = NULL;
-      hwc2->ext->cfgs->w     = property_get_int32(HWC2_EXT_AFB_W, hwc2->ext->gfbwxl);
-      hwc2->ext->cfgs->h     = property_get_int32(HWC2_EXT_AFB_H, hwc2->ext->gfbhxl);
+      hwc2->ext->cfgs->w     = property_get_int32(BCM_RO_HWC2_EXT_AFB_W, hwc2->ext->gfbwxl);
+      hwc2->ext->cfgs->h     = property_get_int32(BCM_RO_HWC2_EXT_AFB_H, hwc2->ext->gfbhxl);
       hwc2->ext->cfgs->vsync = hwc2_fps2vsync(60); /* hardcode 60fps */
       hwc2->ext->cfgs->xdp   = 160; /* default if not connected. */
       hwc2->ext->cfgs->ydp   = 160; /* default if not connected. */
@@ -6647,8 +6647,8 @@ static void hwc2_setup_ext(
    ALOGI("[ext]: completion timeline: %d\n", hwc2->ext->cmp_tl);
 
    NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &c);
-   c.virtualDisplay.width  = property_get_int32(HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-   c.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+   c.virtualDisplay.width  = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
+   c.virtualDisplay.height = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
    c.position.x            = 0;
    c.position.y            = 0;
    c.position.width        = c.virtualDisplay.width;
@@ -6971,7 +6971,7 @@ static int hwc2_open(
       dev->base.getFunction     = hwc2_getFncs;
       dev->magic                = HWC2_MAGIC;
 
-      dev->lm = property_get_int32(HWC2_LOG_GLB, 0);
+      dev->lm = property_get_int32(BCM_DYN_HWC2_LOG_GLB, 0);
       hwc2_bcm_open(dev);
 
       *device = &dev->base.common;

@@ -56,6 +56,7 @@ LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/media
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefrighthw
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES += $(call include-path-for, audio)
 LOCAL_C_INCLUDES += $(call include-path-for, libhardware)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))

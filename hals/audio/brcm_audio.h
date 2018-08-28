@@ -71,6 +71,8 @@ extern "C" {
 #include <utils/Mutex.h>
 #include <utils/Errors.h>
 
+#include "vendor_bcm_props.h"
+
 /* Nexus headers */
 #include "bstd.h"
 #include "berr.h"
@@ -102,21 +104,8 @@ extern "C" {
 #define DUMMY_AUDIO_OUT 0
 #define DUMMY_AUDIO_IN  0
 
-#define BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE ("ro.nx.media.hw_sync.fake")
 #define DUMMY_HW_SYNC   0xCAFEBABE
 
-#define BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY ("ro.nx.eac3.trans_latency")
-#define BRCM_PROPERTY_AUDIO_OUTPUT_CLOCK_ACCURACY ("ro.nx.audio.clock_acc")
-
-#define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM         ("ro.nx.media.direct_force_pcm")
-#define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST ("persist.nx.direct_force_pcm")
-
-#define BRCM_PROPERTY_DOLBY_MS           ("ro.nx.dolby.ms")
-
-#define BRCM_PROPERTY_AUDIO_DISABLE_ATMOS         ("ro.nx.media.disable_atmos")
-#define BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST ("persist.nx.disable_atmos")
-
-#define BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY ("ro.nx.audio.mixer_latency")
 #define NEXUS_DEFAULT_MS_MIXER_LATENCY 128
 
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */

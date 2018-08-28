@@ -29,6 +29,8 @@ LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+LOCAL_C_INCLUDES := $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SRC_FILES := \
     linuxuinput.cpp \

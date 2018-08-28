@@ -57,9 +57,7 @@
 #include <fcntl.h>
 #include <cutils/properties.h>
 #include "namevalue.h"
-
-#define NX_HD_OUT_FMT  "nx.vidout.force" /* needs prefixing. */
-#define NX_HD_OUT_SET  "dyn.nx.vidout.set"
+#include "vendor_bcm_props.h"
 
 BDBG_MODULE(nxdispfmt);
 
@@ -70,7 +68,7 @@ static NEXUS_VideoFormat forced_output_format(void)
    char name[PROPERTY_VALUE_MAX];
 
    memset(value, 0, sizeof(value));
-   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+   sprintf(name, "persist.%s", BCM_XX_NX_HD_OUT_FMT);
    if (property_get(name, value, "")) {
       if (strlen(value)) {
          forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -79,7 +77,7 @@ static NEXUS_VideoFormat forced_output_format(void)
 
    if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
       memset(value, 0, sizeof(value));
-      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      sprintf(name, "ro.%s", BCM_XX_NX_HD_OUT_FMT);
       if (property_get(name, value, "")) {
          if (strlen(value)) {
             forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -89,7 +87,7 @@ static NEXUS_VideoFormat forced_output_format(void)
 
    if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
       memset(value, 0, sizeof(value));
-      sprintf(name, "dyn.%s", NX_HD_OUT_FMT);
+      sprintf(name, "dyn.%s", BCM_XX_NX_HD_OUT_FMT);
       if (property_get(name, value, "")) {
          if (strlen(value)) {
             forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -173,6 +171,6 @@ int main(int argc, char **argv)
 
 out:
    NxClient_Uninit();
-   property_set(NX_HD_OUT_SET, "0");
+   property_set(BCM_DYN_NX_HD_OUT_SET, "0");
    return rc;
 }

@@ -52,6 +52,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include "vendor_bcm_props.h"
 
 
 //#define VERY_VERBOSE_LOGGING
@@ -61,7 +62,6 @@
 #define ALOGVV(a...) do { } while(0)
 #endif
 
-#define HFR_VIDEO_ENABLE                "ro.nx.hfrvideo.mode"
 #define HFR_VIDEO_ENABLE_DEF            (1)
 
 #define HFR_VIDEO_MODE_VMODE            (0)
@@ -466,7 +466,7 @@ int do_hfrvideo(int mode)
    int num_key_processes;
    struct process_entity *key_process_list = NULL;
 
-   if (property_get_int32(HFR_VIDEO_ENABLE, HFR_VIDEO_ENABLE_DEF) != 1) {
+   if (property_get_int32(BCM_RO_HFR_VIDEO_ENABLE, HFR_VIDEO_ENABLE_DEF) != 1) {
       ALOGV("hfrvideo mode not enabled.");
       return 0;
    }

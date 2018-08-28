@@ -981,7 +981,7 @@ bool NexusHdmiCecDevice::getHdmiHotplugWakeup()
     static bool wakeup = false;
 
     if (!cached) {
-        wakeup = property_get_bool(PROPERTY_HDMI_HOTPLUG_WAKEUP, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP);
+        wakeup = property_get_bool(BCM_RO_HDMI_HOTPLUG_WAKEUP, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP);
         cached = true;
     }
     return wakeup;
@@ -1109,7 +1109,7 @@ out:
 status_t NexusHdmiCecDevice::getCecVendorId(uint32_t* vendor_id)
 {
    if (mCecVendorId == UNKNOWN_VENDOR_ID) {
-       mCecVendorId = property_get_int32(PROPERTY_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
+       mCecVendorId = property_get_int32(BCM_RO_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
    }
    *vendor_id = mCecVendorId;
    return NO_ERROR;

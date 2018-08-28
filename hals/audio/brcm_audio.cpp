@@ -41,13 +41,11 @@
 #include "brcm_audio_nexus_hdmi.h"
 #include <inttypes.h>
 #include "bomx_utils.h"
+#include "vendor_bcm_props.h"
 
 #define BRCM_BUFFER_SIZE_MS     10
 #define BRCM_SUPPORTED_DOLBY_MS11 11
 #define BRCM_SUPPORTED_DOLBY_MS12 12
-
-// Runtime properties
-#define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("ro.nx.media.aout_debug")
 
 struct output_hdr {
     char tag[4];
@@ -278,7 +276,7 @@ static int bout_set_parameters(struct audio_stream *stream,
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
             int hw_sync_id = 0;
-            if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+            if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
                 ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
                 ret = 0;
             } else {
@@ -952,7 +950,7 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
     if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC)) {
        int hw_sync_id = AUDIO_HW_SYNC_INVALID;
 
-       if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+       if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
           hw_sync_id = DUMMY_HW_SYNC;
        } else {
           if (bdev->stc_channel_mem_hdl == NULL) {
@@ -1123,7 +1121,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     bout->config = *config;
     bout->bdev = bdev;
 
-    if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG, 0)) {
+    if (property_get_int32(BCM_RO_AUDIO_OUTPUT_DEBUG, 0)) {
         time_t rawtime;
         struct tm * timeinfo;
         char fname[100];
@@ -1141,7 +1139,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         }
     }
 
-    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
+    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
     bout->dolbyMs11 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS11);
     bout->dolbyMs12 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS12);
 

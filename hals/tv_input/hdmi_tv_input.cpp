@@ -36,6 +36,7 @@
 #include "nexus_hdmi_output_hdcp.h"
 #include "nexus_display.h"
 #include <bcmsideband.h>
+#include "vendor_bcm_props.h"
 
 /* This module was designed to look a lot like a standalone tv_input HAL. The
  * only difference is that we piggy-back it on top of the TV tuner HAL.
@@ -910,7 +911,7 @@ static int tv_input_device_open(const struct hw_module_t* module,
 {
     ALOGV("%s", __FUNCTION__);
     int status = -EINVAL;
-    if (property_get_bool("ro.nx.trim.hdmiin", 1)) {
+    if (property_get_bool(BCM_RO_NX_TRIM_HDMIIN, 1)) {
         *device = NULL; // The feature is disabled (trimmed-out)
         status = 0;
     } else if (!strcmp(name, TV_INPUT_DEFAULT_DEVICE)) {

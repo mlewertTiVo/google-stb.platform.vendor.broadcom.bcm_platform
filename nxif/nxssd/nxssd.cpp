@@ -21,6 +21,7 @@
 #include "nxclient.h"
 #include <nxwrap.h>
 #include "ssd_tl.h"
+#include "vendor_bcm_props.h"
 
 static NxWrap *mNxWrap = NULL;
 
@@ -46,11 +47,11 @@ int main(int argc, char** argv)
    (void) argc;
    (void) argv;
 
-   property_set("dyn.nx.ssd.state", "start");
+   property_set(BCM_DYN_SSD_STATE, "start");
 
    for (;;) {
       memset(value, 0, sizeof(value));
-      property_get("dyn.nx.state", value, NULL);
+      property_get(BCM_DYN_NX_STATE, value, NULL);
       if (strlen(value) && !strncmp(value, "loaded", strlen(value))) {
          break;
       }
@@ -75,7 +76,7 @@ int main(int argc, char** argv)
       goto exit;
    }
 
-   property_set("dyn.nx.ssd.state", "init");
+   property_set(BCM_DYN_SSD_STATE, "init");
 
    ALOGI("%s: wait for ssd ops...", __FUNCTION__);
    SSDTl_Wait_For_Operations();
@@ -84,7 +85,7 @@ int main(int argc, char** argv)
    SSDTl_Uninit();
 
 exit:
-   property_set("dyn.nx.ssd.state", "ended");
+   property_set(BCM_DYN_SSD_STATE, "ended");
    if (mNxWrap) {
       mNxWrap->leave();
       delete mNxWrap;

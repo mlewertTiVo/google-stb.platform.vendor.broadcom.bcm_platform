@@ -25,6 +25,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
 LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop \
                     system/core/base/include
 LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_SRC_FILES := togplm.cpp

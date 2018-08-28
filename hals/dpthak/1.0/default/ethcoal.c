@@ -66,23 +66,20 @@
 #include <linux/if.h>
 #include <linux/sockios.h>
 
+#include "vendor_bcm_props.h"
+
 /* _DEF values are per kernel driver default setting, fixed.
  *
  * _VAL values are per tuning for video mode default setting and can
  *  be changed via property override.
  */
-#define ETH_COALESCE_TX_FRAMES      "ro.nx.eth.tx_frames"
 #define ETH_COALESCE_TX_FRAMES_VAL  (255)
 #define ETH_COALESCE_TX_FRAMES_DEF  (1)
-#define ETH_COALESCE_RX_FRAMES      "ro.nx.eth.rx_frames"
 #define ETH_COALESCE_RX_FRAMES_VAL  (256)
 #define ETH_COALESCE_RX_FRAMES_DEF  (1)
-#define ETH_COALESCE_RX_USECS       "ro.nx.eth.rx_usecs"
 #define ETH_COALESCE_RX_USECS_VAL   (4096)
 #define ETH_COALESCE_RX_USECS_DEF   (0)
-#define ETH_IRQ_BALANCE             "ro.nx.eth.irq_balance"
 #define ETH_IRQ_BALANCE_VAL         (1)
-#define ETH_IRQ_BALANCE_MODE        "ro.nx.eth.irq_mode_mask"
 
 #define ETH_COALESCE_DEFAULT        "default"
 #define ETH_COALESCE_USEVAL         "vmode"
@@ -110,7 +107,7 @@ static int set_irq_affinity (int irq, int set)
    fclose(file);
    new_affinity = old_affinity = strtol(line, NULL, 16);
 
-   if (property_get(ETH_IRQ_BALANCE_MODE, value, NULL)) {
+   if (property_get(BCM_RO_ETH_IRQ_BALANCE_MODE, value, NULL)) {
       p = strchr(value, ':');
       if (strlen(value) && (p != NULL)) {
          if (set) {
@@ -230,7 +227,7 @@ int do_ethcoal(const char* mode) {
 
    // first, set the irq affinity for the corresponding ethernet one.
    //
-   if (property_get_int32(ETH_IRQ_BALANCE, ETH_IRQ_BALANCE_VAL)) {
+   if (property_get_int32(BCM_RO_ETH_IRQ_BALANCE, ETH_IRQ_BALANCE_VAL)) {
       set_eth_irq_affinity(ifr.ifr_name, force_value);
    }
 
@@ -269,9 +266,9 @@ int do_ethcoal(const char* mode) {
    }
 
    ALOGV("get-%s: %s=%d, %s=%d, %s=%d", ifr.ifr_name,
-         ETH_COALESCE_TX_FRAMES, ecoal.rx_max_coalesced_frames,
-         ETH_COALESCE_RX_FRAMES, ecoal.rx_max_coalesced_frames,
-         ETH_COALESCE_RX_USECS, ecoal.rx_coalesce_usecs);
+         BCM_RO_ETH_COALESCE_TX_FRAMES, ecoal.rx_max_coalesced_frames,
+         BCM_RO_ETH_COALESCE_RX_FRAMES, ecoal.rx_max_coalesced_frames,
+         BCM_RO_ETH_COALESCE_RX_USECS, ecoal.rx_coalesce_usecs);
 
    ecoal.cmd = ETHTOOL_SCOALESCE;
    if (use_default) {
@@ -279,9 +276,9 @@ int do_ethcoal(const char* mode) {
       ecoal.rx_max_coalesced_frames = ETH_COALESCE_RX_FRAMES_DEF;
       ecoal.rx_coalesce_usecs =       ETH_COALESCE_RX_USECS_DEF;
    } else if (force_value) {
-      ecoal.tx_max_coalesced_frames = property_get_int32(ETH_COALESCE_TX_FRAMES, ETH_COALESCE_TX_FRAMES_VAL);
-      ecoal.rx_max_coalesced_frames = property_get_int32(ETH_COALESCE_RX_FRAMES, ETH_COALESCE_RX_FRAMES_VAL);
-      ecoal.rx_coalesce_usecs =       property_get_int32(ETH_COALESCE_RX_USECS, ETH_COALESCE_RX_USECS_VAL);
+      ecoal.tx_max_coalesced_frames = property_get_int32(BCM_RO_ETH_COALESCE_TX_FRAMES, ETH_COALESCE_TX_FRAMES_VAL);
+      ecoal.rx_max_coalesced_frames = property_get_int32(BCM_RO_ETH_COALESCE_RX_FRAMES, ETH_COALESCE_RX_FRAMES_VAL);
+      ecoal.rx_coalesce_usecs =       property_get_int32(BCM_RO_ETH_COALESCE_RX_USECS, ETH_COALESCE_RX_USECS_VAL);
    }
    ifr.ifr_data = (void *)&ecoal;
    ret = ioctl(fd, SIOCETHTOOL, &ifr);
@@ -292,9 +289,9 @@ int do_ethcoal(const char* mode) {
    }
 
    ALOGI("set-%s: %s=%d, %s=%d, %s=%d", ifr.ifr_name,
-         ETH_COALESCE_TX_FRAMES, ecoal.rx_max_coalesced_frames,
-         ETH_COALESCE_RX_FRAMES, ecoal.rx_max_coalesced_frames,
-         ETH_COALESCE_RX_USECS, ecoal.rx_coalesce_usecs);
+         BCM_RO_ETH_COALESCE_TX_FRAMES, ecoal.rx_max_coalesced_frames,
+         BCM_RO_ETH_COALESCE_RX_FRAMES, ecoal.rx_max_coalesced_frames,
+         BCM_RO_ETH_COALESCE_RX_USECS, ecoal.rx_coalesce_usecs);
 
 out:
    if (fd >= 0) {

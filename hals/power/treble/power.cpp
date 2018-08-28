@@ -39,6 +39,7 @@
 #include <hardware_legacy/power.h>
 #include <inttypes.h>
 #include <arpa/inet.h>
+#include "vendor_bcm_props.h"
 
 // Keep the CPU alive wakelock
 static const char *WAKE_LOCK_ID = "PowerHAL";
@@ -59,40 +60,21 @@ static const char *powerNetInterfaces[] = {
     "eth0"
 };
 
-// Property definitions (max length 32)...
-static const char * PROPERTY_SYS_POWER_DOZE_TIMEOUT       = "persist.sys.power.doze.timeout";
-static const char * PROPERTY_SYS_POWER_WAKE_TIMEOUT       = "persist.sys.power.wake.timeout";
-static const char * PROPERTY_SYS_POWER_DOZESTATE          = "persist.sys.power.dozestate";
-static const char * PROPERTY_SYS_POWER_OFFSTATE           = "persist.sys.power.offstate";
-static const char * PROPERTY_PM_ETH_EN                    = "ro.nx.pm.eth_en";
-static const char * PROPERTY_PM_MOCA_EN                   = "ro.nx.pm.moca_en";
-static const char * PROPERTY_PM_SATA_EN                   = "ro.nx.pm.sata_en";
-static const char * PROPERTY_PM_TP1_EN                    = "ro.nx.pm.tp1_en";
-static const char * PROPERTY_PM_TP2_EN                    = "ro.nx.pm.tp2_en";
-static const char * PROPERTY_PM_TP3_EN                    = "ro.nx.pm.tp3_en";
-static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.nx.pm.ddr_pm_en";
-static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.nx.pm.cpufreq_scale_en";
-static const char * PROPERTY_PM_WOL_EN                    = "ro.nx.pm.wol.en";
-static const char * PROPERTY_PM_WOL_SCREEN_ON_EN          = "ro.nx.pm.wol.screen.on.en";
-static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
-static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
-static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
-
 // Property defaults
-static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
-static const char * DEFAULT_PROPERTY_SYS_POWER_OFFSTATE   = "S2";
-static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
-static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
-static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
-static const int8_t DEFAULT_PROPERTY_PM_TP1_EN            = 0;     // Disable CPU1 during standby
-static const int8_t DEFAULT_PROPERTY_PM_TP2_EN            = 0;     // Disable CPU2 during standby
-static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CPU3 during standby
-static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
-static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
-static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 1;     // Enable Linux wake up by the WoLAN event
-static const int8_t DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN  = 0;     // Disable Android screen on WoLAN event
-static const int8_t DEFAULT_PROPERTY_NX_SCREEN_ON         = 1;     // Turn screen on at boot
-static const int8_t DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
+static const char * DEFAULT_BCM_PERSIST_POWER_SYS_DOZESTATE     = "S0.5";
+static const char * DEFAULT_BCM_PERSIST_POWER_SYS_OFFSTATE      = "S2";
+static const int8_t DEFAULT_BCM_RO_POWER_ETH_EN                 = 1;     // Enable Ethernet during standby
+static const int8_t DEFAULT_BCM_RO_POWER_MOCA_EN                = 0;     // Disable MOCA during standby
+static const int8_t DEFAULT_BCM_RO_POWER_SATA_EN                = 0;     // Disable SATA during standby
+static const int8_t DEFAULT_BCM_RO_POWER_TP1_EN                 = 0;     // Disable CPU1 during standby
+static const int8_t DEFAULT_BCM_RO_POWER_TP2_EN                 = 0;     // Disable CPU2 during standby
+static const int8_t DEFAULT_BCM_RO_POWER_TP3_EN                 = 0;     // Disable CPU3 during standby
+static const int8_t DEFAULT_BCM_RO_POWER_DDR_PM_EN              = 1;     // Enabled DDR power management during standby
+static const int8_t DEFAULT_BCM_RO_POWER_CPU_FREQ_SCALE_EN      = 1;     // Enable CPU frequency scaling during standby
+static const int8_t DEFAULT_BCM_RO_POWER_WOL_EN                 = 1;     // Enable Linux wake up by the WoLAN event
+static const int8_t DEFAULT_BCM_RO_POWER_WOL_SCREEN_ON_EN       = 0;     // Disable Android screen on WoLAN event
+static const int8_t DEFAULT_BCM_PERSIST_POWER_SCREEN_ON         = 1;     // Turn screen on at boot
+static const int8_t DEFAULT_BCM_PERSIST_POWER_KEEP_SCREEN_STATE = 0;     // Don't store screen state for next boot
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
@@ -279,7 +261,7 @@ static nxwrap_pwr_state power_get_property_off_state()
     nxwrap_pwr_state offState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    property_get(PROPERTY_SYS_POWER_OFFSTATE, value, DEFAULT_PROPERTY_SYS_POWER_OFFSTATE);
+    property_get(BCM_PERSIST_POWER_SYS_OFFSTATE, value, DEFAULT_BCM_PERSIST_POWER_SYS_OFFSTATE);
     offState = power_get_state_from_string(value);
 
     return offState;
@@ -290,7 +272,7 @@ static nxwrap_pwr_state power_get_property_doze_state()
     nxwrap_pwr_state dozeState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    property_get(PROPERTY_SYS_POWER_DOZESTATE, value, DEFAULT_PROPERTY_SYS_POWER_DOZESTATE);
+    property_get(BCM_PERSIST_POWER_SYS_DOZESTATE, value, DEFAULT_BCM_PERSIST_POWER_SYS_DOZESTATE);
     dozeState = power_get_state_from_string(value);
 
     return dozeState;
@@ -298,12 +280,12 @@ static nxwrap_pwr_state power_get_property_doze_state()
 
 static bool power_get_property_wol_en()
 {
-    return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
+    return property_get_bool(BCM_RO_POWER_WOL_EN, DEFAULT_BCM_RO_POWER_WOL_EN);
 }
 
 static bool power_get_property_wol_screen_on_en()
 {
-    return property_get_bool(PROPERTY_PM_WOL_SCREEN_ON_EN, DEFAULT_PROPERTY_PM_WOL_SCREEN_ON_EN);
+    return property_get_bool(BCM_RO_POWER_WOL_SCREEN_ON_EN, DEFAULT_BCM_RO_POWER_WOL_SCREEN_ON_EN);
 }
 
 static nxwrap_pwr_state power_get_off_state()
@@ -536,7 +518,7 @@ static void power_init(struct power_module *module __unused)
     // we need to remain in a standby state (e.g. S0.5 or S2).  Or, if the screen was off when
     // powered down, remain in standby. We do this by using the
     // Android framework's ability to power-up in to standby if a lid switch is set (i.e. down).
-    if ((property_get_bool(PROPERTY_NX_SCREEN_ON, DEFAULT_PROPERTY_NX_SCREEN_ON) == false) ||
+    if ((property_get_bool(BCM_PERSIST_POWER_SCREEN_ON, DEFAULT_BCM_PERSIST_POWER_SCREEN_ON) == false) ||
         (gNexusPower->getPowerStatus(&power, &wake) == NO_ERROR && wake.timeout &&
         !(wake.ir || wake.uhf || wake.keypad || wake.gpio || wake.cec || wake.transport))) {
 
@@ -623,28 +605,28 @@ static status_t power_set_pmlibservice_state(nxwrap_pwr_state state)
 
     if (state == ePowerState_S05 || state == ePowerState_S1) {
         /* eth_en == true means leave ethernet ON during standby */
-        bool eth_en = property_get_bool(PROPERTY_PM_ETH_EN, DEFAULT_PROPERTY_PM_ETH_EN);
+        bool eth_en = property_get_bool(BCM_RO_POWER_ETH_EN, DEFAULT_BCM_RO_POWER_ETH_EN);
 
         /* moca_en == true means leave MOCA ON during standby */
-        bool moca_en = property_get_bool(PROPERTY_PM_MOCA_EN, DEFAULT_PROPERTY_PM_MOCA_EN);
+        bool moca_en = property_get_bool(BCM_RO_POWER_MOCA_EN, DEFAULT_BCM_RO_POWER_MOCA_EN);
 
         /* sata_en == true means leave SATA ON during standby */
-        bool sata_en = property_get_bool(PROPERTY_PM_SATA_EN, DEFAULT_PROPERTY_PM_SATA_EN);
+        bool sata_en = property_get_bool(BCM_RO_POWER_SATA_EN, DEFAULT_BCM_RO_POWER_SATA_EN);
 
         /* tp1_en == true means leave CPU thread 1 ON during standby */
-        bool tp1_en = property_get_bool(PROPERTY_PM_TP1_EN, DEFAULT_PROPERTY_PM_TP1_EN);
+        bool tp1_en = property_get_bool(BCM_RO_POWER_TP1_EN, DEFAULT_BCM_RO_POWER_TP1_EN);
 
         /* tp2_en == true means leave CPU thread 2 ON during standby */
-        bool tp2_en = property_get_bool(PROPERTY_PM_TP2_EN, DEFAULT_PROPERTY_PM_TP2_EN);
+        bool tp2_en = property_get_bool(BCM_RO_POWER_TP2_EN, DEFAULT_BCM_RO_POWER_TP2_EN);
 
         /* tp3_en == true means leave CPU thread 3 ON during standby */
-        bool tp3_en = property_get_bool(PROPERTY_PM_TP3_EN, DEFAULT_PROPERTY_PM_TP3_EN);
+        bool tp3_en = property_get_bool(BCM_RO_POWER_TP3_EN, DEFAULT_BCM_RO_POWER_TP3_EN);
 
         /* ddr_pm_en == true means enable DDR power management during true standby */
-        bool ddr_pm_en = property_get_bool(PROPERTY_PM_DDR_PM_EN, DEFAULT_PROPERTY_PM_DDR_PM_EN) && (state != ePowerState_S05);
+        bool ddr_pm_en = property_get_bool(BCM_RO_POWER_DDR_PM_EN, DEFAULT_BCM_RO_POWER_DDR_PM_EN) && (state != ePowerState_S05);
 
         /* cpufreq_scale_en == true means enable CPU frequency scaling during standby */
-        bool cpufreq_scale_en = property_get_bool(PROPERTY_PM_CPU_FREQ_SCALE_EN, DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN);
+        bool cpufreq_scale_en = property_get_bool(BCM_RO_POWER_CPU_FREQ_SCALE_EN, DEFAULT_BCM_RO_POWER_CPU_FREQ_SCALE_EN);
 
         pmlib_state.enet_en          = eth_en;
         pmlib_state.moca_en          = moca_en;
@@ -813,14 +795,15 @@ static status_t power_set_state(nxwrap_pwr_state toState)
          * woken up by the wakeup button
          */
         if (toState == ePowerState_S0) {
-            property_set(PROPERTY_NX_BOOT_WAKEUP, "0");
+            property_set(BCM_DYN_POWER_BOOT_WAKEUP, "0");
         }
         else {
-            property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
+            property_set(BCM_DYN_POWER_BOOT_WAKEUP, "1");
         }
         /* If we want to boot up in the same screen on/off state, store the new setting */
-        if (property_get_bool(PROPERTY_NX_KEEP_SCREEN_STATE, DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE) == true) {
-            property_set(PROPERTY_NX_SCREEN_ON, (toState == ePowerState_S0) ? "1" : "0");
+        if (property_get_bool(BCM_PERSIST_POWER_KEEP_SCREEN_STATE,
+                              DEFAULT_BCM_PERSIST_POWER_KEEP_SCREEN_STATE) == true) {
+            property_set(BCM_PERSIST_POWER_SCREEN_ON, (toState == ePowerState_S0) ? "1" : "0");
         }
         gPowerState = toState;
     }
@@ -889,7 +872,7 @@ static status_t power_exit_suspend_state()
         gCondition.signal();
     }
     else {
-        int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
+        int wakeTimeout = property_get_int32(BCM_PERSIST_POWER_SYS_WAKE_TIMEOUT,
                                              DEFAULT_WAKE_TIMEOUT);
         // Suspend complete, back to doze
         status = power_set_doze_state(wakeTimeout);
@@ -919,7 +902,7 @@ static status_t power_finish_set_no_interactive()
 {
     status_t status = NO_ERROR;
     nxwrap_pwr_state dozeState = power_get_property_doze_state();
-    int dozeTimeout = property_get_int32(PROPERTY_SYS_POWER_DOZE_TIMEOUT,
+    int dozeTimeout = property_get_int32(BCM_PERSIST_POWER_SYS_DOZE_TIMEOUT,
                                          DEFAULT_DOZE_TIMEOUT);
 
     ALOGV("%s: entered", __FUNCTION__);

@@ -49,7 +49,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default

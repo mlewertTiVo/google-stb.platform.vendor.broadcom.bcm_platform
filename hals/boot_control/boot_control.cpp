@@ -34,6 +34,8 @@
 #include "nxwrap.h"
 #endif
 
+#include "vendor_bcm_props.h"
+
 #define TIMEOUT_TRYING 120
 
 // local copy loaded on 'init', gets data from bootloader.
@@ -49,7 +51,7 @@ static pthread_cond_t bctl_bootok_cond;
 static int nexus_state(void) {
    char nexus[PROPERTY_VALUE_MAX];
    int it = 0, rc;
-   property_get("dyn.nx.state", nexus, "");
+   property_get(BCM_DYN_NX_STATE, nexus, "");
    // something went wrong during nexus loading, or before middleware is fully
    // up, the device|slot is not operational.
    if (strncmp(nexus, "loaded", strlen("loaded"))) {
