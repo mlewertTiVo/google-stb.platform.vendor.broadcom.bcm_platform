@@ -139,7 +139,6 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    Mutex::Autolock _l(mLock);
    int status;
    struct ifreq ifr;
-   struct ethtool_rxnfc rxnfc;
    int fd = socket(AF_INET, SOCK_DGRAM, 0);
    if (fd < 0) {
       return NexusStatus::UNKNOWN;
@@ -156,6 +155,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    } else {
       if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
          struct ethtool_drvinfo drvinfo;
+         struct ethtool_rxnfc rxnfc;
 
          memset(&drvinfo, 0, sizeof(drvinfo));
          drvinfo.cmd = ETHTOOL_GDRVINFO;
@@ -178,7 +178,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
             rxnfc.fs.flow_type = UDP_V4_FLOW;
             rxnfc.fs.h_u.udp_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
             rxnfc.fs.m_u.udp_ip4_spec.ip4dst = ~0;
-            rxnfc.fs.ring_cookie = 64; // IMP port (port 8, queue 0, 8 queues per port
+            rxnfc.fs.ring_cookie = RX_CLS_FLOW_WAKE;
             rxnfc.fs.location = RX_CLS_LOC_ANY;
          } else if (strcmp(drvinfo.driver, "bcmsysport") == 0) {
             /* Nothing to do. Setup is handled via gphy interface, through dsa driver */
@@ -208,10 +208,6 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
          int i;
          status = parse_wolopts(wol_opts, &data);
          if (status == NO_ERROR) {
-            if (data & WAKE_MAGICSECURE && data & WAKE_FILTER) {
-               ALOGE("Can't configure filter and magic packet with password");
-               data &= ~WAKE_MAGICSECURE;
-            }
             wolinfo.wolopts = data;
             if (data & WAKE_MAGICSECURE) {
                uint8_t sopass[SOPASS_MAX];
@@ -241,14 +237,6 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
                      goto exit;
                   }
                }
-            }
-            if (data & WAKE_FILTER) {
-               /* Use filter number returned from ETHTOOL_SRXCLSRLINS above */
-               uint32_t filter = rxnfc.fs.location;
-               if (filter < SOPASS_MAX * 8) {
-                  wolinfo.sopass[filter/8] = 1 << (filter % 8);
-               } else
-                  ALOGE("Bad filter number %d", filter);
             }
          }
          if (status == NO_ERROR) {
