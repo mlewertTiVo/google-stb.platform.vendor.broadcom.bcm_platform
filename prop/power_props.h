@@ -56,12 +56,12 @@
 
 #define BCM_DYN_POWER_BOOT_WAKEUP              "dyn.nx.boot.wakeup"
 
-#define BCM_PERSIST_POWER_SYS_DOZE_TIMEOUT     "persist.sys.power.doze.timeout"
-#define BCM_PERSIST_POWER_SYS_WAKE_TIMEOUT     "persist.sys.power.wake.timeout"
-#define BCM_PERSIST_POWER_SYS_DOZESTATE        "persist.sys.power.dozestate"
-#define BCM_PERSIST_POWER_SYS_OFFSTATE         "persist.sys.power.offstate"
+#define BCM_PERSIST_POWER_SYS_DOZE_TIMEOUT     "persist.vendor.power.doze.timeout"
+#define BCM_PERSIST_POWER_SYS_WAKE_TIMEOUT     "persist.vendor.power.wake.timeout"
+#define BCM_PERSIST_POWER_SYS_DOZESTATE        "persist.vendor.power.dozestate"
+#define BCM_PERSIST_POWER_SYS_OFFSTATE         "persist.vendor.power.offstate"
 #define BCM_PERSIST_POWER_SCREEN_ON            "persist.nx.screen.on"
-#define BCM_PERSIST_POWER_KEEP_SCREEN_STATE    "persist.nx.keep.screen.state"
+#define BCM_PERSIST_POWER_KEEP_SCREEN_STATE    "persist.vendor.nx.keep.screen.state"
 
 #endif /* VENDOR_BCM_PROPS__POWER */
 
