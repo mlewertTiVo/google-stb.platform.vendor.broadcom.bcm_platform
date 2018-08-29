@@ -78,6 +78,9 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define DATA_PLANE_MAX_HEIGHT   2160
 #endif
 
+#define GR_RMLMK_DELAY          100 /* msecs */
+#define GR_RMLMK_RETRY          2   /* attempts */
+
 /* default alignment for gralloc buffers:
  *
  *      vc4 - 16 bytes alignment on surfaces, 4K alignment on textures (max).
@@ -787,16 +790,23 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          if (ret >= 0) {
             memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
             ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
-            if (ret < 0) {
-               /* give another try after attempting a round of rmlmk, if
+            if ((ret >= 0) && !ashmem_getmem.hdl) {
+               /* give GR_RMLMK_RETRY after attempting a round of rmlmk, if
                 * rmlmk fails (e.g. not enough memory could be freed up),
                 * that's game over.
                 */
-               nxwrap_rmlmk(nxwrap);
-               BKNI_Sleep(5); /* give settling time for rmlmk. */
-               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+               int rmlmk_cnt = 0;
+               while (rmlmk_cnt < GR_RMLMK_RETRY) {
+                  nxwrap_rmlmk(nxwrap);
+                  BKNI_Sleep(GR_RMLMK_DELAY); /* give settling time for rmlmk. */
+                  ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+                  if ((ret >= 0) && ashmem_getmem.hdl) {
+                     break;
+                  }
+                  rmlmk_cnt++;
+               };
             }
-            if (ret < 0) {
+            if ((ret < 0) || ((ret >= 0) && !ashmem_getmem.hdl)) {
                err = -ENOMEM;
                goto alloc_failed;
             } else {
