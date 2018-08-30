@@ -31,19 +31,21 @@ void nxwrap_destroy_client(void *wrap);
 extern char bp3_bin_file_name[];
 extern char bp3_bin_file_path[];
 extern bp3featuresStruct bp3_features[];
-static bitmapStruct bitmap[16 * 8];
+#define FEATURE_BYTES 32
+static bitmapStruct bitmap[FEATURE_BYTES * 8];
 static const char *ipOwners[] = {"Unused", "Broadcom", "Dolby", "Rovi", "Technicolor", "DTS"};
+static const char *tzTaCustomers[] = {"", "Broadcom", "", "Novel-SuperTV"};
 static uint32_t features[GlobalSram_IPLicensing_Info_size];
 
 static struct {
-   uint8_t OwnerId;
-   eSramMap SramMap[4];
-} owners[5] = {
-   {1, {Video0, Video1, Host, Audio0} },
-   {2, {Audio0, Host, Reserved, NotUsed} },
-   {3, {Host, Reserved, ReservedLast, NotUsed} },
-   {4, {Reserved, Host, ReservedLast, NotUsed} },
-   {5, {Audio0, Reserved, ReservedLast, NotUsed} }
+    uint8_t OwnerId;
+    eSramMap SramMap[6];
+} owners[] = {
+    {1, {Video0, Video1, Host, Audio, Sage, TrustZone} },
+    {2, {Audio, Host} },
+    {3, {Host} },
+    {4, {Info, Host} },
+    {5, {Audio} }
 };
 
 typedef struct _curl_memory_t {
@@ -160,24 +162,38 @@ Return<void> bp3::status(
 
    rc = bp3_session_start(&session, &sessionSize);
    if (rc) goto out_leave;
+#if BP3_TA_FEATURE_READ_SUPPORT
    rc = bp3_get_otp_id(&otpIdHi, &otpIdLo);
    if (rc) goto out_leave;
+#endif
+   if (otpIdHi == 0 && otpIdLo == 0) {
+      NEXUS_Platform_ReadRegister(BCHP_BSP_GLB_CONTROL_v_PubOtpUniqueID_hi, &otpIdHi);
+      NEXUS_Platform_ReadRegister(BCHP_BSP_GLB_CONTROL_v_PubOtpUniqueID_lo, &otpIdLo);
+   }
    STR_CONCAT("UId = 0x%08x%08x\n\n", otpIdHi, otpIdLo);
 
-   for (int i = 0; i < 16 * 8; i++) {
+   for (int i = 0; i < FEATURE_BYTES * 8; i++) {
       bitmap[i].key = i / 32;
       bitmap[i].value = 1 << (i % 32);
    }
    for (int i = 0; i < GlobalSram_IPLicensing_Info_size; i++) {
      features[i] = feats[i];
    }
-   features[(uint32_t)Host] = (feats[(uint32_t)Host] & 0x0000FFFF) | (feats[(uint32_t)Sage] << 16);
-   for (int i = 0; i < BP3_FEATURES_NUM; i++) {
-      if (isOn(bp3_features[i].OwnerId, bp3_features[i].Bit)) {
-         STR_CONCAT("%s - %s [Enabled]\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name);
-      } else {
-         STR_CONCAT("%s - %s [Disabled]\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name);
+   features[(uint32_t)Host] = (feats[(uint32_t)Sage] << 16) | (feats[(uint32_t)Host] & 0x0000FFFF);
+   features[(uint32_t)TrustZone] = (feats[(uint32_t)TrustZone] & 0xFFFF0000) | (feats[(uint32_t)Host] >> 16);
+   for (int i = 0; bp3_features[i].Name != NULL; i++) {
+      if (bp3_features[i].Bit == TZTA_CUSTOMER_ID && isOn(bp3_features[i].OwnerId, bp3_features[i].Bit - 4)) {
+         uint8_t v = 0;
+         for (int j = 0; j < 8; j++)
+            v |= isOn(bp3_features[i].OwnerId, bp3_features[i].Bit + j) ? 0 : (1 << j);
+         if (v < sizeof(tzTaCustomers))
+            STR_CONCAT("%s - %s %s\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name, tzTaCustomers[v]);
+         else
+            STR_CONCAT("%s - %s %d\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name, v);
+         continue;
       }
+      STR_CONCAT("%s - %s [%s]\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name,
+             isOn(bp3_features[i].OwnerId, bp3_features[i].Bit) ? "Enabled" : "Disabled");
    }
 
 #ifdef BP3_TA_FEATURE_READ_SUPPORT
