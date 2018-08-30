@@ -45,6 +45,7 @@
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
 #include "nexus_display_dynrng_private.h"
+#include "nexus_hdmi_output_extra.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 extern "C" {
@@ -768,7 +769,8 @@ static void hwc2_hdmi_collect(
    while (cfg != NULL) {
       cfg->hdr10 = false;
       cfg->hlg   = false;
-      cfg->dbv   = es.dolbyVision.supported;
+      cfg->dbv   = (es.dynamicRangeModeSupported[NEXUS_VideoDynamicRangeMode_eDolbyVision].tx
+                     && es.dynamicRangeModeSupported[NEXUS_VideoDynamicRangeMode_eDolbyVision].rx);
       if (!e) {
          if (edid.hdrdb.valid) {
             cfg->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
