@@ -3567,11 +3567,7 @@ static int32_t hwc2_lyrComp(
    if (dsp->type == HWC2_DISPLAY_TYPE_VIRTUAL) {
       lyr->cDev = HWC2_COMPOSITION_CLIENT;
    } else {
-      if (dsp->u.ext.gles) {
-         lyr->cDev = HWC2_COMPOSITION_CLIENT;
-      } else {
-         lyr->cDev = HWC2_COMPOSITION_INVALID;
-      }
+      lyr->cDev = HWC2_COMPOSITION_INVALID;
    }
 
 out:
@@ -4508,28 +4504,39 @@ static uint32_t hwc2_comp_validate(
 
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t cnt = 0;
+   bool cgles = false;
 
    lyr = dsp->lyr;
    while (lyr != NULL) {
       cnt++;
       if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
-         hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
-         if (ret != HWC2_ERROR_NONE) {
-            ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
-               "lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)",
-               lyr->hdl,
-               getCompositionName(HWC2_COMPOSITION_DEVICE),
-               getCompositionName(HWC2_COMPOSITION_CLIENT));
-            lyr->cDev = HWC2_COMPOSITION_CLIENT;
+         if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
+             dsp->u.ext.gles) {
+            int vid;
+            if (!hwc2_is_video(hwc2, lyr, &vid)) {
+               lyr->cDev = HWC2_COMPOSITION_CLIENT;
+            }
+            cgles = true;
          }
-         ret = (hwc2_error_t)hwc2_bufSupp(hwc2, lyr->bh);
-         if (ret != HWC2_ERROR_NONE) {
-            ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
-               "lyr[%" PRIu64 "]:%s->%s (buffer format not supported)",
-               lyr->hdl,
-               getCompositionName(HWC2_COMPOSITION_DEVICE),
-               getCompositionName(HWC2_COMPOSITION_CLIENT));
-            lyr->cDev = HWC2_COMPOSITION_CLIENT;
+         if (!cgles) {
+            hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
+            if (ret != HWC2_ERROR_NONE) {
+               ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
+                  "lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)",
+                  lyr->hdl,
+                  getCompositionName(HWC2_COMPOSITION_DEVICE),
+                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+               lyr->cDev = HWC2_COMPOSITION_CLIENT;
+            }
+            ret = (hwc2_error_t)hwc2_bufSupp(hwc2, lyr->bh);
+            if (ret != HWC2_ERROR_NONE) {
+               ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
+                  "lyr[%" PRIu64 "]:%s->%s (buffer format not supported)",
+                  lyr->hdl,
+                  getCompositionName(HWC2_COMPOSITION_DEVICE),
+                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+               lyr->cDev = HWC2_COMPOSITION_CLIENT;
+            }
          }
       }
       lyr = lyr->next;
