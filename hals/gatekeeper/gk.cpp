@@ -59,14 +59,16 @@ extern "C" {
 #include "nexus_otp_msp.h"
 #endif
 }
+#include "nxwrap.h"
 
 struct bcm_gk {
-   struct gatekeeper_device dev;
-   void *nxwrap;
-   GatekeeperTl_Handle handle;
+   struct gatekeeper_device  dev;
+   NxWrap                   *nxwrap;
+   pthread_mutex_t           mtx;
+   GatekeeperTl_Handle       handle;
    GatekeeperTl_InitSettings is;
-   uint8_t *fbkCfg;
-   size_t fbkSize;
+   uint8_t                  *fbkCfg;
+   size_t                    fbkSize;
 };
 
 extern "C" void* nxwrap_create_verified_client(void **wrap);
@@ -233,7 +235,11 @@ static int gk_init(struct bcm_gk *gk_hdl) {
 
    ALOGI_IF(GK_LOG_ALL_IN, "gk_init: starting tl-side.");
    GatekeeperTl_GetDefaultInitSettings(&gk_hdl->is);
-   gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
+   gk_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&gk_hdl->mtx)) {
+      gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
+      pthread_mutex_unlock(&gk_hdl->mtx);
+   }
    if (gk_err != BERR_SUCCESS) {
       ALOGI_IF(GK_LOG_ALL_IN, "gk_init: tl error'ed out: %x (%u).", gk_err, gk_err);
       if (gk_err == BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND) {
@@ -244,8 +250,12 @@ static int gk_init(struct bcm_gk *gk_hdl) {
                    sizeof(gk_hdl->is.drm_binfile_path));
             gk_hdl->is.drm_binfile_buffer = gk_hdl->fbkCfg;
             gk_hdl->is.drm_binfile_size = gk_hdl->fbkSize;
-            // will return BERR_SUCCESS if fallback succeeded.
-            gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
+            gk_err = BERR_OS_ERROR;
+            if (!pthread_mutex_lock(&gk_hdl->mtx)) {
+               // will return BERR_SUCCESS if fallback succeeded.
+               gk_err = GatekeeperTl_Init(&gk_hdl->handle, &gk_hdl->is);
+               pthread_mutex_unlock(&gk_hdl->mtx);
+            }
          }
       }
       ALOGI_IF(GK_LOG_ALL_IN, "gk_init: tl final: (%x) %u.", gk_err, gk_err);
@@ -267,9 +277,9 @@ static int brcm_gk_enroll(
    uint8_t **enrolled_password_handle,
    uint32_t *enrolled_password_handle_length) {
 
-   struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
+   struct bcm_gk *gk_hdl = (struct bcm_gk *)dev;
 
-   int gk_init_err = gk_init(gk_dev);
+   int gk_init_err = gk_init(gk_hdl);
    if (gk_init_err) return -EINVAL;
 
    GatekeeperTl_Password gk_pwd, gk_orig_pwd;
@@ -292,10 +302,15 @@ static int brcm_gk_enroll(
    }
    gk_pwd.size = desired_password_length;
    gk_pwd.buffer = (uint8_t *) desired_password;
-   gk_err = GatekeeperTl_Enroll(gk_dev->handle, uid,
-      gk_in_hdl_set ? &gk_in_hdl : NULL,   /* optional */
-      gk_in_pwd_set ? &gk_orig_pwd : NULL, /* optional */
-      &gk_pwd, &retry, &gk_out_hdl);
+   gk_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&gk_hdl->mtx)) {
+      if (gk_hdl->handle)
+         gk_err = GatekeeperTl_Enroll(gk_hdl->handle, uid,
+            gk_in_hdl_set ? &gk_in_hdl : NULL,   /* optional */
+            gk_in_pwd_set ? &gk_orig_pwd : NULL, /* optional */
+            &gk_pwd, &retry, &gk_out_hdl);
+      pthread_mutex_unlock(&gk_hdl->mtx);
+   }
    if (gk_err != BERR_SUCCESS) {
       ALOGE("gk_enroll: failed, err: %u, retry: %u", gk_err, retry);
       if (retry > 0) {
@@ -325,9 +340,9 @@ static int brcm_gk_verify(
    uint32_t *auth_token_length,
    bool *request_reenroll) {
 
-   struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
+   struct bcm_gk *gk_hdl = (struct bcm_gk *)dev;
 
-   int gk_init_err = gk_init(gk_dev);
+   int gk_init_err = gk_init(gk_hdl);
    if (gk_init_err) return -EINVAL;
 
    BERR_Code gk_err;
@@ -341,8 +356,13 @@ static int brcm_gk_verify(
    }
    gk_pwd.size = provided_password_length;
    gk_pwd.buffer = (uint8_t *) provided_password;
-   gk_err = GatekeeperTl_Verify(gk_dev->handle, uid,
-      challenge, &gk_pwd_hdl, &gk_pwd, &retry, &gk_token);
+   gk_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&gk_hdl->mtx)) {
+      if (gk_hdl->handle)
+         gk_err = GatekeeperTl_Verify(gk_hdl->handle, uid,
+            challenge, &gk_pwd_hdl, &gk_pwd, &retry, &gk_token);
+      pthread_mutex_unlock(&gk_hdl->mtx);
+   }
    if (gk_err != BERR_SUCCESS) {
       ALOGE("gk_verify: failed, err: %u, retry: %u", gk_err, retry);
       if (retry > 0) {
@@ -363,18 +383,46 @@ static int brcm_gk_verify(
 
 static int brcm_gk_close(
    hw_device_t *dev) {
-   struct bcm_gk *gk_dev = (struct bcm_gk *)dev;
-   if (gk_dev != NULL) {
-      if (gk_dev->nxwrap)
-         nxwrap_destroy_client(gk_dev->nxwrap);
-      if (gk_dev->handle)
-         GatekeeperTl_Uninit(gk_dev->handle);
-      if (gk_dev->fbkCfg)
-         free(gk_dev->fbkCfg);
-      free(gk_dev);
+   struct bcm_gk *gk_hdl = (struct bcm_gk *)dev;
+   if (gk_hdl != NULL) {
+      if (gk_hdl->nxwrap) {
+         gk_hdl->nxwrap->leave();
+         delete gk_hdl->nxwrap;
+      }
+      if (!pthread_mutex_lock(&gk_hdl->mtx)) {
+         if (gk_hdl->handle)
+            GatekeeperTl_Uninit(gk_hdl->handle);
+         pthread_mutex_unlock(&gk_hdl->mtx);
+      }
+      pthread_mutex_destroy(&gk_hdl->mtx);
+      if (gk_hdl->fbkCfg)
+         free(gk_hdl->fbkCfg);
+      free(gk_hdl);
    }
    free(dev);
    return 0;
+}
+
+static bool gk_stdby(
+   void *context) {
+   struct bcm_gk *gk_hdl =(struct bcm_gk *)context;
+
+   if (gk_hdl == NULL)
+      return true;
+   if (pthread_mutex_lock(&gk_hdl->mtx))
+      return true;
+   if (gk_hdl->handle == NULL) {
+      pthread_mutex_unlock(&gk_hdl->mtx);
+      return true;
+   }
+   nxwrap_pwr_state pwr_s;
+   bool pwr = nxwrap_get_pwr_info(&pwr_s, NULL);
+   if (pwr && (pwr_s > ePowerState_S2)) {
+      GatekeeperTl_Uninit(gk_hdl->handle);
+      gk_hdl->handle = NULL;
+   }
+   pthread_mutex_unlock(&gk_hdl->mtx);
+   return true;
 }
 
 static int brcm_gk_open(
@@ -385,6 +433,7 @@ static int brcm_gk_open(
    char nexus[PROPERTY_VALUE_MAX];
    int c = 0;
    static int c_max = 20;
+   pthread_mutexattr_t mattr;
 
    if (strcmp(name, HARDWARE_GATEKEEPER) != 0) {
       return -EINVAL;
@@ -396,6 +445,10 @@ static int brcm_gk_open(
       return -1;
    }
    memset(gk_hdl, 0, sizeof(struct bcm_gk));
+
+   pthread_mutexattr_init(&mattr);
+   pthread_mutex_init(&gk_hdl->mtx, &mattr);
+   pthread_mutexattr_destroy(&mattr);
 
    // busy loop wait for nexus readiness, without valid client, the
    // gatekeeper cannot function.
@@ -409,12 +462,13 @@ static int brcm_gk_open(
          property_get(BCM_DYN_NX_STATE, nexus, "");
       }
    }
-   void *nexus_client = nxwrap_create_verified_client(&gk_hdl->nxwrap);
-   if (nexus_client == NULL) {
-      ALOGE("failed to alloc gatekeeper nexus client, aborting.");
+   gk_hdl->nxwrap = new NxWrap("gk");
+   if (gk_hdl->nxwrap == NULL) {
+      LOG_ALWAYS_FATAL("failed to alloc gatekeeper nexus client, aborting.");
       free(gk_hdl);
       return -EINVAL;
    }
+   gk_hdl->nxwrap->join_v(gk_stdby, (void *)gk_hdl);
    // busy loop wait for keymaster readiness, the gatekeeper is linked
    // to the keymaster through the TA service effectively.
    property_get(BCM_DYN_KM_STATE, nexus, "");

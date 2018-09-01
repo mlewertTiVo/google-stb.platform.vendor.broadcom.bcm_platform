@@ -12,6 +12,9 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gk\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 
 LOCAL_C_INCLUDES += \
     $(TOP)/hardware/libhardware/include \
