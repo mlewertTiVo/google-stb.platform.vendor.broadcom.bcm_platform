@@ -36,9 +36,9 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-//#define LOG_NDEBUG 0
-#define LOG_SAND_TO_HWTEX 0
-#define LOG_VDEV_TO_GR    0
+// #define LOG_NDEBUG 0
+#define LOG_SAND_TO_HWTEX 1
+#define LOG_VDEV_TO_GR    1
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -6730,11 +6730,12 @@ BOMX_Buffer *BOMX_VideoDecoder::AssociateOutVdec2Omx(
          }
          else
          {
-            ALOGE("error: vdec(%p) <-> omx(%p): buffer not returned!?",
+            ALOGE("error: vdec(%p) <-> omx(%p): buffer not returned!? (port flushed?)",
                pVdecBuffer, pOmxBuffer);
-            // what to do...  for now, suggest that the port should reset, but we may
-            // really need some fence support.
-            shouldResetPort = true;
+            // what to do...
+            BOMX_BufferCompareFunction_Vdec2GrallocUnMapping(pOmxBuffer);
+            pOmxBuffer = NULL;
+            /* shouldResetPort = true; */
          }
       }
       else
