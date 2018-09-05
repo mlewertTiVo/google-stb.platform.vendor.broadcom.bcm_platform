@@ -26,7 +26,7 @@ int healthd_board_battery_update(struct android::BatteryProperties* p) {
    p->batteryStatus   = android::BATTERY_STATUS_CHARGING;
    p->batteryHealth   = android::BATTERY_HEALTH_GOOD;
    p->batteryLevel    = 100;
-   p->batteryChargeCounter = 100;
+   p->batteryChargeCounter = 1000000;
    p->batteryFullCharge = 100;
    // return 0 to log periodic polled battery status to kernel log
    return 0;

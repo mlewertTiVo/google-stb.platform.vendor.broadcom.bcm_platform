@@ -116,7 +116,7 @@ void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
     char secdma_param_file[PROPERTY_VALUE_MAX];
     FILE *pFile;
     char nx_key[PROPERTY_VALUE_MAX];
-    NxClient_ClientModeSettings ms;
+    int rci = 0;
 
     memset (value, 0, sizeof(value));
 
@@ -124,11 +124,12 @@ void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
         /* wait for data (re)mount, trigger nexus authentication. */
         wait_for_data_available();
         sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-        nxserver_parse_password_file(server, nx_key);
-        NxClient_GetDefaultClientModeSettings(&ms);
-        NxClient_SetClientMode(&ms);
-        ALOGW("force nexus re-authentication with '%s'", nx_key);
-
+        rci = nxserver_parse_password_file(server, nx_key);
+        if (rci) {
+           ALOGE("refreshing auth. credentials ('%s'), FAILED: %d", nx_key, rci);
+        } else {
+           ALOGI("refreshed auth. credentials ('%s')", nx_key);
+        }
         secdmaMemSize = strtoul(value, NULL, 0);
         if (strlen(value) && (secdmaMemSize > 0)) {
             sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);

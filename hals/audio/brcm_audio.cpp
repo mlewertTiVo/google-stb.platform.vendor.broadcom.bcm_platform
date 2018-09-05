@@ -1473,6 +1473,7 @@ static int bdev_close(hw_device_t *dev)
         nexus_tunnel_release_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
     }
 
+    bdev->standbyThread->Exit();
     pthread_mutex_destroy(&bdev->lock);
 
     ALOGI("Audio device closed, dev = %p\n", dev);
@@ -1537,6 +1538,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
     *dev = &bdev->adev.common;
 
     bdev->standbyThread = new StandbyMonitorThread();
+    bdev->standbyThread->Start();
 
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;

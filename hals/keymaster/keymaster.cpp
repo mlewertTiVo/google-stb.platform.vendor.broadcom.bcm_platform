@@ -15,8 +15,8 @@
  */
 
 //#define LOG_NDEBUG 0
-#define KM_LOG_ALL_IN  1
-#define KM_LOG_ALL_OUT 1
+#define KM_LOG_ALL_IN  0
+#define KM_LOG_ALL_OUT 0
 
 #define LOG_TAG "bcm-km"
 #include <log/log.h>
@@ -643,10 +643,6 @@ static keymaster_error_t km_generate_key(
    if (insert_no_auth) {
       KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
    }
-   // insert a "all applications" tag if none specified.
-   if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
-      KM_Tag_AddBool(km_params, SKM_TAG_ALL_APPLICATIONS, true);
-   }
    // insert a creation time because there is no wall clock in sage.
    if (!set.Contains(TAG_CREATION_DATETIME)) {
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
@@ -927,10 +923,6 @@ static keymaster_error_t km_import_key(
    if (insert_no_auth) {
       KM_Tag_AddBool(km_params, SKM_TAG_NO_AUTH_REQUIRED, true);
    }
-   // insert a "all applications" tag if none specified.
-   if (!set.Contains(TAG_APPLICATION_ID) && !set.Contains(TAG_ALL_APPLICATIONS)) {
-      KM_Tag_AddBool(km_params, SKM_TAG_ALL_APPLICATIONS, true);
-   }
    // insert a creation time because there is no wall clock in sage.
    if (!set.Contains(TAG_CREATION_DATETIME)) {
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
@@ -1158,7 +1150,7 @@ static keymaster_error_t km_attest_key(
       keymaster_blob_t km_challenge;
       set.GetTagValue(TAG_ATTESTATION_CHALLENGE, &km_challenge);
       if (km_challenge.data_length > KM_IN_MAX_CHALLENGE_SZ) {
-         ALOGE("km_attest_key: TAG_ATTESTATION_CHALLENGE of size %zu is larger than max-allowed %zu",
+         ALOGE("km_attest_key: TAG_ATTESTATION_CHALLENGE of size %zu is larger than max-allowed %d",
             km_challenge.data_length, KM_IN_MAX_CHALLENGE_SZ);
          return KM_ERROR_INVALID_INPUT_LENGTH;
       }
@@ -1196,7 +1188,7 @@ static keymaster_error_t km_attest_key(
       cert_chain->entries[i].data = km_dup_2_kmblob(
          &km_attest.out_cert_chain_buffer.buffer[km_attest.out_cert_chain.certificates[i].offset],
          km_attest.out_cert_chain.certificates[i].length);
-      ALOGI_IF(KM_LOG_ALL_OUT, "km_attest_key: cert chain[%d]: sz: %d, data: %p",
+      ALOGI_IF(KM_LOG_ALL_OUT, "km_attest_key: cert chain[%d]: sz: %zu, data: %p",
          i, cert_chain->entries[i].data_length, cert_chain->entries[i].data);
       if (!cert_chain->entries[i].data) {
          break;
@@ -1540,7 +1532,7 @@ static keymaster_error_t km_update(
       if ( ((km_op->d == KM_DIGEST_SHA1) && (km_op->s/KM_KS_DIV == KM_KS_SHA1_DG)) ||
            ((km_op->d == KM_DIGEST_SHA_2_224) && (km_op->s/KM_KS_DIV == KM_KS_SHA224_DG)) ||
            ((km_op->d == KM_DIGEST_SHA_2_256) && (km_op->s/KM_KS_DIV == KM_KS_SHA256_DG)) ) {
-         ALOGI_IF(KM_LOG_ALL_IN, "km_update: hw-op-%" PRIu64 " (HMAC:%d|SHA:%d|DGS:%d) buffering %u bytes.",
+         ALOGI_IF(KM_LOG_ALL_IN, "km_update: hw-op-%" PRIu64 " (HMAC:%d|SHA:%d|DGS:%d) buffering %zu bytes.",
             km_op->op, km_op->a, km_op->d, km_op->s/KM_KS_DIV, input->data_length);
          // create|copy into bounce buffer as appropriate.
          if (km_op->bb == NULL) {

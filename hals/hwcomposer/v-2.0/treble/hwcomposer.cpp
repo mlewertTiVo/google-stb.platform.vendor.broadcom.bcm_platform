@@ -596,6 +596,7 @@ static void hwc2_cfg_collect(
    if (cfg) {
       NEXUS_VideoFormat_GetInfo(s->format, &vi);
       cfg->next  = NULL;
+      cfg->hdl   = (uint32_t)(intptr_t)cfg;
       cfg->w     = hwc2_afb_bound(dsp, false, vi.width);
       cfg->ew    = vi.width;
       cfg->h     = hwc2_afb_bound(dsp, true, vi.height);
@@ -606,9 +607,9 @@ static void hwc2_cfg_collect(
       dsp->aCfg = dsp->cfgs;
 
       ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
-               "[%s]:[acfg]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
+               "[%s]:[acfg]:%" PRIu64 ":%" PRIu32 ":%ux%u:(%ux%u):%ufps\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-               (uint64_t)(intptr_t)dsp,
+               (uint64_t)(intptr_t)dsp, cfg->hdl,
                cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
    }
    cfg_c = dsp->cfgs;
@@ -630,9 +631,9 @@ static void hwc2_cfg_collect(
                 (vi.height >= dsp->gfbhxl) && (cfg_s->eh >= dsp->gfbhxl)) {
                skip = true;
                ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
-                        "[%s]:[skip]:%" PRIu64 ":%ux%u,%ufps::use:%ux%u,%ufps\n",
+                        "[%s]:[skip]:%" PRIu64 ":%" PRIu32 "::%ux%u,%ufps::use:%ux%u,%ufps\n",
                         (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                        (uint64_t)(intptr_t)dsp,
+                        (uint64_t)(intptr_t)dsp, cfg->hdl,
                         vi.width, vi.height, vi.verticalFreq/100,
                         cfg_s->ew, cfg_s->eh, hwc2_vsync2fps(cfg_s->vsync));
             }
@@ -647,6 +648,7 @@ static void hwc2_cfg_collect(
          if (cfg) {
             j++;
             cfg->next  = NULL;
+            cfg->hdl   = (uint32_t)(intptr_t)cfg;
             cfg->w     = hwc2_afb_bound(dsp, false, vi.width);
             cfg->ew    = vi.width;
             cfg->h     = hwc2_afb_bound(dsp, true, vi.height);
@@ -654,9 +656,9 @@ static void hwc2_cfg_collect(
             cfg->vsync = hwc2_fps2vsync(vi.verticalFreq/100);
 
             ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
-                     "[%s]:[cfg:%d]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
+                     "[%s]:[cfg:%d]:%" PRIu64 ":%" PRIu32 ":%ux%u:(%ux%u):%ufps\n",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-                     j, (uint64_t)(intptr_t)dsp,
+                     j, (uint64_t)(intptr_t)dsp, cfg->hdl,
                      cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
 
             cfg_c->next = cfg;
@@ -935,9 +937,10 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:fb:%d::%dx%d::%s:%p:%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:fb:%d::%dx%d::%s:%p:%s:%zu -> %p::%d (b:%p)",
             i, scs.width, scs.height, dh?"d-cma":"gfx", ch,
             hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
    }
    hwc2->ext->u.ext.bfb = true;
@@ -959,8 +962,9 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.yvi.s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:yvi::%dx%d::%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:yvi::%dx%d::%s:%zu -> %p::%d (b:%p)",
             scs.width, scs.height, dh?"d-cma":"gfx",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
@@ -981,8 +985,9 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.icb.s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:icb::%dx%d::%s -> %p::%d (b:%p)",
+      ALOGI("[ext]:icb::%dx%d::%s:%zu -> %p::%d (b:%p)",
             scs.width, scs.height, dh?"d-cma":"gfx",
+            (size_t)scs.height*scs.pitch,
             hwc2->ext->u.ext.icb.s, hwc2->ext->u.ext.icb.fd, bh);
    }
 
@@ -2767,7 +2772,7 @@ static int32_t hwc2_gActCfg(
          *outConfig = (hwc2_config_t)0;
          return ret;
       } else {
-         *outConfig = (hwc2_config_t)(intptr_t)dsp->aCfg;
+         *outConfig = (hwc2_config_t)dsp->aCfg->hdl;
          pthread_mutex_unlock(&dsp->mtx_cfg);
       }
    } else {
@@ -3088,7 +3093,13 @@ static int32_t hwc2_dspAttr(
       goto out;
    }
 
-   cfg = (struct hwc2_dsp_cfg_t *)(intptr_t)config;
+   cfg = dsp->cfgs;
+   while (cfg != NULL) {
+      if (config == (hwc2_config_t)cfg->hdl)
+         break;
+      cfg = cfg->next;
+   };
+
    if (cfg == NULL) {
       ret = HWC2_ERROR_BAD_CONFIG;
       goto out;
@@ -3230,7 +3241,7 @@ static int32_t hwc2_dspCfg(
 
    while (cfg != NULL) {
       if (outConfigs != NULL) {
-         outConfigs[*outNumConfigs] = (hwc2_config_t)(intptr_t)cfg;
+         outConfigs[*outNumConfigs] = (hwc2_config_t)cfg->hdl;
       }
       *outNumConfigs += 1;
       cfg = cfg->next;
@@ -4339,7 +4350,7 @@ static int32_t hwc2_sActCfg(
    }
    cfg = dsp->cfgs;
    while (cfg != NULL) {
-      if (config == (hwc2_config_t)(intptr_t)cfg)
+      if (config == (hwc2_config_t)cfg->hdl)
          break;
       cfg = cfg->next;
    };

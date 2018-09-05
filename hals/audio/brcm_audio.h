@@ -391,6 +391,8 @@ public:
 
     int RegisterCallback(b_standby_monitor_callback callback, void *context);
     void UnregisterCallback(int id);
+    int Start();
+    void Exit();
 
 private:
     bool threadLoop();
@@ -398,6 +400,7 @@ private:
     b_standby_monitor_callback mCallbacks[MAX_STANDBY_MONITOR_CALLBACKS];
     void *mContexts[MAX_STANDBY_MONITOR_CALLBACKS];
     unsigned mNumCallbacks;
+    unsigned mStandbyId;
 
     /* Disallow copy constructor and copy operator... */
     StandbyMonitorThread(const StandbyMonitorThread &);

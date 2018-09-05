@@ -1,15 +1,13 @@
 on post-fs-data
-    # wifi
     mkdir /data/vendor/wifi 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
 
-on property:dyn.nx.state=loaded
+on post-fs
+    wait_for_prop dyn.nx.state memcfg
     insmod /vendor/lib/modules/bcmdhd.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
-
-on boot
 
 service wpa_supplicant /vendor/bin/hw/wpa_supplicant \
     -O/data/vendor/wifi/wpa/sockets \
