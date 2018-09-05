@@ -70,20 +70,30 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         mSplashScreenManager.bootCompleted();
 
         final String propertyKey = "ro.nx.dolby.ms";
-        final String nrdpSettingKey = "nrdp_audio_platform_capabilities";
-        final String nrdpSettingMS12Value = "{\"audiocaps\":{\"continuousAudio\":true,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":true,\"easing\":true},\"atmos\":{\"enabled\":true,\"mixing\":true,\"easing\":true}}}";
+        final String nrdpAudioSettingKey = "nrdp_audio_platform_capabilities";
+        final String nrdpAudioSettingMS12Value = "{\"audiocaps\":{\"continuousAudio\":true,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":true,\"easing\":true},\"atmos\":{\"enabled\":true,\"mixing\":true,\"easing\":true}}}";
 
         final String propString;
 
         propString = android.os.SystemProperties.get(propertyKey);
         if (propString.compareTo("12") == 0) {
 
-            final String nrdpSettingString;
-            nrdpSettingString = Settings.Global.getString(context.getContentResolver(), nrdpSettingKey);
-            if (nrdpSettingString == null) {
-                Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, nrdpSettingMS12Value);
-                Log.i(TAG, nrdpSettingKey + " set to " + nrdpSettingMS12Value);
+            final String nrdpAudioSettingString;
+            nrdpAudioSettingString = Settings.Global.getString(context.getContentResolver(), nrdpAudioSettingKey);
+            if (nrdpAudioSettingString == null) {
+                Settings.Global.putString(context.getContentResolver(), nrdpAudioSettingKey, nrdpAudioSettingMS12Value);
+                Log.i(TAG, nrdpAudioSettingKey + " set to " + nrdpAudioSettingMS12Value);
             }
+        }
+
+        final String nrdpSettingKey = "nrdp_platform_capabilities";
+        final String nrdpSettingNoVP9Value = "{\"vp9Disabled\":\"true\"}";
+
+        final String nrdpSettingString;
+        nrdpSettingString = Settings.Global.getString(context.getContentResolver(), nrdpSettingKey);
+        if (nrdpSettingString == null) {
+            Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, nrdpSettingNoVP9Value);
+            Log.i(TAG, nrdpSettingKey + " set to " + nrdpSettingNoVP9Value);
         }
     }
 }
