@@ -132,11 +132,12 @@ static void nx_wdog_midpoint(void *context, int param)
    BKNI_ReleaseMutex(nx_server->wdog.lock);
 }
 
-static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
+static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType, bool maybenull = false)
 {
     unsigned i;
     for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+        if (!maybenull && pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+        if (maybenull && !pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
     }
     return -1;
 }
@@ -252,27 +253,6 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (NX_HEAP_MAIN) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
-       if (index != -1) {
-          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_MAIN_VALUE);
-       }
-    }
-
-    if (NX_HEAP_GFX) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (index != -1) {
-          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_GFX_VALUE);
-       }
-    }
-
-    if (NX_HEAP_GFX2) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
-       if (index != -1) {
-          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_GFX2_VALUE);
-       }
-    }
-
     if (NX_HEAP_HIGH_MEM) {
        int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
        if (index != -1) {
@@ -285,6 +265,27 @@ static nxserver_t init_nxserver(void)
           (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_DRIVER_UNCACHED|NEXUS_MEMORY_TYPE_DRIVER_CACHED|NEXUS_MEMORY_TYPE_APPLICATION_CACHED));
        if (index != -1) {
           platformSettings.heap[index].size = calc_heap_size(NX_HEAP_DRV_MANAGED_VALUE);
+       }
+    }
+
+    if (NX_HEAP_MAIN) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
+       if (index != -1) {
+          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_MAIN_VALUE);
+       }
+    }
+
+    if (NX_HEAP_GFX) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS, true /*null'ed nby highmem*/);
+       if (index != -1) {
+          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_GFX_VALUE);
+       }
+    }
+
+    if (NX_HEAP_GFX2) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+       if (index != -1) {
+          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_GFX2_VALUE);
        }
     }
 
