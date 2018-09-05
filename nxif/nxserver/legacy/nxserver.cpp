@@ -1478,6 +1478,20 @@ int main(void)
         setenv("audio_core_file", "/data/nxmedia/audio_core", 1);
     }
 
+    char modules[PROPERTY_VALUE_MAX];
+    if (property_get(BCM_RO_NX_WRN_MODULES, modules, NULL) && modules[0] != '0' ) {
+        ALOGI("Setting wrn_modules to %s", modules);
+        setenv("wrn_modules", modules, 1);
+    }
+    if (property_get(BCM_RO_NX_MSG_MODULES, modules, NULL) && modules[0] != '0' ) {
+        ALOGI("Setting msg_modules to %s", modules);
+        setenv("msg_modules", modules, 1);
+    }
+    if (property_get(BCM_RO_NX_TRACE_MODULES, modules, NULL) && modules[0] != '0' ) {
+        ALOGI("Setting trace_modules to %s", modules);
+        setenv("trace_modules", modules, 1);
+    }
+
     ALOGI("init nxserver - nexus side.");
     nx_srv = init_nxserver();
     if (nx_srv == NULL) {

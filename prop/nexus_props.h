@@ -83,6 +83,9 @@
 #define BCM_RO_NX_CFG_THERMAL                         "ro.nx.nxserver.thermal"
 #define BCM_RO_NX_LOGGER_DISABLED                     "ro.nx.logger_disabled"
 #define BCM_RO_NX_LOGGER_SIZE                         "ro.nx.logger_size"
+#define BCM_RO_NX_WRN_MODULES                         "ro.nx.wrn_modules"
+#define BCM_RO_NX_MSG_MODULES                         "ro.nx.msg_modules"
+#define BCM_RO_NX_TRACE_MODULES                       "ro.nx.trace_modules"
 #define BCM_RO_NX_AUDIO_LOG                           "ro.nx.audio_log"
 #define BCM_RO_NX_HD_OUT_OBR                          "ro.nx.vidout.obr"
 
