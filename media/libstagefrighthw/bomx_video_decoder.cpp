@@ -37,8 +37,8 @@
  *
  *****************************************************************************/
 // #define LOG_NDEBUG 0
-#define LOG_SAND_TO_HWTEX 1
-#define LOG_VDEV_TO_GR    1
+#define LOG_SAND_TO_HWTEX 0
+#define LOG_VDEV_TO_GR    0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
