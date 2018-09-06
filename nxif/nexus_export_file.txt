@@ -39,3 +39,8 @@ NEXUS_Platform_GetIdFromObject
 NEXUS_Platform_GetObjectFromId
 NEXUS_Platform_GetDefaultInterfaceName
 NEXUS_Platform_GetClientObjects
+NEXUS_CompositeOutput_GetConnector
+NEXUS_Graphics2D_SetSettings
+NEXUS_Graphics2D_GetSettings
+NEXUS_Graphics2D_Checkpoint
+
