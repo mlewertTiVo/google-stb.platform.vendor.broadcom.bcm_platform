@@ -28,7 +28,7 @@ static bool mStandby = false;
 static BKNI_EventHandle terminate;
 static pthread_t wait_task;
 
-static void load() {
+static BERR_Code load() {
    BERR_Code rc = BERR_SUCCESS;
    ssdd_Settings ssdd;
    ALOGI("%s: lookup ssd settings...", __FUNCTION__);
@@ -39,6 +39,7 @@ static void load() {
       ALOGE("%s: could not init ssd-tl!", __FUNCTION__);
    }
    property_set(BCM_DYN_SSD_STATE, "init");
+   return rc;
 }
 
 static void *wait_ops(
@@ -80,8 +81,7 @@ static void stdbChg(
    if (pwr && (pwr_s <= ePowerState_S2)) {
       if (mStandby) {
          mStandby = false;
-         load();
-         wait();
+         if (load() == BERR_SUCCESS) wait();
       }
    }
 }
@@ -120,11 +120,11 @@ int main(int argc, char** argv) {
    cts.standbyStateChanged.context   = (void *)NULL;
    rc = NxClient_StartCallbackThread(&cts);
 
-   load();
-   wait();
-
-   /* never signalling effectively. */
-   BKNI_WaitForEvent(terminate, BKNI_INFINITE);
+   if (load() == BERR_SUCCESS) {
+      wait();
+      /* never signalling effectively. */
+      BKNI_WaitForEvent(terminate, BKNI_INFINITE);
+   }
    BKNI_DestroyEvent(terminate);
 
    ALOGI("%s: terminating", __FUNCTION__);
