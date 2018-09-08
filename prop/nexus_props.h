@@ -61,7 +61,6 @@
 #define BCM_RO_NX_ACT_GS                              "ro.nx.act.gs"
 #define BCM_RO_NX_ACT_LMK                             "ro.nx.act.lmk"
 #define BCM_RO_NX_ACT_WD                              "ro.nx.act.wd"
-#define BCM_RO_NX_MMA_GROW_SIZE                       "ro.nx.heap.grow"
 #define BCM_RO_NX_MMA_SHRINK_THRESHOLD                "ro.nx.heap.shrink"
 #define BCM_RO_NX_AUDIO_LOUDNESS                      "ro.nx.audio_loudness"
 #define BCM_RO_NX_CAPABLE_COMP_BYPASS                 "ro.nx.capable.cb"

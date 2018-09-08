@@ -454,7 +454,7 @@ static void *proactive_runner_task(void *argv)
 
     prctl(PR_SET_NAME, "nxserver.proac");
 
-    if (property_get(BCM_RO_NX_MMA_GROW_SIZE, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_GROW, value, NULL)) {
        if (strlen(value)) {
           gfx_heap_grow_size = calc_heap_size(value);
        }
