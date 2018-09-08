@@ -243,6 +243,8 @@ struct hwc2_vd_t {
 struct hwc2_fb_t {
    int                 fd;
    NEXUS_SurfaceHandle s;
+   uint32_t            ls;
+
 };
 
 /* composition mode. */

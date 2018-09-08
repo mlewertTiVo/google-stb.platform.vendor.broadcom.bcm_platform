@@ -175,7 +175,7 @@ struct hwc2_dump_data_t {
 
 static int hwc2_blit_yv12(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle d,
+   struct hwc2_fb_t *fb,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp,
@@ -183,7 +183,7 @@ static int hwc2_blit_yv12(
 
 static int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle d,
+   struct hwc2_fb_t *fb,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp,
@@ -1125,7 +1125,7 @@ static void *hwc2_vsync_task(
    return NULL;
 }
 
-static NEXUS_SurfaceHandle hwc2_ext_fb_get(
+static struct hwc2_fb_t* hwc2_ext_fb_get(
    struct hwc2_bcm_device_t *hwc2) {
    int nsc = 0;
    struct hwc2_fb_t *e = NULL;
@@ -1160,7 +1160,7 @@ out_read:
       pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    }
 out:
-   return (e != NULL ? e->s : NULL);
+   return e;
 }
 
 static void hwc2_ext_fb_put(
@@ -1645,14 +1645,16 @@ static void hwc2_fill_blend(
 
 static void hwc2_fb_seed(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle s,
+   struct hwc2_fb_t *fb,
    uint32_t color) {
    NEXUS_Error rc;
+   NEXUS_SurfaceHandle s = fb->s;
    if (s) {
       NEXUS_Graphics2DFillSettings fs;
       NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
       fs.surface = s;
       fs.color   = color;
+      fb->ls     = color;
       fs.colorOp = NEXUS_FillOp_eCopy;
       fs.alphaOp = NEXUS_FillOp_eCopy;
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
@@ -1670,6 +1672,7 @@ static void hwc2_vd_cmp_frame(
    struct hwc2_frame_t *f) {
 
    NEXUS_SurfaceHandle d = NULL;
+   struct hwc2_fb_t fb;
    int32_t i;
    size_t c = 0;
    struct hwc2_lyr_t *lyr;
@@ -1723,6 +1726,7 @@ static void hwc2_vd_cmp_frame(
              dsp->pres, dsp->post);
       goto out_error;
    }
+   fb.s = d;
 
    /* wait for output buffer to be ready to compose into. */
    if (f->oftgt >= 0) {
@@ -1854,9 +1858,9 @@ static void hwc2_vd_cmp_frame(
             blt = HWC2_INVALID;
          } else {
             if (yv12) {
-               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+               blt = hwc2_blit_yv12(hwc2, &fb, lyr, shared, dsp, &ms);
             } else {
-               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms, c);
+               blt = hwc2_blit_gpx(hwc2, &fb, lyr, shared, dsp, &ms, c);
             }
          }
 
@@ -5360,15 +5364,35 @@ static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB = {
    }
 };
 
+static bool hwc2_need_fb_seed(
+   struct hwc2_fb_t *fb,
+   NEXUS_Rect *oa,
+   NEXUS_SurfaceStatus *ss) {
+   bool r = false;
+
+   if ((oa->x+oa->width < ss->width) ||
+       (oa->y+oa->height < ss->height)) {
+      r = true;
+   }
+
+   if ((fb->ls == HWC2_TRS) &&
+       ((oa->x+oa->width == ss->width) ||
+        (oa->y+oa->height == ss->height))) {
+      r = true;
+   }
+
+   return r;
+}
+
 int hwc2_blit_yv12(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle d,
+   struct hwc2_fb_t *fb,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp,
    enum hwc2_seeding_e *ms) {
 
-   NEXUS_SurfaceHandle cb = NULL, cr = NULL, y = NULL, yuv = NULL, rgba;
+   NEXUS_SurfaceHandle d, cb = NULL, cr = NULL, y = NULL, yuv = NULL, rgba;
    void *buffer, *next, *slock;
    BM2MC_PACKET_Plane pcb, pcr, py, pycbcr, prgba;
    size_t size;
@@ -5398,6 +5422,7 @@ int hwc2_blit_yv12(
         (uint16_t)(lyr->fr.right - lyr->fr.left),
         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
 
+   d = fb->s;
    rgba = d;
    NEXUS_Surface_GetStatus(rgba, &ss);
    if (ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) {
@@ -5414,9 +5439,8 @@ int hwc2_blit_yv12(
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
       if ((*ms == hwc2_seeding_vid) ||
-          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
-           ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)))) {
-         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) && hwc2_need_fb_seed(fb, &oa, &ss))) {
+         hwc2_fb_seed(hwc2, fb, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
          hwc2_chkpt(hwc2);
          ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                   "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
@@ -5737,14 +5761,14 @@ out:
 
 int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle d,
+   struct hwc2_fb_t *fb,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp,
    enum hwc2_seeding_e *ms,
    size_t cnt) {
 
-   NEXUS_SurfaceHandle s = NULL, icb = NULL;
+   NEXUS_SurfaceHandle d, s = NULL, icb = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
    NEXUS_Rect c, p, sa, da, oa, n, ct;
@@ -5754,6 +5778,7 @@ int hwc2_blit_gpx(
    float fa = fmax(0.0, fmin(1.0, lyr->al));
    uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
 
+   d = fb->s;
    NEXUS_Surface_GetStatus(d, &ds);
 
    c = {(int16_t)lyr->crp.left,
@@ -5800,9 +5825,8 @@ int hwc2_blit_gpx(
    /* first blit check if we need to seed. */
    if (*ms != hwc2_seeding_none) {
       if ((*ms == hwc2_seeding_vid) ||
-          (!dsp->sfb && (*ms == hwc2_seeding_gfx) &&
-           ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)))) {
-         hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+          (!dsp->sfb && (*ms == hwc2_seeding_gfx) && hwc2_need_fb_seed(fb, &oa, &ds))) {
+         hwc2_fb_seed(hwc2, fb, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
          hwc2_chkpt(hwc2);
          ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                   "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
@@ -6004,6 +6028,7 @@ static void hwc2_ext_cmp_frame(
    struct hwc2_frame_t *f) {
 
    NEXUS_Error nx;
+   struct hwc2_fb_t *fb = NULL;
    NEXUS_SurfaceHandle d = NULL;
    int32_t i;
    size_t c = 0;
@@ -6032,7 +6057,8 @@ static void hwc2_ext_cmp_frame(
       ALOGI("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":switching into '%s' mode\n",
             dsp->pres, dsp->post, (wcb==cbs_e_bypass)?"bypass":"ncsfb");
    }
-   d = hwc2_ext_fb_get(hwc2);
+   fb = hwc2_ext_fb_get(hwc2);
+   d = fb != NULL ? fb->s : NULL;
    if (d == NULL) {
       for (i = 0; i < f->cnt; i++) {
          lyr = &f->lyr[i];
@@ -6328,9 +6354,9 @@ static void hwc2_ext_cmp_frame(
                      dsp->pres, dsp->post);
             } else {
                if (yv12) {
-                  blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+                  blt = hwc2_blit_yv12(hwc2, fb, lyr, shared, dsp, &ms);
                } else {
-                  blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms, c);
+                  blt = hwc2_blit_gpx(hwc2, fb, lyr, shared, dsp, &ms, c);
                }
             }
             if (lrcp == NEXUS_SUCCESS) {
@@ -6382,7 +6408,7 @@ static void hwc2_ext_cmp_frame(
             ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
                   dsp->pres, dsp->post);
          } else {
-             blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms, c);
+             blt = hwc2_blit_gpx(hwc2, fb, lyr, shared, dsp, &ms, c);
          }
          if (lrcp == NEXUS_SUCCESS) {
             hwc2_mem_unlock(hwc2, bhp);
@@ -6420,7 +6446,7 @@ static void hwc2_ext_cmp_frame(
    if (f->vcnt || f->scnt) {
       /* ... make sure we seed background. */
       if (!c && (dsp->u.ext.bg == HWC2_OPQ)) {
-         hwc2_fb_seed(hwc2, d, HWC2_TRS);
+         hwc2_fb_seed(hwc2, fb, HWC2_TRS);
          dsp->u.ext.bg = HWC2_TRS;
          hwc2_chkpt(hwc2);
          ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
