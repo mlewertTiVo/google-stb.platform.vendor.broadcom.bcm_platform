@@ -1,7 +1,7 @@
 service nxserver /vendor/bin/nxserver
    class core
    user root
-   group system inet
+   group system inet wakelock
    critical
 
 
