@@ -1977,7 +1977,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     errCode = NEXUS_Memory_Allocate(BOMX_VIDEO_EOS_LEN, &memorySettings, &m_pEosBuffer);
     if ( errCode )
     {
@@ -4270,7 +4274,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
 
     if ( NULL == ppBufferHdr )
     {
@@ -8091,7 +8099,11 @@ NEXUS_Error BOMX_VideoDecoder::AllocateInputBuffer(uint32_t nSize, void*& pBuffe
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     return NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
 }
 

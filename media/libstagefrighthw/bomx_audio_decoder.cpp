@@ -797,7 +797,11 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     errCode = NEXUS_Memory_Allocate(BOMX_AUDIO_EOS_LEN, &memorySettings, &m_pEosBuffer);
     if ( errCode )
     {
@@ -2594,7 +2598,11 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddInputPortBuffer(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
 
     if ( NULL == ppBufferHdr )
     {
@@ -2710,7 +2718,9 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddOutputPortBuffer(
     }
     memset(pInfo, 0, sizeof(*pInfo));
     pInfo->pClientMemory = pBuffer;
-    pInfo->hMemoryBlock = NEXUS_MemoryBlock_Allocate(clientConfig.heap[1], nSizeBytes, 0, NULL);
+    pInfo->hMemoryBlock = NEXUS_MemoryBlock_Allocate(
+       !clientConfig.heap[NXCLIENT_FULL_HEAP] ? clientConfig.heap[NXCLIENT_DEFAULT_HEAP] : clientConfig.heap[NXCLIENT_FULL_HEAP],
+       nSizeBytes, 0, NULL);
     if ( NULL == pInfo->hMemoryBlock )
     {
         delete pInfo;
@@ -4019,6 +4029,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::ConfigBufferInit()
         NEXUS_Platform_GetClientConfiguration(&clientConfig);
         NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
         memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+        if (memorySettings.heap == NULL)
+        {
+           memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+        }
         errCode = NEXUS_Memory_Allocate(BOMX_AUDIO_CODEC_CONFIG_BUFFER_SIZE, &memorySettings, &m_pConfigBuffer);
         if ( errCode )
         {
@@ -4052,7 +4066,11 @@ NEXUS_Error BOMX_AudioDecoder::AllocateInputBuffer(uint32_t nSize, void*& pBuffe
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     return NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
 }
 

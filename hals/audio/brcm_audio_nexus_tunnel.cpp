@@ -1457,8 +1457,11 @@ NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
     NEXUS_Platform_GetClientConfiguration(&client_config);
     global_heap = client_config.heap[NXCLIENT_FULL_HEAP];
     if (global_heap == NULL) {
-        ALOGE("%s: error accessing main heap", __FUNCTION__);
-        return NEXUS_OUT_OF_DEVICE_MEMORY;
+        global_heap = client_config.heap[NXCLIENT_DEFAULT_HEAP];
+        if (global_heap == NULL) {
+           ALOGE("%s: error accessing main heap", __FUNCTION__);
+           return NEXUS_OUT_OF_DEVICE_MEMORY;
+        }
     }
     mem_block_hdl = NEXUS_MemoryBlock_Allocate(global_heap, sizeof(stc_channel_st), 16, NULL);
     if (mem_block_hdl == NULL) {
