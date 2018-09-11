@@ -62,6 +62,8 @@ static const char *powerNetInterfaces[] = {
     "eth0"
 };
 
+static const char *BOOT_FROM_DEEP_SLEEP = "s3_wakeup";
+
 // Property definitions (max length 32)...
 static const char * PROPERTY_SYS_POWER_DOZE_TIMEOUT       = "persist.sys.power.doze.timeout";
 static const char * PROPERTY_SYS_POWER_WAKE_TIMEOUT       = "persist.sys.power.wake.timeout";
@@ -81,6 +83,7 @@ static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.pm.wol.mdns.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 static const char * PROPERTY_NX_SCREEN_ON                 = "persist.nx.screen.on";
 static const char * PROPERTY_NX_KEEP_SCREEN_STATE         = "persist.nx.keep.screen.state";
+static const char * PROPERTY_BOOT_BOOTREASON              = "ro.boot.bootreason";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
@@ -692,6 +695,7 @@ static void power_init(struct power_module *module __unused)
     bool gpios_initialised = false;
     nxwrap_pwr_state power;
     nxwrap_wake_status wake;
+    char bootreason[PROPERTY_VALUE_MAX] = "";
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -733,6 +737,13 @@ static void power_init(struct power_module *module __unused)
     if (power_set_pmlibservice_state(ePowerState_S0) != NO_ERROR) {
         ALOGE("%s: Could not set pmlib state to S0!!!", __FUNCTION__);
         goto power_init_fail;
+    }
+
+    // track screen on state for wake from shutdown
+    property_get(PROPERTY_BOOT_BOOTREASON, bootreason, "");
+    if (property_get_bool(PROPERTY_NX_KEEP_SCREEN_STATE, DEFAULT_PROPERTY_NX_KEEP_SCREEN_STATE) == true &&
+        strcmp(bootreason, BOOT_FROM_DEEP_SLEEP) == 0) {
+        property_set(PROPERTY_NX_SCREEN_ON, "1");
     }
 
     // If we have powered up only from an alarm timer, then it means we have woken up from S5 and
