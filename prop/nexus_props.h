@@ -89,6 +89,7 @@
 #define BCM_RO_NX_HD_OUT_OBR                          "ro.nx.vidout.obr"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
+#define BCM_SYS_RECOVERY_NX_STATE                     "sys.recov.nx.state"
 #define BCM_DYN_NX_BOOT_KEY_TWO                       "dyn.nx.boot.key2"
 #define BCM_DYN_NX_HDCP_FORCE                         "dyn.nx.hdcp.force"
 #define BCM_DYN_NX_DISPLAY_SIZE                       "dyn.nx.display-size"

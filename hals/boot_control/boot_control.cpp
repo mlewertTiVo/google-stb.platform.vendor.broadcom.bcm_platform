@@ -51,7 +51,11 @@ static pthread_cond_t bctl_bootok_cond;
 static int nexus_state(void) {
    char nexus[PROPERTY_VALUE_MAX];
    int it = 0, rc;
-   property_get(BCM_DYN_NX_STATE, nexus, "");
+   rc = property_get(BCM_DYN_NX_STATE, nexus, "");
+   if (!rc) {
+      rc = property_get(BCM_SYS_RECOVERY_NX_STATE, nexus, "");
+      if (rc) ALOGI("boot control in recovery mode.");
+   }
    // something went wrong during nexus loading, or before middleware is fully
    // up, the device|slot is not operational.
    if (strncmp(nexus, "loaded", strlen("loaded"))) {
@@ -114,6 +118,10 @@ static int write_device(struct eio_boot *bc_eio) {
       ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
       sprintf(fstab_name, "/fstab.%s", hardware);
       struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      if (fstab == nullptr) {
+         ALOGW("failed to read fstab (%s), attempting default location.", fstab_name);
+         fstab = fs_mgr_read_fstab_default();
+      }
       if (fstab == nullptr) {
          ALOGE("failed to read fstab (%s), giving up.", fstab_name);
          return -EINVAL;
@@ -215,6 +223,10 @@ static void init(struct boot_control_module *module __unused) {
       ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
       sprintf(fstab_name, "/fstab.%s", hardware);
       struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      if (fstab == nullptr) {
+         ALOGW("failed to read fstab (%s), attempting default location.", fstab_name);
+         fstab = fs_mgr_read_fstab_default();
+      }
       if (fstab == nullptr) {
          ALOGE("failed to read fstab (%s), giving up.", fstab_name);
          return;
