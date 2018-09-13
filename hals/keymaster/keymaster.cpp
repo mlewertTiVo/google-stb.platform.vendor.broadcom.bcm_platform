@@ -75,6 +75,7 @@ struct bcm_km {
    size_t                   maxFinishInput;
    uint8_t                 *fbkCfg;
    size_t                   fbkSize;
+   bool                     barred;
 };
 
 struct km_op_s {
@@ -428,6 +429,13 @@ static int km_init(struct bcm_km *km_hdl) {
    // already good to go.
    if (km_hdl->handle) {
       return 0;
+   }
+
+   // not allowed to exercise, but should return success to caller
+   // in some cases.
+   if (km_hdl->barred) {
+      ALOGW("km_init: rejecting while in nexus standby.");
+      return -ENOTTY;
    }
 
    ALOGI_IF(KM_LOG_ALL_IN, "km_init: starting tl-side.");
@@ -1363,6 +1371,7 @@ static keymaster_error_t km_delete_key(
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
+   if (km_init_err == -ENOTTY) return KM_ERROR_OK;
    if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
 
    BERR_Code km_err;
@@ -1396,6 +1405,7 @@ static keymaster_error_t km_delete_all_keys(
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
+   if (km_init_err == -ENOTTY) return KM_ERROR_OK;
    if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
 
    BERR_Code km_err;
@@ -2010,9 +2020,25 @@ static bool km_stdby(
    if (pwr && (pwr_s > ePowerState_S2)) {
       KeymasterTl_Uninit(km_hdl->handle);
       km_hdl->handle = NULL;
+      km_hdl->barred = true;
    }
    pthread_mutex_unlock(&km_hdl->mtx);
    return true;
+}
+
+static void km_stdcg(
+   void *context,
+   int param) {
+   (void)param;
+   struct bcm_km *km_hdl =(struct bcm_km *)context;
+   nxwrap_pwr_state pwr_s;
+   bool pwr = nxwrap_get_pwr_info(&pwr_s, NULL);
+   if (pwr && (pwr_s <= ePowerState_S2)) {
+      if (km_hdl->barred) {
+         km_hdl->barred = false;
+         ALOGI("km_stdcg: allowing nexus keymaster operations.");
+      }
+   }
 }
 
 static int km_open(
@@ -2024,6 +2050,7 @@ static int km_open(
    int c = 0;
    static int c_max = 20;
    pthread_mutexattr_t mattr;
+   NxClient_CallbackThreadSettings cts;
 
    if (strcmp(name, KEYSTORE_KEYMASTER) != 0)
       return -EINVAL;
@@ -2065,6 +2092,10 @@ static int km_open(
       return -EINVAL;
    }
    km_hdl->nxwrap->join_v(km_stdby, (void *)km_hdl);
+   NxClient_GetDefaultCallbackThreadSettings(&cts);
+   cts.standbyStateChanged.callback  = km_stdcg;
+   cts.standbyStateChanged.context   = (void *)km_hdl;
+   NxClient_StartCallbackThread(&cts);
    // busy loop wait for ssd readiness (rpmb), without rpmb, the
    // keymaster may not fully function, but should work to some degree.
    property_get(BCM_DYN_SSD_STATE, nexus, "");
