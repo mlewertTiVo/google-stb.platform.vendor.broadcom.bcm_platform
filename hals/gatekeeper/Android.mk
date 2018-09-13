@@ -12,6 +12,9 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gk\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 
 LOCAL_C_INCLUDES += \
     $(TOP)/hardware/libhardware/include \
@@ -33,6 +36,7 @@ else
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 endif
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_HEADER_LIBRARIES := liblog_headers

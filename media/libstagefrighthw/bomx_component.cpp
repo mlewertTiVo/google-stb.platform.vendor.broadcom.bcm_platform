@@ -370,7 +370,7 @@ BOMX_Component::BOMX_Component(
 
     SetRole("unknown");
 
-    m_logMask = property_get_int32(B_PROPERTY_LOG_MASK, B_LOG_MASK_DEFAULT);
+    m_logMask = property_get_int32(BCM_DYN_MEDIA_LOG_MASK, B_LOG_MASK_DEFAULT);
 
     // Currently, each component requires its own thread - it's by far the easiest way to
     // Implement the command queue/response handling

@@ -72,7 +72,7 @@ BOMX_AndroidPlugin::BOMX_AndroidPlugin()
         ALOGE("OMX_Init failed!");
     }
 
-    m_logMask = property_get_int32(B_PROPERTY_LOG_MASK, B_LOG_MASK_DEFAULT);
+    m_logMask = property_get_int32(BCM_DYN_MEDIA_LOG_MASK, B_LOG_MASK_DEFAULT);
 }
 
 BOMX_AndroidPlugin::~BOMX_AndroidPlugin()

@@ -6630,6 +6630,12 @@ static void hwc2_dc_ntfy(
    } else {
       hwc2->ext->u.ext.cbs = false;
    }
+
+   if (hwc2->regCb[HWC2_CALLBACK_REFRESH-1].func != NULL) {
+      HWC2_PFN_REFRESH f_refresh = (HWC2_PFN_REFRESH) hwc2->regCb[HWC2_CALLBACK_REFRESH-1].func;
+      f_refresh(hwc2->regCb[HWC2_CALLBACK_REFRESH-1].data,
+               (hwc2_display_t)(intptr_t)hwc2->ext);
+   }
 }
 
 static void hwc2_hp_ntfy(

@@ -41,6 +41,7 @@
 #include "brcm_audio_nexus_hdmi.h"
 #include "brcm_audio_nexus_parser.h"
 #include <inttypes.h>
+#include "vendor_bcm_props.h"
 
 using namespace android;
 
@@ -58,13 +59,6 @@ using namespace android;
 #define BRCM_AUDIO_DIRECT_DEFAULT_LATENCY       (10)    // ms
 
 #define BITRATE_TO_BYTES_PER_125_MS(bitrate)    (bitrate * 1024/8/8)
-
-/*
- * Runtime Properties
- */
-#define BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH ("ro.nx.media.disable_ac3_passthru")
-#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE ("ro.nx.media.direct_drc_mode")
-#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE ("ro.nx.media.direct_stereo_mode")
 
 typedef struct {
     const char *key;
@@ -416,8 +410,8 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
             if (bout->dolbyMs12) {
                 dolbySettings->enableAtmosProcessing = true;
 
-                if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
-                    property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST, false)) {
+                if (property_get_bool(BCM_RO_AUDIO_DISABLE_ATMOS, false) ||
+                    property_get_bool(BCM_PERSIST_AUDIO_DISABLE_ATMOS, false)) {
                     dolbySettings->enableAtmosProcessing = false;
                 }
 
@@ -426,7 +420,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
                 changed = true;
             }
 
-            if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE, property, "")) {
+            if (property_get(BCM_RO_AUDIO_DIRECT_DOLBY_DRC_MODE, property, "")) {
                 value = get_property_value(property, drc_mode_map);
                 if (value != -1) {
                     ALOGI("%s: Setting Dolby DRC mode to %d", __FUNCTION__, value);
@@ -435,7 +429,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
                     changed = true;
                 }
             }
-            if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE, property, "")) {
+            if (property_get(BCM_RO_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE, property, "")) {
                 value = get_property_value(property, stereo_downmix_mode_map);
                 if (value != -1) {
                     ALOGI("%s: Setting Dolby stereo downmix mode to %d", __FUNCTION__, value);
@@ -1093,12 +1087,12 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         break;
     case AUDIO_FORMAT_AC3:
         NEXUS_GetAudioCapabilities(&audioCaps);
-        disable_ac3_passthrough = property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH, false);
+        disable_ac3_passthrough = property_get_bool(BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH, false);
         if (disable_ac3_passthrough && audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
             ALOGI("Enable play pump mode");
             bout->nexus.direct.playpump_mode = true;
             bout->nexus.direct.transcode_latency = property_get_int32(
-                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                            BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
                             BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
         }
 
@@ -1115,7 +1109,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             ALOGI("Enable play pump mode");
             bout->nexus.direct.playpump_mode = true;
             bout->nexus.direct.transcode_latency = property_get_int32(
-                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                            BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
                             BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
             if (bout->nexus.direct.eac3.syncframe) {
                 free(bout->nexus.direct.eac3.syncframe);
@@ -1142,8 +1136,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->framesPlayedTotal = 0;
-    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
-    bout->latencyEstimate = (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY,
+    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
+    bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
                                                 ((dolby_ms == 11) || (dolby_ms == 12)) ?
                                                     NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
                              * bout->config.sample_rate) / 1000;
@@ -1264,8 +1258,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         bout->nexus.direct.pid_channel = pid_channel;
 
         // Force PCM mode if necessary
-        if (property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
-            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false)) {
+        if (property_get_bool(BCM_RO_AUDIO_DIRECT_FORCE_PCM, false) ||
+            property_get_bool(BCM_PERSIST_AUDIO_DIRECT_FORCE_PCM, false)) {
             NxClient_AudioSettings audioSettings;
 
             ALOGI("Force PCM output");
@@ -1291,8 +1285,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     // Restore auto mode for MS11
     if (bout->dolbyMs11 &&
-        !(property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
-          property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false))) {
+        !(property_get_bool(BCM_RO_AUDIO_DIRECT_FORCE_PCM, false) ||
+          property_get_bool(BCM_PERSIST_AUDIO_DIRECT_FORCE_PCM, false))) {
         NxClient_AudioSettings audioSettings;
 
         ALOGI("Force auto output");

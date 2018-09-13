@@ -65,6 +65,8 @@
 #include "nxserverlib.h"
 #include "nexus_watchdog.h"
 
+#include "vendor_bcm_props.h"
+
 #define MB (1024*1024)
 #define KB (1024)
 
@@ -353,7 +355,7 @@ int main(void)
     }
 
     /* trigger waiter on nexus server initialization. */
-    property_set("sys.recov.nx.state", "loaded");
+    property_set(BCM_SYS_RECOVERY_NX_STATE, "loaded");
 
     /* loop forever. */
     while (1) {

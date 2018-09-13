@@ -57,14 +57,9 @@
 #include <linux/socket.h>
 #include <utils/PropertyMap.h>
 
-#define NX_HD_OUT_FMT                "nx.vidout.force"
-#define NX_HD_OUT_HWC                "dyn.nx.vidout.hwc"
-#define NX_HD_OUT_OBR                "ro.nx.vidout.obr"
-#define NX_HDCP_TOGGLE               "nx.hdcp.force"
-#define NX_HD_OUT_COLOR_DEPTH_10B    "ro.nx.colordepth10b.force"
-#define PROPERTY_PM_WOL_OPTS         "ro.nx.pm.wol.opts"
+#include "vendor_bcm_props.h"
+
 #define DEFAULT_PROPERTY_PM_WOL_OPTS "s"
-#define PROPERTY_PM_WOL_MDNS_EN          "ro.nx.pm.wol.mdns.en"
 #define DEFAULT_PROPERTY_PM_WOL_MDNS_EN   1
 
 Return<NexusStatus> NexusImpl::rmlmk(uint64_t cid) {
@@ -132,14 +127,13 @@ static status_t parse_sopass(String8& src, uint8_t *dest)
 
 static bool power_get_property_wol_mdns_en()
 {
-    return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
+    return property_get_bool(BCM_RO_POWER_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
 }
 
 Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    Mutex::Autolock _l(mLock);
    int status;
    struct ifreq ifr;
-   struct ethtool_rxnfc rxnfc;
    int fd = socket(AF_INET, SOCK_DGRAM, 0);
    if (fd < 0) {
       return NexusStatus::UNKNOWN;
@@ -156,6 +150,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
    } else {
       if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
          struct ethtool_drvinfo drvinfo;
+         struct ethtool_rxnfc rxnfc;
 
          memset(&drvinfo, 0, sizeof(drvinfo));
          drvinfo.cmd = ETHTOOL_GDRVINFO;
@@ -178,7 +173,7 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
             rxnfc.fs.flow_type = UDP_V4_FLOW;
             rxnfc.fs.h_u.udp_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
             rxnfc.fs.m_u.udp_ip4_spec.ip4dst = ~0;
-            rxnfc.fs.ring_cookie = 64; // IMP port (port 8, queue 0, 8 queues per port
+            rxnfc.fs.ring_cookie = RX_CLS_FLOW_WAKE;
             rxnfc.fs.location = RX_CLS_LOC_ANY;
          } else if (strcmp(drvinfo.driver, "bcmsysport") == 0) {
             /* Nothing to do. Setup is handled via gphy interface, through dsa driver */
@@ -202,16 +197,12 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
       struct ethtool_wolinfo wolinfo;
       char wol_opts[PROPERTY_VALUE_MAX];
       memset(&wolinfo, 0, sizeof(wolinfo));
-      int len = property_get(PROPERTY_PM_WOL_OPTS, wol_opts, DEFAULT_PROPERTY_PM_WOL_OPTS);
+      int len = property_get(BCM_RO_POWER_WOL_OPTS, wol_opts, DEFAULT_PROPERTY_PM_WOL_OPTS);
       if (len) {
          uint32_t data;
          int i;
          status = parse_wolopts(wol_opts, &data);
          if (status == NO_ERROR) {
-            if (data & WAKE_MAGICSECURE && data & WAKE_FILTER) {
-               ALOGE("Can't configure filter and magic packet with password");
-               data &= ~WAKE_MAGICSECURE;
-            }
             wolinfo.wolopts = data;
             if (data & WAKE_MAGICSECURE) {
                uint8_t sopass[SOPASS_MAX];
@@ -241,14 +232,6 @@ Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
                      goto exit;
                   }
                }
-            }
-            if (data & WAKE_FILTER) {
-               /* Use filter number returned from ETHTOOL_SRXCLSRLINS above */
-               uint32_t filter = rxnfc.fs.location;
-               if (filter < SOPASS_MAX * 8) {
-                  wolinfo.sopass[filter/8] = 1 << (filter % 8);
-               } else
-                  ALOGE("Bad filter number %d", filter);
             }
          }
          if (status == NO_ERROR) {
@@ -502,7 +485,7 @@ bool NexusImpl::init_ir(void) {
    uint64_t mask;
 
    memset(ir_mode_property, 0, sizeof(ir_mode_property));
-   property_get("ro.nx.ir_remote.mode", ir_mode_property, ir_mode_default);
+   property_get(BCM_RO_NX_IR_MODE, ir_mode_property, ir_mode_default);
    if (parseNexusIrMode(ir_mode_property, &mode)) {
        ALOGI("Nexus IR remote mode: %s", ir_mode_property);
    } else {
@@ -512,7 +495,7 @@ bool NexusImpl::init_ir(void) {
    }
 
    memset(ir_map_property, 0, sizeof(ir_map_property));
-   property_get("ro.nx.ir_remote.map", ir_map_property, ir_map_default);
+   property_get(BCM_RO_NX_IR_MAP, ir_map_property, ir_map_default);
    String8 map_path(ir_map_path);
    map_path += "/";
    map_path += ir_map_property;
@@ -526,7 +509,7 @@ bool NexusImpl::init_ir(void) {
    }
 
    memset(ir_mask_property, 0, sizeof(ir_mask_property));
-   property_get("ro.nx.ir_remote.mask", ir_mask_property, ir_mask_default);
+   property_get(BCM_RO_NX_IR_MASK, ir_mask_property, ir_mask_default);
    mask = strtoull(ir_mask_property, NULL, 0);
    ALOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
            (unsigned long long)mask);
@@ -669,11 +652,11 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
             case NEXUS_VideoFormat_e4096x2160p24hz:
             case NEXUS_VideoFormat_e3840x2160p24hz:
                property_set("sys.display-size", "3840x2160");
-               property_set("dyn.nx.display-size", "3840x2160");
+               property_set(BCM_DYN_NX_DISPLAY_SIZE, "3840x2160");
             break;
             default:
                property_set("sys.display-size", "1920x1080");
-               property_set("dyn.nx.display-size", "1920x1080");
+               property_set(BCM_DYN_NX_DISPLAY_SIZE, "1920x1080");
             break;
             }
          }
@@ -701,11 +684,11 @@ NEXUS_VideoFormat NexusImpl::forcedOutputFmt(void) {
    char name[PROPERTY_VALUE_MAX];
 
    forced_format =
-      (NEXUS_VideoFormat) property_get_int32(NX_HD_OUT_HWC, (int)NEXUS_VideoFormat_eUnknown);
+      (NEXUS_VideoFormat) property_get_int32(BCM_DYN_NX_HD_OUT_HWC, (int)NEXUS_VideoFormat_eUnknown);
 
    if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
       memset(value, 0, sizeof(value));
-      sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+      sprintf(name, "persist.%s", BCM_XX_NX_HD_OUT_FMT);
       if (property_get(name, value, "")) {
          if (strlen(value)) {
             forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -715,7 +698,7 @@ NEXUS_VideoFormat NexusImpl::forcedOutputFmt(void) {
 
    if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
       memset(value, 0, sizeof(value));
-      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      sprintf(name, "ro.%s", BCM_XX_NX_HD_OUT_FMT);
       if (property_get(name, value, "")) {
          if (strlen(value)) {
             forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -787,7 +770,7 @@ NEXUS_VideoFormat NexusImpl::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS
    };
 
    NEXUS_VideoFormat *ordered_list;
-   ordered_list = property_get_bool(NX_HD_OUT_OBR, 0) ?
+   ordered_list = property_get_bool(BCM_RO_NX_HD_OUT_OBR, 0) ?
       &ordered_res_list[0] : &ordered_fps_list[0];
 
    for (i = 0 ; *(ordered_list+i) != NEXUS_VideoFormat_eUnknown; i++) {
@@ -803,15 +786,13 @@ NEXUS_VideoFormat NexusImpl::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS
 
 bool NexusImpl::getForcedHdcp(void)
 {
-   char name[PROPERTY_VALUE_MAX];
 #if ANDROID_ENABLE_HDMI_HDCP
    int def_val = 1;
 #else
    int def_val = 0;
 #endif
 
-   sprintf(name, "dyn.%s", NX_HDCP_TOGGLE);
-   return property_get_bool(name, def_val);
+   return property_get_bool(BCM_DYN_NX_HDCP_FORCE, def_val);
 }
 
 bool NexusImpl::getLimitedColorSettings(unsigned &limitedColorDepth,
@@ -820,7 +801,7 @@ bool NexusImpl::getLimitedColorSettings(unsigned &limitedColorDepth,
    NEXUS_HdmiOutputEdidData edid;
    NEXUS_Error errCode;
 
-   if (!property_get_bool(NX_HD_OUT_COLOR_DEPTH_10B, 0))
+   if (!property_get_bool(BCM_RO_NX_HD_OUT_COLOR_DEPTH_10B, 0))
       return false;
 
    // Force 10bpp color-depth only if the hdmi Rx supports 12bits or higher

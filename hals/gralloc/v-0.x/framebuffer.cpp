@@ -36,6 +36,8 @@
 #include "gralloc_priv.h"
 #include "cutils/properties.h"
 
+#include "vendor_bcm_props.h"
+
 using namespace android;
 using android::Vector;
 
@@ -44,8 +46,6 @@ using android::Vector;
  */
 #define GRAPHICS_RES_WIDTH_DEFAULT  1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT 1080
-#define GRAPHICS_RES_WIDTH_PROP     "ro.nx.hwc2.afb.w"
-#define GRAPHICS_RES_HEIGHT_PROP    "ro.nx.hwc2.afb.h"
 
 struct fb_context_t {
    framebuffer_device_t device;
@@ -100,9 +100,9 @@ int fb_device_open(hw_module_t const* module, const char* name,
       if (status >= 0) {
          const_cast<uint32_t&>(dev->device.flags) = 0;
          const_cast<uint32_t&>(dev->device.width) = property_get_int32(
-                 GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+                 BCM_RO_HWC2_EXT_AFB_W, GRAPHICS_RES_WIDTH_DEFAULT);
          const_cast<uint32_t&>(dev->device.height) =  property_get_int32(
-                 GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
+                 BCM_RO_HWC2_EXT_AFB_H, GRAPHICS_RES_HEIGHT_DEFAULT);
          const_cast<int&>(dev->device.stride) = dev->device.width * 4;
 
          // those are hardcoded already.  note that dpi is overtaken by the ro.lcd_density anyways.

@@ -47,16 +47,10 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include "vendor_bcm_props.h"
 
-/* Override for the hardcoded repeatTimeout values in bkir module */
-#define PROPERTY_IR_INITIAL_TIMEOUT "ro.nx.ir_remote.initial_timeout"
-#define PROPERTY_IR_TIMEOUT "ro.nx.ir_remote.timeout"
-
-#define PROPERTY_BOOT_REASON "sys.boot.reason"
+#define SYS_BOOT_REASON "sys.boot.reason"
 #define BOOT_FROM_DEEP_SLEEP "warm,s3_wakeup"
-
-#define PROPERTY_NX_BOOT_KEY_TWO "dyn.nx.boot.key2"
-#define PROPERTY_BOOT_COMPLETED "ro.nx.boot_completed"
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
@@ -98,12 +92,12 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
     else {
         /* Determine if the system is woken up by the wakeup key */
         char value[PROPERTY_VALUE_MAX];
-        property_get(PROPERTY_BOOT_REASON, value, "");
+        property_get(SYS_BOOT_REASON, value, "");
         if (strlen(value) > 0 && !strncmp(value, BOOT_FROM_DEEP_SLEEP, strlen(value))) {
             NEXUS_IrInputEvent event;
             if (NEXUS_IrInput_ReadEvent(m_handle, &event) == NEXUS_SUCCESS && event.code == m_power_key_two) {
                 ALOGV("Woken up by power key two");
-                property_set(PROPERTY_NX_BOOT_KEY_TWO, "1");
+                property_set(BCM_DYN_NX_BOOT_KEY_TWO, "1");
             }
         }
 
@@ -134,7 +128,7 @@ void NexusIrInput::stop()
 
 unsigned NexusIrInput::initialRepeatTimeout()
 {
-    unsigned timeout = property_get_int32(PROPERTY_IR_INITIAL_TIMEOUT, 0);
+    unsigned timeout = property_get_int32(BCM_RO_NX_IR_INITIAL_TIMEOUT, 0);
     if (timeout) {
         return timeout;
     }
@@ -143,7 +137,7 @@ unsigned NexusIrInput::initialRepeatTimeout()
 
 unsigned NexusIrInput::repeatTimeout()
 {
-    unsigned timeout = property_get_int32(PROPERTY_IR_TIMEOUT, 0);
+    unsigned timeout = property_get_int32(BCM_RO_NX_IR_TIMEOUT, 0);
     if (timeout) {
         return timeout;
     }

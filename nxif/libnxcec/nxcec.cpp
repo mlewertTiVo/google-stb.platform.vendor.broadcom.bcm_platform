@@ -45,6 +45,7 @@
 #include <utils/Errors.h>
 #include "cutils/properties.h"
 #include <nxcec.h>
+#include "vendor_bcm_props.h"
 
 extern "C" nxcec_cec_device_type nxcec_to_cec_device_type(const char *device) {
    int type = atoi(device);
@@ -67,36 +68,36 @@ extern "C" nxcec_cec_device_type nxcec_get_cec_device_type() {
    char value[PROPERTY_VALUE_MAX];
    nxcec_cec_device_type type = eCecDeviceType_eInvalid;
 
-   if (property_get("ro.nx.hdmi.device_type", value, NULL)) {
+   if (property_get(BCM_RO_HDMI_DEVICE_TYPE, value, NULL)) {
       type = nxcec_to_cec_device_type(value);
    }
    return type;
 }
 
 extern "C" bool nxcec_is_cec_enabled() {
-   return property_get_bool(PROPERTY_HDMI_ENABLE_CEC,
+   return property_get_bool(BCM_PERSIST_HDMI_ENABLE_CEC,
                             DEFAULT_PROPERTY_HDMI_ENABLE_CEC);
 }
 
 extern "C" bool nxcec_get_cec_xmit_stdby() {
-   return property_get_bool(PROPERTY_HDMI_TX_STANDBY_CEC,
+   return property_get_bool(BCM_PERSIST_HDMI_TX_STANDBY_CEC,
                             DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC);
 }
 
 extern "C" bool nxcec_get_cec_xmit_viewon() {
-   return property_get_bool(PROPERTY_HDMI_TX_VIEW_ON_CEC,
+   return property_get_bool(BCM_PERSIST_HDMI_TX_VIEW_ON_CEC,
                             DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC);
 }
 
 extern "C" bool nxcec_is_cec_autowake_enabled() {
-   return property_get_bool(PROPERTY_HDMI_AUTO_WAKEUP_CEC,
+   return property_get_bool(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC,
                             DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC);
 }
 
 extern "C" bool nxcec_set_cec_autowake_enabled(bool enabled) {
    char value[PROPERTY_VALUE_MAX];
    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
-   if (property_set(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
+   if (property_set(BCM_PERSIST_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
       return false;
    } else {
       return true;

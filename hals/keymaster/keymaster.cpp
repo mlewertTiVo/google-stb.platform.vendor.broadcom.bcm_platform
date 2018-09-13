@@ -42,6 +42,7 @@
 
 #include "sage_srai.h"
 #include <keymaster_tl.h>
+#include "vendor_bcm_props.h"
 extern "C" {
 #include <sage_manufacturing_api.h>
 #include "nexus_security_datatypes.h"
@@ -52,6 +53,7 @@ extern "C" {
 #endif
 #include "nexus_security.h"
 }
+#include "nxwrap.h"
 
 #define KM_OUT_DATA_SZ (4*4096)
 
@@ -62,19 +64,17 @@ extern "C" {
 
 #define KM_IN_MAX_CHALLENGE_SZ (128)
 
-extern "C" void* nxwrap_create_verified_client(void **wrap);
-extern "C" void nxwrap_destroy_client(void *wrap);
-
 using namespace keymaster;
 
 typedef UniquePtr<keymaster2_device_t> Unique_keymaster_device_t;
 struct bcm_km {
-   void *nxwrap;
-   KeymasterTl_Handle handle;
+   NxWrap                  *nxwrap;
+   pthread_mutex_t          mtx;
+   KeymasterTl_Handle       handle;
    KeymasterTl_InitSettings is;
-   size_t maxFinishInput;
-   uint8_t *fbkCfg;
-   size_t fbkSize;
+   size_t                   maxFinishInput;
+   uint8_t                 *fbkCfg;
+   size_t                   fbkSize;
 };
 
 struct km_op_s {
@@ -182,10 +182,16 @@ static int km_close(
    keymaster2_device_t* km_dev = (keymaster2_device_t *)dev;
    struct bcm_km *km_hdl =(struct bcm_km *)km_dev->context;
    if (km_hdl != NULL) {
-      if (km_hdl->nxwrap)
-         nxwrap_destroy_client(km_hdl->nxwrap);
-      if (km_hdl->handle)
-         KeymasterTl_Uninit(km_hdl->handle);
+      if (km_hdl->nxwrap) {
+         km_hdl->nxwrap->leave();
+         delete km_hdl->nxwrap;
+      }
+      if (!pthread_mutex_lock(&km_hdl->mtx)) {
+         if (km_hdl->handle)
+            KeymasterTl_Uninit(km_hdl->handle);
+         pthread_mutex_unlock(&km_hdl->mtx);
+      }
+      pthread_mutex_destroy(&km_hdl->mtx);
       if (km_hdl->fbkCfg)
          free(km_hdl->fbkCfg);
       free(km_hdl);
@@ -426,7 +432,11 @@ static int km_init(struct bcm_km *km_hdl) {
 
    ALOGI_IF(KM_LOG_ALL_IN, "km_init: starting tl-side.");
    KeymasterTl_GetDefaultInitSettings(&km_hdl->is);
-   km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl error'ed out: %x (%u).", km_err, km_err);
       if (km_err == BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND) {
@@ -437,16 +447,20 @@ static int km_init(struct bcm_km *km_hdl) {
                    sizeof(km_hdl->is.drm_binfile_path));
             km_hdl->is.drm_binfile_buffer = km_hdl->fbkCfg;
             km_hdl->is.drm_binfile_size = km_hdl->fbkSize;
-            // will return BERR_SUCCESS if fallback succeeded.
-            km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
+            km_err = BERR_OS_ERROR;
+            if (!pthread_mutex_lock(&km_hdl->mtx)) {
+               // will return BERR_SUCCESS if fallback succeeded.
+               km_err = KeymasterTl_Init(&km_hdl->handle, &km_hdl->is);
+               pthread_mutex_unlock(&km_hdl->mtx);
+            }
          }
       }
       ALOGI_IF(KM_LOG_ALL_IN, "km_init: tl final: (%x) %u.", km_err, km_err);
-      property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
+      property_set(BCM_DYN_KM_STATE, (km_err == BERR_SUCCESS) ? "init" : "ended");
       return km_berr_2_interr(km_err);
    }
 
-   property_set("dyn.nx.km.state", (km_err == BERR_SUCCESS) ? "init" : "ended");
+   property_set(BCM_DYN_KM_STATE, (km_err == BERR_SUCCESS) ? "init" : "ended");
    return 0;
 }
 
@@ -502,7 +516,12 @@ static keymaster_error_t km_config(
       return km_berr_2_kmerr(km_err);
    }
    ALOGI_IF(KM_LOG_ALL_IN, "km_config: added tag: %u, value: %u", KM_TAG_OS_PATCHLEVEL, os_level);
-   km_err = KeymasterTl_Configure(km_hdl->handle, km_params);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_Configure(km_hdl->handle, km_params);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_config: failed configuration: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -543,7 +562,12 @@ static keymaster_error_t km_add_rng_entropy(
    }
    km_db.size = data_length;
    memcpy(km_db.buffer, data, km_db.size);
-   km_err = KeymasterTl_AddRngEntropy(km_hdl->handle, &km_db);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_AddRngEntropy(km_hdl->handle, &km_db);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    SRAI_Memory_Free(km_db.buffer);
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_add_rng_entropy: failed: %u (%d)",
@@ -648,7 +672,12 @@ static keymaster_error_t km_generate_key(
       KM_Tag_AddDate(km_params, SKM_TAG_CREATION_DATETIME, java_time(time(NULL)));
    }
    // generate.
-   km_err = KeymasterTl_GenerateKey(km_hdl->handle, km_params, &km_key);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_GenerateKey(km_hdl->handle, km_params, &km_key);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_generate_key: failed generating key, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -662,7 +691,11 @@ static keymaster_error_t km_generate_key(
    if (!key_blob->key_material) {
       KM_Tag_DeleteContext(km_params);
       if (km_key.buffer) {
-         (void)KeymasterTl_DeleteKey(km_hdl->handle, &km_key);
+         if (!pthread_mutex_lock(&km_hdl->mtx)) {
+            if (km_hdl->handle)
+               (void)KeymasterTl_DeleteKey(km_hdl->handle, &km_key);
+            pthread_mutex_unlock(&km_hdl->mtx);
+         }
          SRAI_Memory_Free(km_key.buffer);
       }
       ALOGE("km_generate_key: failed copying generated key");
@@ -676,7 +709,12 @@ static keymaster_error_t km_generate_key(
       km_characs.in_key_blob.buffer = km_key.buffer;
       km_characs.in_key_blob.size = km_key.size;
       km_characs.in_params = km_params;
-      km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+      km_err = BERR_OS_ERROR;
+      if (!pthread_mutex_lock(&km_hdl->mtx)) {
+         if (km_hdl->handle)
+            km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+         pthread_mutex_unlock(&km_hdl->mtx);
+      }
       if (km_err != BERR_SUCCESS) {
          ALOGE("km_generate_key: failed getting key characteristics, err: %u (%d)",
             km_err, km_berr_2_kmerr(km_err));
@@ -798,7 +836,12 @@ static keymaster_error_t km_get_key_characteristics(
       }
    }
    km_characs.in_params = km_params;
-   km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_get_key_characteristics: failed getting key characteristics, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -933,7 +976,12 @@ static keymaster_error_t km_import_key(
    km_import.in_key_format = (km_key_format_t)key_format;
    km_import.in_key_blob.buffer = (uint8_t *)key_data->data;
    km_import.in_key_blob.size = key_data->data_length;
-   km_err = KeymasterTl_ImportKey(km_hdl->handle, &km_import);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_ImportKey(km_hdl->handle, &km_import);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_import_key: failed importing, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -946,7 +994,11 @@ static keymaster_error_t km_import_key(
    if (!key_blob->key_material) {
       if (km_import.in_key_params) KM_Tag_DeleteContext(km_import.in_key_params);
       if (km_import.out_key_blob.buffer) {
-         (void)KeymasterTl_DeleteKey(km_hdl->handle, &km_import.out_key_blob);
+         if (!pthread_mutex_lock(&km_hdl->mtx)) {
+            if (km_hdl->handle)
+               (void)KeymasterTl_DeleteKey(km_hdl->handle, &km_import.out_key_blob);
+            pthread_mutex_unlock(&km_hdl->mtx);
+         }
          SRAI_Memory_Free(km_import.out_key_blob.buffer);
       }
       ALOGE("km_import_key: failed copying out key");
@@ -960,7 +1012,12 @@ static keymaster_error_t km_import_key(
       km_characs.in_key_blob.buffer = km_import.out_key_blob.buffer;
       km_characs.in_key_blob.size = km_import.out_key_blob.size;
       km_characs.in_params = km_import.in_key_params;
-      km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+      km_err = BERR_OS_ERROR;
+      if (!pthread_mutex_lock(&km_hdl->mtx)) {
+         if (km_hdl->handle)
+            km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+         pthread_mutex_unlock(&km_hdl->mtx);
+      }
       if (km_err != BERR_SUCCESS) {
          ALOGE("km_import_key: failed getting key characteristics, err: %u (%d)",
             km_err, km_berr_2_kmerr(km_err));
@@ -1084,7 +1141,12 @@ static keymaster_error_t km_export_key(
       }
    }
    km_export.in_params = km_params;
-   km_err = KeymasterTl_ExportKey(km_hdl->handle, &km_export);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_ExportKey(km_hdl->handle, &km_export);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_export_key: failed exporting, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1171,7 +1233,12 @@ static keymaster_error_t km_attest_key(
    km_attest.in_params = km_params;
    km_attest.in_key_blob.buffer = (uint8_t *)key_to_attest->key_material;
    km_attest.in_key_blob.size = key_to_attest->key_material_size;
-   km_err = KeymasterTl_AttestKey(km_hdl->handle, &km_attest);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_AttestKey(km_hdl->handle, &km_attest);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_attest_key: failed attestation, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1254,7 +1321,12 @@ static keymaster_error_t km_upgrade_key(
    KeymasterTl_DataBlock km_in_key, km_out_key;
    km_in_key.size = key_to_upgrade->key_material_size;
    km_in_key.buffer = (uint8_t *)key_to_upgrade->key_material;
-   km_err = KeymasterTl_UpgradeKey(km_hdl->handle, &km_in_key, km_params, &km_out_key);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_UpgradeKey(km_hdl->handle, &km_in_key, km_params, &km_out_key);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_upgrade_key: failed upgrade, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1297,7 +1369,12 @@ static keymaster_error_t km_delete_key(
    KeymasterTl_DataBlock km_key;
    km_key.size = key->key_material_size;
    km_key.buffer = (uint8_t *)key->key_material;
-   km_err = KeymasterTl_DeleteKey(km_hdl->handle, &km_key);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_DeleteKey(km_hdl->handle, &km_key);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_delete_key: failed deleting key, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1322,7 +1399,12 @@ static keymaster_error_t km_delete_all_keys(
    if (km_init_err) return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
 
    BERR_Code km_err;
-   km_err = KeymasterTl_DeleteAllKeys(km_hdl->handle);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_DeleteAllKeys(km_hdl->handle);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       ALOGE("km_delete_all_keys: failed deleting *all* keys, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
@@ -1412,7 +1494,12 @@ static keymaster_error_t km_begin(
       km_characs.in_key_blob.buffer = (uint8_t *)key->key_material;
       km_characs.in_key_blob.size = key->key_material_size;
       km_characs.in_params = km_params;
-      km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+      km_err = BERR_OS_ERROR;
+      if (!pthread_mutex_lock(&km_hdl->mtx)) {
+         if (km_hdl->handle)
+            km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
+         pthread_mutex_unlock(&km_hdl->mtx);
+      }
       if (km_err == BERR_SUCCESS) {
          km_tag_value_t* km_t = KM_Tag_FindFirst(km_characs.out_hw_enforced, SKM_TAG_KEY_SIZE);
          if (km_t) {
@@ -1437,7 +1524,12 @@ static keymaster_error_t km_begin(
    km_cbs.in_key_blob.size = key->key_material_size;
    km_cbs.in_key_blob.buffer = (uint8_t *)key->key_material;
    km_cbs.in_params = km_params;
-   km_err = KeymasterTl_CryptoBegin(km_hdl->handle, &km_cbs, &km_out_hdl);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_CryptoBegin(km_hdl->handle, &km_cbs, &km_out_hdl);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       km_ks_free(ks);
       km_bb_free(km_op);
@@ -1602,7 +1694,12 @@ static keymaster_error_t km_update(
       if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
       return KM_ERROR_MEMORY_ALLOCATION_FAILED;
    }
-   km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       km_bb_free(km_op);
@@ -1774,7 +1871,12 @@ static keymaster_error_t km_finish(
       }
       return final;
    }
-   km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_CryptoFinish(km_hdl->handle, km_op->op, &km_cfs);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       km_bb_free(km_op);
@@ -1872,7 +1974,12 @@ static keymaster_error_t km_abort(
    }
 
    BERR_Code km_err;
-   km_err = KeymasterTl_CryptoAbort(km_hdl->handle, km_op->op);
+   km_err = BERR_OS_ERROR;
+   if (!pthread_mutex_lock(&km_hdl->mtx)) {
+      if (km_hdl->handle)
+         km_err = KeymasterTl_CryptoAbort(km_hdl->handle, km_op->op);
+      pthread_mutex_unlock(&km_hdl->mtx);
+   }
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       free(km_op);
@@ -1886,6 +1993,28 @@ static keymaster_error_t km_abort(
    return KM_ERROR_OK;
 }
 
+static bool km_stdby(
+   void *context) {
+   struct bcm_km *km_hdl =(struct bcm_km *)context;
+
+   if (km_hdl == NULL)
+      return true;
+   if (pthread_mutex_lock(&km_hdl->mtx))
+      return true;
+   if (km_hdl->handle == NULL) {
+      pthread_mutex_unlock(&km_hdl->mtx);
+      return true;
+   }
+   nxwrap_pwr_state pwr_s;
+   bool pwr = nxwrap_get_pwr_info(&pwr_s, NULL);
+   if (pwr && (pwr_s > ePowerState_S2)) {
+      KeymasterTl_Uninit(km_hdl->handle);
+      km_hdl->handle = NULL;
+   }
+   pthread_mutex_unlock(&km_hdl->mtx);
+   return true;
+}
+
 static int km_open(
    const hw_module_t* module,
    const char* name,
@@ -1894,6 +2023,7 @@ static int km_open(
    char nexus[PROPERTY_VALUE_MAX];
    int c = 0;
    static int c_max = 20;
+   pthread_mutexattr_t mattr;
 
    if (strcmp(name, KEYSTORE_KEYMASTER) != 0)
       return -EINVAL;
@@ -1911,29 +2041,33 @@ static int km_open(
       return -ENOMEM;
    }
 
+   pthread_mutexattr_init(&mattr);
+   pthread_mutex_init(&km_hdl->mtx, &mattr);
+   pthread_mutexattr_destroy(&mattr);
    km_hdl->maxFinishInput = 2048;
 
    // busy loop wait for nexus readiness, without valid client, the
    // keymaster cannot function.
-   property_get("dyn.nx.state", nexus, "");
+   property_get(BCM_DYN_NX_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "loaded", strlen("loaded")))
          break;
       else {
          ALOGW("nexus not ready for keymaster, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.state", nexus, "");
+         property_get(BCM_DYN_NX_STATE, nexus, "");
       }
    }
-   void *nexus_client = nxwrap_create_verified_client(&km_hdl->nxwrap);
-   if (nexus_client == NULL) {
-      ALOGE("failed to alloc keymaster2 nexus client, aborting.");
+   km_hdl->nxwrap = new NxWrap("km3");
+   if (km_hdl->nxwrap == NULL) {
+      LOG_ALWAYS_FATAL("failed to alloc keymaster2 nexus client, aborting.");
       free(km_hdl);
       return -EINVAL;
    }
+   km_hdl->nxwrap->join_v(km_stdby, (void *)km_hdl);
    // busy loop wait for ssd readiness (rpmb), without rpmb, the
    // keymaster may not fully function, but should work to some degree.
-   property_get("dyn.nx.ssd.state", nexus, "");
+   property_get(BCM_DYN_SSD_STATE, nexus, "");
    while (1) {
       if (!strncmp(nexus, "init", strlen("init"))) {
          // all is well.
@@ -1947,7 +2081,7 @@ static int km_open(
          // something is wrong, ssd may not even be present.
          ALOGW("ssd not ready for keymaster, 0.25 second delay...");
          usleep(1000000/4);
-         property_get("dyn.nx.ssd.state", nexus, "");
+         property_get(BCM_DYN_SSD_STATE, nexus, "");
          c++;
          if (c > c_max) {
             ALOGE("keymaster timeout waiting for ssd service, proceed without.");

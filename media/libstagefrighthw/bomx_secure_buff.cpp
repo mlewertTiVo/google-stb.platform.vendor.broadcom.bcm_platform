@@ -68,8 +68,11 @@ NEXUS_Error BOMX_AllocSecureBuffer(size_t size, bool allocClearBuffer, NEXUS_Mem
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     hGlobalHeap = clientConfig.heap[NXCLIENT_FULL_HEAP];
     if (hGlobalHeap == NULL) {
-        ALOGE("%s: error accessing main heap", __FUNCTION__);
-        return NEXUS_OUT_OF_DEVICE_MEMORY;
+        hGlobalHeap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+        if (hGlobalHeap == NULL) {
+           ALOGE("%s: error accessing main heap", __FUNCTION__);
+           return NEXUS_OUT_OF_DEVICE_MEMORY;
+        }
     }
     hMemBlock = NEXUS_MemoryBlock_Allocate(hGlobalHeap, globalBuffSize, align, NULL);
     if (hMemBlock == NULL) {

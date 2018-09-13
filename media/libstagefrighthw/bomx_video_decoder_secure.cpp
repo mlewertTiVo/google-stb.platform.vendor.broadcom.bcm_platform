@@ -174,7 +174,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     }
 
     // VP9 can be disabled by this property
-    if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
+    if ( property_get_int32(BCM_RO_NX_TRIM_VP9, 0) )
     {
         ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
         goto error;

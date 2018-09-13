@@ -18,6 +18,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop \
     $(BSAGELIB_INCLUDES)
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))

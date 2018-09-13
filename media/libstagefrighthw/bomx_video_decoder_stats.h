@@ -52,6 +52,7 @@
 #include <utils/Vector.h>
 #include <utils/Timers.h>
 #include <cutils/properties.h>
+#include "vendor_bcm_props.h"
 
 #define BOMX_VIDEO_STATS_DEC BOMX_VD_Stats m_stats
 #define BOMX_VIDEO_STATS_ADD_EVENT(...) m_stats.addEventEntry(__VA_ARGS__)
@@ -59,11 +60,10 @@
 #define BOMX_VIDEO_STATS_PRINT_BASIC m_stats.printBasicStats()
 #define BOMX_VIDEO_STATS_PRINT_DETAILED m_stats.printDetailedStats()
 
-#define BOMX_VDEC_STATS_PROPERTY "ro.nx.media.vdec_stats.level"
 class BOMX_VD_Stats {
 public:
     BOMX_VD_Stats(): mStatsLevel(STATS_DISABLED) {
-        uint32_t level = (uint32_t)property_get_int32(BOMX_VDEC_STATS_PROPERTY, 0);
+        uint32_t level = (uint32_t)property_get_int32(BCM_RO_MEDIA_VDEC_STATS_PROPERTY, 0);
         if (level < STATS_LIMIT)
            mStatsLevel = (StatsLevel)level;
     }

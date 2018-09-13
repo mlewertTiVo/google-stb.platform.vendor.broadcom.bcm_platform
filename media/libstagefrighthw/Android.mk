@@ -150,7 +150,8 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION} \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \

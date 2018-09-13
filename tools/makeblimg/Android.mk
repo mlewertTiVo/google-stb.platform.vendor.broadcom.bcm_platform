@@ -16,6 +16,7 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 _bootloader.img := $(PRODUCT_OUT)/bootloader.img
+ifneq ($(BCM_DIST_BLIMG_BINS),y)
 $(_bootloader.img): build_bootloaderimg
 	echo "creating bootloader image";
 
@@ -26,6 +27,7 @@ $(_bootloader.dev.img): build_bootloaderimg
 _bootloader.prod.img := $(PRODUCT_OUT)/bootloader.prod.img
 $(_bootloader.prod.img): build_bootloaderimg
 	echo "creating bootloader (prod) image";
+endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := blimg

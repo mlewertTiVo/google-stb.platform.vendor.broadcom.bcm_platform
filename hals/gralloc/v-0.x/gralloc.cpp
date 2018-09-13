@@ -44,6 +44,8 @@
 #include "nx_ashmem.h"
 #include <inttypes.h>
 
+#include "vendor_bcm_props.h"
+
 static NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp);
 static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 
@@ -76,6 +78,9 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define DATA_PLANE_MAX_HEIGHT   2160
 #endif
 
+#define GR_RMLMK_DELAY          100 /* msecs */
+#define GR_RMLMK_RETRY          2   /* attempts */
+
 /* default alignment for gralloc buffers:
  *
  *      vc4 - 16 bytes alignment on surfaces, 4K alignment on textures (max).
@@ -84,10 +89,6 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define GRALLOC_MAX_BUFFER_ALIGNED  4096
 #define GRALLOC_MIN_BUFFER_ALIGNED  256
 
-#define NX_MMA_MGMT_MODE        "ro.nx.mma.mgmt_mode"
-#define NX_GR_LOG_MAP           "ro.nx.gr.log.map"
-#define NX_GR_CONV_TIME         "ro.nx.gr.conv.time"
-#define NX_GR_BOOM_CHK          "ro.nx.gr.boom.chk"
 #define NX_MMA_MGMT_MODE_DEF    "locked"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
@@ -100,16 +101,16 @@ static void gralloc_load_lib(void)
       ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
    }
 
-   if (property_get(NX_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
+   if (property_get(BCM_RO_GR_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
       gralloc_mgmt_mode = (strncmp(value, NX_MMA_MGMT_MODE_DEF, sizeof(NX_MMA_MGMT_MODE_DEF)) == 0) ?
          GR_MGMT_MODE_LOCKED : GR_MGMT_MODE_UNLOCKED;
    }
 
-   if (property_get(NX_GR_LOG_MAP, value, "0")) {
+   if (property_get(BCM_RO_GR_LOG_MAP, value, "0")) {
       gralloc_log_map = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-   if (property_get(NX_GR_CONV_TIME, value, "0")) {
+   if (property_get(BCM_RO_GR_CONV_TIME, value, "0")) {
       gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
@@ -119,7 +120,7 @@ static void gralloc_load_lib(void)
    gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
 #endif
 
-   if (property_get(NX_GR_BOOM_CHK, value, "0")) {
+   if (property_get(BCM_RO_GR_BOOM_CHK, value, "0")) {
       gralloc_boom_chk = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 }
@@ -655,7 +656,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       return -EINVAL;
    }
 
-   property_get("ro.nx.ashmem.devname", value, "nx_ashmem");
+   property_get(BCM_RO_NX_DEV_ASHMEM, value, "nx_ashmem");
    strcpy(value2, "/dev/");
    strcat(value2, value);
 
@@ -789,16 +790,23 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          if (ret >= 0) {
             memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
             ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
-            if (ret < 0) {
-               /* give another try after attempting a round of rmlmk, if
+            if ((ret >= 0) && !ashmem_getmem.hdl) {
+               /* give GR_RMLMK_RETRY after attempting a round of rmlmk, if
                 * rmlmk fails (e.g. not enough memory could be freed up),
                 * that's game over.
                 */
-               nxwrap_rmlmk(nxwrap);
-               BKNI_Sleep(5); /* give settling time for rmlmk. */
-               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+               int rmlmk_cnt = 0;
+               while (rmlmk_cnt < GR_RMLMK_RETRY) {
+                  nxwrap_rmlmk(nxwrap);
+                  BKNI_Sleep(GR_RMLMK_DELAY); /* give settling time for rmlmk. */
+                  ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+                  if ((ret >= 0) && ashmem_getmem.hdl) {
+                     break;
+                  }
+                  rmlmk_cnt++;
+               };
             }
-            if (ret < 0) {
+            if ((ret < 0) || ((ret >= 0) && !ashmem_getmem.hdl)) {
                err = -ENOMEM;
                goto alloc_failed;
             } else {

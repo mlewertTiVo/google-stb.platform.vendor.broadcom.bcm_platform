@@ -45,8 +45,8 @@
 #ifndef BOMX_LOG_H__
 #define BOMX_LOG_H__
 
+#include "vendor_bcm_props.h"
 
-#define B_PROPERTY_LOG_MASK     ("dyn.nx.media.log.mask")
 #define B_LOG_MASK_DEFAULT      (0)
 
 /* Video decoder (12-bit) (bit 0-11) */

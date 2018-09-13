@@ -77,7 +77,8 @@
 #include "nexus_bsp_config.h"
 #endif
 
-#define DHD_SECDMA_PROP                "ro.nx.dhd.secdma"
+#include "vendor_bcm_props.h"
+
 #define DHD_SECDMA_PARAMS_PATH         "/data/vendor/nexus/secdma"
 #define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
 
@@ -120,7 +121,7 @@ void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
 
     memset (value, 0, sizeof(value));
 
-    if (property_get(DHD_SECDMA_PROP, value, NULL)) {
+    if (property_get(BCM_RO_NX_DHD_SECDMA, value, NULL)) {
         /* wait for data (re)mount, trigger nexus authentication. */
         wait_for_data_available();
         sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);

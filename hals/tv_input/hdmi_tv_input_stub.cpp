@@ -23,6 +23,7 @@
 #include <log/log.h>
 #include <cutils/native_handle.h>
 #include <cutils/properties.h>
+#include "vendor_bcm_props.h"
 
 #include <hardware/tv_input.h>
 
@@ -139,7 +140,7 @@ static int tv_input_device_open(const struct hw_module_t* module,
 {
     ALOGV("%s", __FUNCTION__);
     int status = -EINVAL;
-    if (property_get_bool("ro.nx.trim.hdmiin", 1)) {
+    if (property_get_bool(BCM_RO_NX_TRIM_HDMIIN, 1)) {
         *device = NULL; // The feature is disabled (trimmed-out)
         status = 0;
     } else if (!strcmp(name, TV_INPUT_DEFAULT_DEVICE)) {

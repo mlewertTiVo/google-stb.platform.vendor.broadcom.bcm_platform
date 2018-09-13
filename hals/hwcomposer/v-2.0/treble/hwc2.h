@@ -16,6 +16,8 @@
 #ifndef HWC2_INCLUDED
 #define HWC2_INCLUDED
 
+#include "vendor_bcm_props.h"
+
 #define HWC2_LOGRET_ALWAYS  0
 #define HWC2_INBOUND_DBG    0
 #define HWC2_DUMP_CFG       1
@@ -26,7 +28,6 @@
  *
  * log masks: generic to hwc2 (all displays).
  */
-#define HWC2_LOG_GLB        "dyn.nx.hwc2.log.mask"
 #define LOG_AR_DEBUG        (1<<0)  /* layer add|removal. */
 #define LOG_Z_DEBUG         (1<<1)  /* z-based reordering of layer stack. */
 #define LOG_SEED_DEBUG      (1<<2)  /* seed background (internal). */
@@ -38,7 +39,6 @@
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
-#define HWC2_LOG_EXT        "dyn.nx.hwc2.log.ext.mask"
 #define LOG_FENCE_DEBUG     (1<<0)  /* fence add|signal. */
 #define LOG_RGBA_DEBUG      (1<<1)  /* rgba layer composition (i.e. device overlay). */
 #define LOG_COMP_DEBUG      (1<<2)  /* composition stack for all layers. */
@@ -49,7 +49,6 @@
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
-#define HWC2_LOG_VD         "dyn.nx.hwc2.log.vd.mask"
 
 
 typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
@@ -76,7 +75,6 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_MEMC_ROT   0 /* m2mc supports flip, but no 90-rot. */
 #define HWC2_OPQ        0xFF000000
 #define HWC2_TRS        0x00000000
-#define HWC2_MEMIF_DEV  "ro.nx.ashmem.devname"
 #define HWC2_PAH        1
 #define HWC2_PAH_DIV    2
 #define HWC2_SYNC_TO    3500 /* slightly more than android timeout. */
@@ -101,14 +99,6 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_VD_MAX_NUM 0
 #define HWC2_VD_MAX_SZ  2048
 #define HWC2_VD_GLES    1 /* vd uses gles only for now. */
-
-#define HWC2_EXT_GLES   "ro.nx.hwc2.ext.gles"
-#define HWC2_EXT_AFB_W  "ro.nx.hwc2.afb.w"
-#define HWC2_EXT_AFB_H  "ro.nx.hwc2.afb.h"
-#define HWC2_EXT_NFB_W  "ro.nx.hwc2.nfb.w"
-#define HWC2_EXT_NFB_H  "ro.nx.hwc2.nfb.h"
-#define HWC2_GFB_MAX_W  "ro.nx.hwc2.gfb.w"
-#define HWC2_GFB_MAX_H  "ro.nx.hwc2.gfb.h"
 
 #define HWC2_EOTF_HDR10 1
 #define HWC2_EOTF_HLG   2
@@ -135,11 +125,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
  *
  * <what> is: 0 (nothing), 1 (header), 2 (content), 3 (filter).
  */
-#define HWC2_DUMP_SET   "dyn.nx.hwc2.dump.data"
-#define HWC2_DUMP_NOW   "dyn.nx.hwc2.dump.this"
 #define HWC2_DUMP_LOC   "/data/nxmedia/hwc2"
-
-#define HWC2_VIDOUT_FMT "dyn.nx.vidout.hwc"
 
 /* callbacks into client registered on launch. */
 struct hwc2_reg_cb_t {
@@ -257,6 +243,8 @@ struct hwc2_vd_t {
 struct hwc2_fb_t {
    int                 fd;
    NEXUS_SurfaceHandle s;
+   uint32_t            ls;
+
 };
 
 /* composition mode. */

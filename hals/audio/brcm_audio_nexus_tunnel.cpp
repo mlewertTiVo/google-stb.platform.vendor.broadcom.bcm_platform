@@ -76,8 +76,6 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define NEXUS_OUT_SAMPLE_RATE_COUNT                     \
     (sizeof(nexus_out_sample_rates) / sizeof(uint32_t))
 
-#define BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG    "ro.nx.media.aout_t_pes_debug"
-
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 
 #define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
@@ -397,8 +395,8 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
                                 &codecSettings.codecSettings.ac3Plus;
 
             dolbySettings->enableAtmosProcessing = true;
-            if (property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS, false) ||
-                property_get_bool(BRCM_PROPERTY_AUDIO_DISABLE_ATMOS_PERSIST, false)) {
+            if (property_get_bool(BCM_RO_AUDIO_DISABLE_ATMOS, false) ||
+                property_get_bool(BCM_PERSIST_AUDIO_DISABLE_ATMOS, false)) {
                 dolbySettings->enableAtmosProcessing = false;
             }
 
@@ -1214,7 +1212,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
     bout->nexus.tunnel.pp_buffer_end = (uint8_t *)playpumpStatus.bufferBase + playpumpStatus.fifoDepth;
 
-    if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+    if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
        bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
     }
 
@@ -1227,7 +1225,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         goto err_pid;
     }
 
-    if (!property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+    if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
        ALOG_ASSERT(bout->nexus.tunnel.stc_channel != NULL);
        NEXUS_SimpleAudioDecoder_SetStcChannel(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel);
     }
@@ -1252,7 +1250,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
     av_header.reset();
 
-    if (property_get_int32(BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
+    if (property_get_int32(BCM_RO_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
         time_t rawtime;
         struct tm * timeinfo;
         char fname[100];
@@ -1459,8 +1457,11 @@ NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
     NEXUS_Platform_GetClientConfiguration(&client_config);
     global_heap = client_config.heap[NXCLIENT_FULL_HEAP];
     if (global_heap == NULL) {
-        ALOGE("%s: error accessing main heap", __FUNCTION__);
-        return NEXUS_OUT_OF_DEVICE_MEMORY;
+        global_heap = client_config.heap[NXCLIENT_DEFAULT_HEAP];
+        if (global_heap == NULL) {
+           ALOGE("%s: error accessing main heap", __FUNCTION__);
+           return NEXUS_OUT_OF_DEVICE_MEMORY;
+        }
     }
     mem_block_hdl = NEXUS_MemoryBlock_Allocate(global_heap, sizeof(stc_channel_st), 16, NULL);
     if (mem_block_hdl == NULL) {

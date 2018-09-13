@@ -57,17 +57,9 @@
 #include "nexus_base_mmap.h"
 #include <inttypes.h>
 #include "nx_ashmem.h"
+#include "vendor_bcm_props.h"
 
 #define BOMX_INPUT_MSG(x)
-
-// Runtime Properties (note: set selinux to permissive mode)
-#define B_PROPERTY_ITB_DESC_DEBUG ("ro.nx.media.venc_itb_desc_debug")
-#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.venc_input_debug")      // WARNING: Enabling this feature would save raw input to the
-                                                                    //      userdata partition. Make sure there is enough space for
-                                                                    //      storing the captures.
-#define B_PROPERTY_MEMBLK_ALLOC ("ro.nx.ashmem.devname")
-#define B_PROPERTY_ENC_MAX_WIDTH ("ro.nx.enc.max.width")
-#define B_PROPERTY_ENC_MAX_HEIGHT ("ro.nx.enc.max.height")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
@@ -239,7 +231,7 @@ static int BOMX_VideoEncoder_OpenMemoryInterface(void)
    memset(device, 0, sizeof(device));
    memset(name, 0, sizeof(name));
 
-   property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
+   property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
    if (strlen(device)) {
       strcpy(name, "/dev/");
       strcat(name, device);
@@ -3519,9 +3511,9 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
     connectSettings.simpleEncoder[0].video.cpuAccessible = true;
     connectSettings.simpleEncoder[0].encoderCapabilities.maxWidth =
-       property_get_int32(B_PROPERTY_ENC_MAX_WIDTH, B_DEFAULT_MAX_FRAME_WIDTH);
+       property_get_int32(BCM_RO_NX_ENC_RES_WIDTH, B_DEFAULT_MAX_FRAME_WIDTH);
     connectSettings.simpleEncoder[0].encoderCapabilities.maxHeight =
-       property_get_int32(B_PROPERTY_ENC_MAX_HEIGHT, B_DEFAULT_MAX_FRAME_HEIGHT);
+       property_get_int32(BCM_RO_NX_ENC_RES_HEIGHT, B_DEFAULT_MAX_FRAME_HEIGHT);
     rc = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( rc )
     {
@@ -3577,7 +3569,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     ALOGV("set STC channel");
 
     // Setup file to debug ITB descriptors if required
-    if ( property_get_int32(B_PROPERTY_ITB_DESC_DEBUG, 0) )
+    if ( property_get_int32(BCM_RO_MEDIA_ITB_DESC_DEBUG, 0) )
     {
         time_t rawtime;
         struct tm * timeinfo;
@@ -3600,7 +3592,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
         }
     }
     // Setup file to debug input frames if required
-    if ( property_get_int32(B_PROPERTY_INPUT_DEBUG, 0) )
+    if ( property_get_int32(BCM_RO_MEDIA_INPUT_DEBUG, 0) )
     {
         time_t rawtime;
         struct tm * timeinfo;
@@ -4229,7 +4221,11 @@ NEXUS_Error BOMX_VideoEncoder::AllocateInputBuffer(uint32_t nSize, void*& pBuffe
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     return NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
 }
 

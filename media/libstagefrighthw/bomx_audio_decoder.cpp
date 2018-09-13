@@ -59,20 +59,6 @@
 
 #define BOMX_INPUT_MSG(x)
 
-// Runtime Properties
-#define B_PROPERTY_PES_DEBUG ("ro.nx.media.adec_pes_debug")
-#define B_PROPERTY_INPUT_DEBUG ("ro.nx.media.adec_input_debug")
-#define B_PROPERTY_OUTPUT_DEBUG ("ro.nx.media.adec_output_debug")
-#define B_PROPERTY_MP3_DELAY ("ro.nx.media.adec_mp3_delay")
-#define B_PROPERTY_AAC_DELAY ("ro.nx.media.adec_aac_delay")
-#define B_PROPERTY_ADEC_ENABLED ("ro.nx.media.adec_enabled")
-#define B_PROPERTY_ADEC_DRC_MODE ("ro.nx.media.adec_drc_mode")           // Can be set to "rf" or "line"
-#define B_PROPERTY_ADEC_DRC_MODE_DD ("ro.nx.media.adec_drc_mode_dd")     // Can be set to "rf", "rf_23", "rf_24", or "line"
-#define B_PROPERTY_ADEC_DRC_REF_LEVEL ("ro.nx.media.adec_drc_ref_level") // Specified in -.25 dB units - e.g. 64 = -16dB.
-#define B_PROPERTY_ADEC_DRC_CUT ("ro.nx.media.adec_drc_cut")             // 0..127 where 127=maximum compression
-#define B_PROPERTY_ADEC_DRC_BOOST ("ro.nx.media.adec_drc_boost")         // 0..127 where 127=maximum compression
-#define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("ro.nx.media.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
-
 #define B_DRC_DEFAULT_MODE ("rf")
 #define B_DRC_DEFAULT_MODE_DD ("rf_23")
 #define B_DRC_DEFAULT_REF_LEVEL (92)    // -23dB - SW decoder targets -16dB with higher compression for mobile devices but this leaves enough headroom to avoid saturation
@@ -615,7 +601,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         return;
     }
 
-    if ( !property_get_int32(B_PROPERTY_ADEC_ENABLED, 1) )
+    if ( !property_get_int32(BCM_RO_MEDIA_ADEC_ENABLED, 1) )
     {
         ALOGD("ADEC Disabled");
         this->Invalidate(OMX_ErrorUndefined);
@@ -811,7 +797,11 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     errCode = NEXUS_Memory_Allocate(BOMX_AUDIO_EOS_LEN, &memorySettings, &m_pEosBuffer);
     if ( errCode )
     {
@@ -882,7 +872,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     // Set AAC DRC defaults
     NEXUS_AudioDecoderCodecSettings codecSettings;
     NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAacAdts, &codecSettings);
-    if ( property_get(B_PROPERTY_ADEC_DRC_MODE, property, B_DRC_DEFAULT_MODE) )
+    if ( property_get(BCM_RO_MEDIA_ADEC_DRC_MODE, property, B_DRC_DEFAULT_MODE) )
     {
         if ( !strcmp(property, "line") )
         {
@@ -893,10 +883,10 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
             codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eRf;
         }
     }
-    codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
-    codecSettings.codecSettings.aac.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
-    codecSettings.codecSettings.aac.drcTargetLevel = property_get_int32(B_PROPERTY_ADEC_DRC_REF_LEVEL, B_DRC_DEFAULT_REF_LEVEL);
-    temp = property_get_int32(B_PROPERTY_ADEC_DRC_ENC_LEVEL, B_DRC_DEFAULT_ENC_LEVEL);
+    codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.aac.boost = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    codecSettings.codecSettings.aac.drcTargetLevel = property_get_int32(BCM_RO_MEDIA_ADEC_DRC_REF_LEVEL, B_DRC_DEFAULT_REF_LEVEL);
+    temp = property_get_int32(BCM_RO_MEDIA_ADEC_DRC_ENC_LEVEL, B_DRC_DEFAULT_ENC_LEVEL);
     if ( temp >= 0 )
     {
         codecSettings.codecSettings.aac.drcDefaultLevel = temp;
@@ -915,7 +905,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     // Set AC3 DRC defaults
     NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAc3, &codecSettings);
-    if ( property_get(B_PROPERTY_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
+    if ( property_get(BCM_RO_MEDIA_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
     {
         if ( !strcmp(property, "line") )
         {
@@ -938,8 +928,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
             codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
         }
     }
-    codecSettings.codecSettings.ac3.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
-    codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    codecSettings.codecSettings.ac3.cut = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
 
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
@@ -950,7 +940,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     // Set AC3+ DRC defaults
     NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAc3Plus, &codecSettings);
-    if ( property_get(B_PROPERTY_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
+    if ( property_get(BCM_RO_MEDIA_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
     {
         if ( !strcmp(property, "line") )
         {
@@ -973,8 +963,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
             codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
         }
     }
-    codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
-    codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
 
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
@@ -1009,9 +999,9 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_pBcmaHeader[3] = 'A';
 
     int32_t pesDebug, inputDebug, outputDebug;
-    pesDebug = property_get_int32(B_PROPERTY_PES_DEBUG, 0);
-    inputDebug = property_get_int32(B_PROPERTY_INPUT_DEBUG, 0);
-    outputDebug = property_get_int32(B_PROPERTY_OUTPUT_DEBUG, 0);
+    pesDebug = property_get_int32(BCM_RO_MEDIA_ADEC_PES_DEBUG, 0);
+    inputDebug = property_get_int32(BCM_RO_MEDIA_ADEC_INPUT_DEBUG, 0);
+    outputDebug = property_get_int32(BCM_RO_MEDIA_ADEC_OUTPUT_DEBUG, 0);
     // Setup file to debug input, output or PES data packing if required
     if ( pesDebug || inputDebug || outputDebug )
     {
@@ -2608,7 +2598,11 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddInputPortBuffer(
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
 
     if ( NULL == ppBufferHdr )
     {
@@ -2724,7 +2718,9 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddOutputPortBuffer(
     }
     memset(pInfo, 0, sizeof(*pInfo));
     pInfo->pClientMemory = pBuffer;
-    pInfo->hMemoryBlock = NEXUS_MemoryBlock_Allocate(clientConfig.heap[1], nSizeBytes, 0, NULL);
+    pInfo->hMemoryBlock = NEXUS_MemoryBlock_Allocate(
+       !clientConfig.heap[NXCLIENT_FULL_HEAP] ? clientConfig.heap[NXCLIENT_DEFAULT_HEAP] : clientConfig.heap[NXCLIENT_FULL_HEAP],
+       nSizeBytes, 0, NULL);
     if ( NULL == pInfo->hMemoryBlock )
     {
         delete pInfo;
@@ -4033,6 +4029,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::ConfigBufferInit()
         NEXUS_Platform_GetClientConfiguration(&clientConfig);
         NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
         memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+        if (memorySettings.heap == NULL)
+        {
+           memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+        }
         errCode = NEXUS_Memory_Allocate(BOMX_AUDIO_CODEC_CONFIG_BUFFER_SIZE, &memorySettings, &m_pConfigBuffer);
         if ( errCode )
         {
@@ -4066,7 +4066,11 @@ NEXUS_Error BOMX_AudioDecoder::AllocateInputBuffer(uint32_t nSize, void*& pBuffe
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
     NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
+    memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+    if (memorySettings.heap == NULL)
+    {
+       memorySettings.heap = clientConfig.heap[NXCLIENT_DEFAULT_HEAP];
+    }
     return NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
 }
 
@@ -4112,9 +4116,9 @@ int BOMX_AudioDecoder::GetCodecDelay()
     switch ( (int)GetCodec() )
     {
     case OMX_AUDIO_CodingMP3:
-        return property_get_int32(B_PROPERTY_MP3_DELAY, 529);
+        return property_get_int32(BCM_RO_MEDIA_MP3_DELAY, 529);
     case OMX_AUDIO_CodingAAC:
-        return property_get_int32(B_PROPERTY_AAC_DELAY, 0); // Our HW AAC decoders do not add delay like the SW decoder does
+        return property_get_int32(BCM_RO_MEDIA_AAC_DELAY, 0); // Our HW AAC decoders do not add delay like the SW decoder does
     default:
         return 0;
     }

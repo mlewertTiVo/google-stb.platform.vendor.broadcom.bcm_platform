@@ -261,7 +261,7 @@ void brcm_audio_set_audio_clock_accuracy(void)
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
     int32_t value;
-    value = property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_CLOCK_ACCURACY, 0);
+    value = property_get_int32(BCM_RO_AUDIO_OUTPUT_CLOCK_ACCURACY, 0);
 
     ALOGV("nexus_nx_client %s:%d clock_acc=%d\n",__PRETTY_FUNCTION__,__LINE__,value);
 
@@ -550,8 +550,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->framesPlayedTotal = 0;
-    dolby_ms = property_get_int32(BRCM_PROPERTY_DOLBY_MS,0);
-    bout->latencyEstimate = (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_MIXER_LATENCY,
+    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
+    bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
                                                 ((dolby_ms == 11) || (dolby_ms == 12)) ?
                                                     NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
                              * bout->config.sample_rate) / 1000;

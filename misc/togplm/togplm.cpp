@@ -70,7 +70,8 @@
 #include "IHwc.h"
 #include "HwcSvc.h"
 
-#define PLM_TOG_MODE "dyn.nx.hwc2.tweak.plmoff"
+#include "vendor_bcm_props.h"
+
 #define PLM_TOG_DO   "dyn.nx.tog.plm"
 
 using namespace android;
@@ -155,11 +156,11 @@ int main(int argc, char* argv[])
    (void)argc;
    (void)argv;
 
-   plm = property_get_bool(PLM_TOG_MODE, 0);
+   plm = property_get_bool(BCM_DYN_HWC2_TWEAK_PLMOFF, 0);
    if (!plm) {
-      property_set(PLM_TOG_MODE, "1");
+      property_set(BCM_DYN_HWC2_TWEAK_PLMOFF, "1");
    } else {
-      property_set(PLM_TOG_MODE, "0");
+      property_set(BCM_DYN_HWC2_TWEAK_PLMOFF, "0");
    }
 
    property_set(PLM_TOG_DO, "done");
