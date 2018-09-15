@@ -1874,7 +1874,7 @@ NEXUS_Error BOMX_AudioDecoder::StartDecoder()
         NEXUS_AudioDecoder_GetDefaultStartSettings(&adecStartSettings);
         adecStartSettings.pidChannel = m_hPidChannel;
         adecStartSettings.codec = GetNexusCodec();
-        adecStartSettings.targetSyncEnabled = false;    // Make sure decoder will return all frames and not hold last one
+        adecStartSettings.targetSyncEnabled = NEXUS_AudioDecoderTargetSyncMode_eDisabledAfterLock;
         ALOGV("%d Start Decoder codec %u", m_instanceNum, adecStartSettings.codec);
         errCode = NEXUS_AudioDecoder_Start(m_hAudioDecoder, &adecStartSettings);
         if ( errCode )
