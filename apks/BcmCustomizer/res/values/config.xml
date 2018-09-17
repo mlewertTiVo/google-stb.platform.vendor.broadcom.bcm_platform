@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="has_linux_dvb_built_in_tuner">true</bool>
+</resources>
