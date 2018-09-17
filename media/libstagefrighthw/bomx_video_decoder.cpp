@@ -7506,10 +7506,16 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             {
                 if ( m_outputFlushing )
                 {
+                    BOMX_Buffer *pOmxBuffer = NULL;
                     ALOGW("Dropping outstanding frame %u still owned by client - flushing", pBuffer->frameStatus.serialNumber);
                     returnSettings[numFrames].recycle = true;
                     returnSettings[numFrames].display = false;
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
+                    pOmxBuffer = m_pVideoPorts[1]->FindBuffer(BOMX_BufferCompareFunction_Vdec2GrallocMapping, (void *)pBuffer);
+                    if (pOmxBuffer) {
+                      ALOGV("Removing omx-vdec association due to flush, omx:%p", pOmxBuffer);
+                      BOMX_BufferCompareFunction_Vdec2GrallocUnMapping(pOmxBuffer);
+                    }
                 }
                 else
                 {
