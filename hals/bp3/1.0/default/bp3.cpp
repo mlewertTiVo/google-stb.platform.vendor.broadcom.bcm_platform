@@ -34,7 +34,6 @@ extern bp3featuresStruct bp3_features[];
 #define FEATURE_BYTES 32
 static bitmapStruct bitmap[FEATURE_BYTES * 8];
 static const char *ipOwners[] = {"Unused", "Broadcom", "Dolby", "Rovi", "Technicolor", "DTS"};
-static const char *tzTaCustomers[] = {"", "Broadcom", "", "Novel-SuperTV"};
 static uint32_t features[GlobalSram_IPLicensing_Info_size];
 
 static struct {
@@ -182,16 +181,6 @@ Return<void> bp3::status(
    features[(uint32_t)Host] = (feats[(uint32_t)Sage] << 16) | (feats[(uint32_t)Host] & 0x0000FFFF);
    features[(uint32_t)TrustZone] = (feats[(uint32_t)TrustZone] & 0xFFFF0000) | (feats[(uint32_t)Host] >> 16);
    for (int i = 0; bp3_features[i].Name != NULL; i++) {
-      if (bp3_features[i].Bit == TZTA_CUSTOMER_ID && isOn(bp3_features[i].OwnerId, bp3_features[i].Bit - 4)) {
-         uint8_t v = 0;
-         for (int j = 0; j < 8; j++)
-            v |= isOn(bp3_features[i].OwnerId, bp3_features[i].Bit + j) ? 0 : (1 << j);
-         if (v < sizeof(tzTaCustomers))
-            STR_CONCAT("%s - %s %s\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name, tzTaCustomers[v]);
-         else
-            STR_CONCAT("%s - %s %d\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name, v);
-         continue;
-      }
       STR_CONCAT("%s - %s [%s]\n", ipOwners[bp3_features[i].OwnerId], bp3_features[i].Name,
              isOn(bp3_features[i].OwnerId, bp3_features[i].Bit) ? "Enabled" : "Disabled");
    }
