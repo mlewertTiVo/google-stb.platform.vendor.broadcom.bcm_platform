@@ -1452,6 +1452,8 @@ static keymaster_error_t km_begin(
       ALOGE("km_begin: failed allocating km_op");
       return KM_ERROR_UNEXPECTED_NULL_POINTER;
    }
+   memset(km_op, 0, sizeof(struct km_op_s));
+   ALOGI_IF(KM_LOG_ALL_IN, "km_begin: op-%p", km_op);
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
@@ -1620,6 +1622,8 @@ static keymaster_error_t km_update(
       return KM_ERROR_OUTPUT_PARAMETER_NULL;
    }
 
+   ALOGI_IF(KM_LOG_ALL_IN, "km_update: op-%p", km_op);
+
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
    if (km_init_err) {
@@ -1630,7 +1634,7 @@ static keymaster_error_t km_update(
    }
 
    // intercept cases which require buffering prior to final operation to hardware.
-   if (km_op->a == KM_ALGORITHM_HMAC) {
+   if (input->data_length && (km_op->a == KM_ALGORITHM_HMAC)) {
       if ( ((km_op->d == KM_DIGEST_SHA1) && (km_op->s/KM_KS_DIV == KM_KS_SHA1_DG)) ||
            ((km_op->d == KM_DIGEST_SHA_2_224) && (km_op->s/KM_KS_DIV == KM_KS_SHA224_DG)) ||
            ((km_op->d == KM_DIGEST_SHA_2_256) && (km_op->s/KM_KS_DIV == KM_KS_SHA256_DG)) ) {
@@ -1804,6 +1808,8 @@ static keymaster_error_t km_finish(
       free(km_op);
       return KM_ERROR_INVALID_INPUT_LENGTH;
    }
+
+   ALOGI_IF(KM_LOG_ALL_IN, "km_finish: op-%p", km_op);
 
    int km_init_err = km_init(km_hdl);
    // init failed on subsequent calls post km_config.
