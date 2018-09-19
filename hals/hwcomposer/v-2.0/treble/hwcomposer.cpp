@@ -1098,6 +1098,7 @@ static void *hwc2_recycle_task(
 static void *hwc2_vsync_task(
    void *argv) {
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)argv;
+   const long double ns2ms = 1.0/1000000.0;
 
    hwc2->vsync_exit = 0;
    do {
@@ -1108,13 +1109,21 @@ static void *hwc2_vsync_task(
          if (hwc2->ext->pmode != HWC2_POWER_MODE_OFF) {
             pthread_mutex_unlock(&hwc2->mtx_pwr);
             BKNI_WaitForEvent(hwc2->vsync, BKNI_INFINITE);
+            int64_t t = hwc2_tick();
+            bool r = false;
             if ((hwc2->ext->u.ext.vsync == HWC2_VSYNC_ENABLE) &&
                 (hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func != NULL)) {
                HWC2_PFN_VSYNC f_vsync = (HWC2_PFN_VSYNC) hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func;
                f_vsync(hwc2->regCb[HWC2_CALLBACK_VSYNC-1].data,
                        (hwc2_display_t)(intptr_t)hwc2->ext,
-                       hwc2_tick());
+                       t);
+               r = true; /* relayed to sf. */
             }
+            ALOGI_IF((hwc2->lm & LOG_VSYNC_DEBUG),
+               "[ext]:[%s] vsync %" PRId64 "::last %" PRId64 "::diff %.3Lf ms",
+               r?"sf":"hwc", t, hwc2->ext->u.ext.lvst,
+               (t>hwc2->ext->u.ext.lvst)?ns2ms*(t-hwc2->ext->u.ext.lvst):0.0);
+            hwc2->ext->u.ext.lvst = t;
          } else {
             pthread_mutex_unlock(&hwc2->mtx_pwr);
             BKNI_Sleep(16); /* pas beau. */
@@ -4954,6 +4963,7 @@ static int32_t hwc2_preDsp(
          }
       }
       if (!pthread_mutex_lock(&dsp->mtx_cmp_wl)) {
+         frame->tk_q = hwc2_tick();
          if (dsp->cmp_wl == NULL) {
             dsp->cmp_wl = frame;
          } else {
@@ -6043,8 +6053,13 @@ static void hwc2_ext_cmp_frame(
    enum hwc2_seeding_e ms = hwc2_seeding_none;
    uint32_t aw = 0;
    uint32_t ah = 0;
+   int64_t t;
+   const long double ns2ms = 1.0/1000000.0;
 
    /* setup (if needed) then grab a destination buffer for this frame. */
+   f->tk_f = hwc2_tick();
+   f->tk_w = 0;
+   f->tk_c = 0;
    if (hwc2->ext->u.ext.cbs) {
       enum hwc2_cbs_e wcb = hwc2->ext->u.ext.cb;
       if (wcb == cbs_e_none || wcb == cbs_e_nscfb) {
@@ -6058,6 +6073,7 @@ static void hwc2_ext_cmp_frame(
             dsp->pres, dsp->post, (wcb==cbs_e_bypass)?"bypass":"ncsfb");
    }
    fb = hwc2_ext_fb_get(hwc2);
+   f->tk_f = hwc2_tick() - f->tk_f;;
    d = fb != NULL ? fb->s : NULL;
    if (d == NULL) {
       for (i = 0; i < f->cnt; i++) {
@@ -6197,7 +6213,9 @@ static void hwc2_ext_cmp_frame(
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          } else if (f->ftgt >= 0) {
+            t = hwc2_tick();
             vl = sync_wait(f->ftgt, HWC2_SYNC_TO);
+            f->tk_w += hwc2_tick() - t;
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
@@ -6207,7 +6225,9 @@ static void hwc2_ext_cmp_frame(
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          } else if (lyr->af >= 0) {
+            t = hwc2_tick();
             vl = sync_wait(lyr->af, HWC2_SYNC_TO);
+            f->tk_w += hwc2_tick() - t;
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          }
@@ -6228,8 +6248,10 @@ static void hwc2_ext_cmp_frame(
                    ((!c && (color == HWC2_OPQ) && !f->scnt) /* background seeding. */
                  || (c && (color != HWC2_OPQ))) /* shading. */
                ) {
+               t = hwc2_tick();
                hwc2_fill_blend(hwc2, d, color, lyr->bm);
                hwc2_chkpt(hwc2);
+               f->tk_c += hwc2_tick() - t;
                /* [iv]. count of composed layers. */
                ms = hwc2_seeding_none;
                c++;
@@ -6353,11 +6375,13 @@ static void hwc2_ext_cmp_frame(
                ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
                      dsp->pres, dsp->post);
             } else {
+               t = hwc2_tick();
                if (yv12) {
                   blt = hwc2_blit_yv12(hwc2, fb, lyr, shared, dsp, &ms);
                } else {
                   blt = hwc2_blit_gpx(hwc2, fb, lyr, shared, dsp, &ms, c);
                }
+               f->tk_c += hwc2_tick() - t;
             }
             if (lrcp == NEXUS_SUCCESS) {
                hwc2_mem_unlock(hwc2, bhp);
@@ -6408,7 +6432,9 @@ static void hwc2_ext_cmp_frame(
             ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
                   dsp->pres, dsp->post);
          } else {
-             blt = hwc2_blit_gpx(hwc2, fb, lyr, shared, dsp, &ms, c);
+            t = hwc2_tick();
+            blt = hwc2_blit_gpx(hwc2, fb, lyr, shared, dsp, &ms, c);
+            f->tk_c += hwc2_tick() - t;
          }
          if (lrcp == NEXUS_SUCCESS) {
             hwc2_mem_unlock(hwc2, bhp);
@@ -6493,6 +6519,7 @@ static void hwc2_ext_cmp_frame(
          NEXUS_Surface_Flush(d);
          hwc2_dump_content(&dmp);
       }
+      t = hwc2_tick();
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
       if (nx) {
          dsp->u.ext.bg = HWC2_OPQ;
@@ -6501,9 +6528,11 @@ static void hwc2_ext_cmp_frame(
          ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
                dsp->pres, dsp->post, nx);
       } else {
-         ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
-                  "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
-                  dsp->pres, dsp->post, c, c>1?"s ":" ");
+         ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG) || HWC2_DUMP_CTICK,
+                  "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed, tslp:%.3Lf ms\n",
+                  dsp->pres, dsp->post, c, c>1?"s ":" ",
+                  (t>hwc2->ext->u.ext.lpst)?ns2ms*(t-hwc2->ext->u.ext.lpst):0.0);
+         hwc2->ext->u.ext.lpst = t;
       }
    } else {
       /* [v]. ... or re-queue if nothing took place. */
@@ -6516,6 +6545,18 @@ static void hwc2_ext_cmp_frame(
       hwc2_ret_inc(hwc2->ext, 1);
    }
    return;
+}
+
+static void hwc2_ext_tk(
+   struct hwc2_bcm_device_t* hwc2,
+   struct hwc2_frame_t *f) {
+   struct hwc2_dsp_t *dsp = hwc2->ext;
+   const long double ns2ms = 1.0/1000000.0;
+   int64_t t = hwc2_tick();
+   ALOGI_IF((dsp->lm & LOG_COMP_TICK_DEBUG) || HWC2_DUMP_CTICK,
+            "[ext]:[frame]:%" PRIu64 ":%" PRIu64 "::f:%.5Lf::w:%.5Lf::c:%.5Lf::sq:%.3Lf\n",
+            dsp->pres, dsp->post,
+            f->tk_f*ns2ms, f->tk_w*ns2ms, f->tk_c*ns2ms, (t-f->tk_q)*ns2ms);
 }
 
 static void *hwc2_ext_cmp(
@@ -6554,6 +6595,7 @@ static void *hwc2_ext_cmp(
             if (frame != NULL) {
                hwc2->ext->post++;
                hwc2_ext_cmp_frame(hwc2, frame);
+               hwc2_ext_tk(hwc2, frame);
                free(frame);
                frame = NULL;
             }

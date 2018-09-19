@@ -21,6 +21,7 @@
 #define HWC2_LOGRET_ALWAYS  0
 #define HWC2_INBOUND_DBG    0
 #define HWC2_DUMP_CFG       1
+#define HWC2_DUMP_CTICK     0
 /* log usage: runtime enable via setting the property and causing a
  *            dumpsys SurfaceFlinger to trigger log mask evaluation.
  *            for each wanted category, issue a 'setprop <name> <value>'
@@ -36,6 +37,7 @@
 #define LOG_GLOB_COMP_DEBUG (1<<5)  /* global composition information. */
 #define LOG_OFFLD_DEBUG     (1<<6)  /* offloading to gles information. */
 #define LOG_CFGS_DEBUG      (1<<7)  /* display configuration information. */
+#define LOG_VSYNC_DEBUG     (1<<8)  /* vsync from compositor to sf (ext only). */
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
@@ -46,6 +48,7 @@
 #define LOG_SDB_DEBUG       (1<<4)  /* sideband layer composition (location). */
 #define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
 #define LOG_ICB_DEBUG       (1<<6)  /* use of intermediate composition buffer for blit ops. */
+#define LOG_COMP_TICK_DEBUG (1<<7)  /* timekeeper information during frame composition. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
@@ -218,6 +221,11 @@ struct hwc2_frame_t {
    buffer_handle_t     otgt;  /* target output buffer for frame composition. */
    int32_t             oftgt;  /* target output buffer fence waiter. */
 
+   int64_t             tk_q; /* timekeeper - queued frame timestamp. */
+   int64_t             tk_w; /* timekeeper - fence|wait delay(s). */
+   int64_t             tk_c; /* timekeeper - composition delay(s). */
+   int64_t             tk_f; /* timekeeper - framebuffer pending delay. */
+
    int32_t             cnt;
    int32_t             scnt;
    int32_t             vcnt;
@@ -283,6 +291,8 @@ struct hwc2_ext_t {
    bool                                gles;
    struct hwc2_fb_t                    yvi;
    struct hwc2_fb_t                    icb;
+   int64_t                             lvst;
+   int64_t                             lpst;
 };
 
 enum hwc2_record_dump_e {
