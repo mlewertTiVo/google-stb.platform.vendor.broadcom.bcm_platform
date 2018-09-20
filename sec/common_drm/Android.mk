@@ -166,8 +166,8 @@ endif
 ifeq (${DTCP_IP_SAGE},OFF)
 else
 include $(LOCAL_PATH)/drm_tl/dtcp_ip/dtcp_ip.inc
-COMMON_DRM_TL_SOURCES += ${DTCP_IP_SOURCES}
-COMMON_DRM_TL_DEFINES += ${DTCP_IP_DEFINES}
+COMMON_DRM_TL_SOURCES += ${DTCP_IP_TL_SOURCES}
+COMMON_DRM_TL_DEFINES += ${DTCP_IP_TL_DEFINES}
 endif
 
 #################### NETFLIX ################################
