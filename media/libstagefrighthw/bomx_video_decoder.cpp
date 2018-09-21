@@ -4071,6 +4071,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 }
             }
             ReturnPortBuffers(m_pVideoPorts[1]);
+            RemoveAllVdecOmxAssociation();
         }
     }
 
@@ -6775,6 +6776,41 @@ out:
    return pOmxBuffer;
 }
 
+void BOMX_VideoDecoder::RemoveAllVdecOmxAssociation()
+{
+    BOMX_VideoDecoderFrameBuffer *pBuffer;
+    BOMX_Buffer *pOmxBuffer;
+
+    if ( (m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata)
+         || m_secureDecoder || m_secureRuntimeHeaps )
+    {
+        // No association to remove
+        return;
+    }
+
+    for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
+          NULL != pBuffer; pBuffer = BLST_Q_NEXT(pBuffer, node) )
+    {
+        pOmxBuffer = m_pVideoPorts[1]->FindBuffer(BOMX_BufferCompareFunction_Vdec2GrallocMapping, (void *)pBuffer);
+        if (pOmxBuffer && pOmxBuffer->GetComponentPrivate())
+        {
+            ALOGV("Alloc list: removing omx-vdec association, buff:%p", pOmxBuffer);
+            BOMX_BufferCompareFunction_Vdec2GrallocUnMapping(pOmxBuffer);
+        }
+    }
+
+    for ( pBuffer = BLST_Q_FIRST(&m_frameBufferFreeList);
+          NULL != pBuffer; pBuffer = BLST_Q_NEXT(pBuffer, node) )
+    {
+        pOmxBuffer = m_pVideoPorts[1]->FindBuffer(BOMX_BufferCompareFunction_Vdec2GrallocMapping, (void *)pBuffer);
+        if (pOmxBuffer && pOmxBuffer->GetComponentPrivate())
+        {
+            ALOGV("Free list: removing omx-vdec association, buff:%p", pOmxBuffer);
+            BOMX_BufferCompareFunction_Vdec2GrallocUnMapping(pOmxBuffer);
+        }
+    }
+}
+
 void BOMX_VideoDecoder::PollDecodedFrames()
 {
     NEXUS_VideoDecoderFrameStatus frameStatus[B_MAX_DECODED_FRAMES], *pFrameStatus;
@@ -7506,16 +7542,10 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             {
                 if ( m_outputFlushing )
                 {
-                    BOMX_Buffer *pOmxBuffer = NULL;
                     ALOGW("Dropping outstanding frame %u still owned by client - flushing", pBuffer->frameStatus.serialNumber);
                     returnSettings[numFrames].recycle = true;
                     returnSettings[numFrames].display = false;
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
-                    pOmxBuffer = m_pVideoPorts[1]->FindBuffer(BOMX_BufferCompareFunction_Vdec2GrallocMapping, (void *)pBuffer);
-                    if (pOmxBuffer) {
-                      ALOGV("Removing omx-vdec association due to flush, omx:%p", pOmxBuffer);
-                      BOMX_BufferCompareFunction_Vdec2GrallocUnMapping(pOmxBuffer);
-                    }
                 }
                 else
                 {
@@ -7877,6 +7907,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     NEXUS_FlushCache(m_pConfigBuffer, m_configBufferSize);
     return OMX_ErrorNone;
 }
+
 
 BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_t *pPrivateHandle)
 {
