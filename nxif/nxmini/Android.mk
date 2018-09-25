@@ -40,10 +40,14 @@ LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxmini.cpp
+ifneq ($(HW_ENCODER_RECOVERY_OVERRIDE),)
+LOCAL_SRC_FILES += $(HW_ENCODER_RECOVERY_OVERRIDE)
+else
 ifneq ($(HW_ENCODER_SUPPORT),n)
 LOCAL_SRC_FILES += nxmini_with_encoder.cpp
 else
 LOCAL_SRC_FILES += nxmini_stub_encoder.cpp
+endif
 endif
 ifneq ($(HW_DTU_SUPPORT),n)
 LOCAL_SRC_FILES += nxmini_with_dtu.cpp
