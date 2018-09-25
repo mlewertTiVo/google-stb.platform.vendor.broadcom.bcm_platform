@@ -124,6 +124,7 @@
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define BCM_RO_NX_TRIM_VC1                            "ro.nx.trim.vc1"
 #define BCM_RO_NX_TRIM_PIP                            "ro.nx.trim.pip"
+#define BCM_RO_NX_TRIM_PIP_QR                         "ro.nx.trim.pip.qr"
 #define BCM_RO_NX_TRIM_MOSAIC                         "ro.nx.trim.mosaic"
 #define BCM_RO_NX_TRIM_STILLS                         "ro.nx.trim.stills"
 #define BCM_RO_NX_TRIM_MINFMT                         "ro.nx.trim.minfmt"

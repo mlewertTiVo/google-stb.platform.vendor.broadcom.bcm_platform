@@ -856,6 +856,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->display[0].window[1].used = false;
          } else {
             pip = true;
+            /* 8.1. pip limited to 1/4 screen? */
+            if (property_get_bool(BCM_RO_NX_TRIM_PIP_QR,0)) {
+               pMemConfigSettings->display[0].window[1].sizeLimit =
+                  NEXUS_VideoWindowSizeLimit_eQuarter;
+            }
          }
       }
    }
