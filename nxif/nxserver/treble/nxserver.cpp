@@ -1075,9 +1075,15 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = (property_get_int32(BCM_RO_NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
     /* -enablePassthroughBuffer */
     settings.audioDecoder.enablePassthroughBuffer = true;
-    if (settings.session[0].audioPlaybacks > 0) {
+    ix = property_get_int32(BCM_RO_NX_AP_NUM, settings.session[0].audioPlaybacks);
+    if ((ix > 0) && (ix < (int)settings.session[0].audioPlaybacks)) {
+       settings.session[0].audioPlaybacks = (unsigned)ix;
+    }
+    if (settings.session[0].audioPlaybacks > 1) {
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
+    } else {
+       /* problem? TBD. */
     }
     memset(value, 0, sizeof(value));
     if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NULL)) {
