@@ -69,6 +69,8 @@ void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettin
 {
    int i;
 
+   if (!pMemConfigSettings) return;
+
    /* *** HARDCODE *** request no encoder. */
    for (i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
       pMemConfigSettings->videoEncoder[i].used = false;
