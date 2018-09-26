@@ -1079,6 +1079,12 @@ static nxserver_t init_nxserver(void)
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
     }
+    memset(value, 0, sizeof(value));
+    if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NULL)) {
+       if (strlen(value)) {
+          settings.audioPlayback.fifoSize = calc_heap_size(value);
+       }
+    }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
     if (cvbs) {
