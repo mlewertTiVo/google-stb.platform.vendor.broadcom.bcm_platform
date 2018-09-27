@@ -33,13 +33,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libhdmiext \
                           libhdmicec \
                           libnxwrap
-
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += libnxbinder \
-                          libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
@@ -52,12 +46,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/av/media/libstagefright/foundation/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -67,13 +56,7 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nexus_power.cpp
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-LOCAL_SRC_FILES += treble/power.cpp
-else
-LOCAL_SRC_FILES += legacy/power.cpp
-endif
-
+LOCAL_SRC_FILES += power.cpp
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES

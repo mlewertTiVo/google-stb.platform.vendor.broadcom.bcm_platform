@@ -38,14 +38,11 @@
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 
-#include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
-
 #undef  LOG_TAG
 #define LOG_TAG "PmLibService"
 #include <utils/Log.h>
 
-#include "legacy/PmLibService.h"
+#include "PmLibService.h"
 
 #include "nexus_platform_features.h"
 
@@ -107,13 +104,7 @@ PmLibService::~PmLibService()
     mPmCtx = NULL;
 }
 
-void PmLibService::instantiate()
-{
-    ALOGV("%s", __func__);
-    defaultServiceManager()->addService(IPmLibService::descriptor, new PmLibService());
-}
-
-status_t PmLibService::setState(pmlib_state_t *state)
+status_t PmLibService::setState(struct pmlib_state_t *state)
 {
     status_t ret = OK;
     struct brcm_pm_state pmState;    
@@ -189,7 +180,7 @@ status_t PmLibService::setState(pmlib_state_t *state)
     return ret;
 }
 
-status_t PmLibService::getState(pmlib_state_t *state)
+status_t PmLibService::getState(struct pmlib_state_t *state)
 {
     Mutex::Autolock autoLock(mLock);
 

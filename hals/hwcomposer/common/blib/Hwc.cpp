@@ -635,8 +635,6 @@ status_t Hwc::onTransact( uint32_t code, const Parcel& data, Parcel* reply, uint
 
 void Hwc::instantiate()
 {
-#if defined(BCM_FULL_TREBLE)
     ProcessState::initWithDriver("/dev/vndbinder");
-#endif
     defaultServiceManager()->addService(String16("broadcom.hwc"), new Hwc());
 }

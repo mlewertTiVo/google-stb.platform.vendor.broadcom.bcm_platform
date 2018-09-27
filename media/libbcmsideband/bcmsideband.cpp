@@ -1,5 +1,5 @@
 /******************************************************************************
- * (c) 2017 Broadcom
+ * (c) 2018 Broadcom
  *
  * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -40,194 +40,161 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "libbcmsideband"
 
-#include <utils/Log.h>
+#include <log/log.h>
+#include <utils/Mutex.h>
 #include <system/window.h>
-#include <android/native_window_jni.h>
-#include <nxwrap.h>
+#include <cutils/native_handle.h>
+#include <android/native_window.h>
+#include <bcm/hardware/dspsvcext/1.0/IDspSvcExt.h>
 
 #include "bcmsideband.h"
-#include "bcmsideband_hwcbinder.h"
 
 using namespace android;
+using namespace android::hardware;
+using namespace bcm::hardware::dspsvcext::V1_0;
+
+Mutex lock;
+#define ATTEMPT_PAUSE_USEC 500000
+#define MAX_ATTEMPT_COUNT  4
+static const sp<IDspSvcExt> idse(void) {
+   static sp<IDspSvcExt> idse = NULL;
+   Mutex::Autolock _l(lock);
+   int c = 0;
+
+   if (idse != NULL) {
+      return idse;
+   }
+
+   do {
+      idse = IDspSvcExt::getService();
+      if (idse != NULL) {
+         return idse;
+      }
+      usleep(ATTEMPT_PAUSE_USEC);
+      c++;
+   }
+   while(c < MAX_ATTEMPT_COUNT);
+   // can't get interface.
+   return NULL;
+}
+
+class SdbGeomCb : public IDspSvcExtSdbGeomCb {
+public:
+   SdbGeomCb(sb_geometry_cb cb, void *cb_data): geom_cb(cb), geom_ctx(cb_data) {};
+   sb_geometry_cb geom_cb;
+   void *geom_ctx;
+   Return<void> onGeom(int32_t i, const DspSvcExtGeom& geom);
+};
+static sp<SdbGeomCb> gSdbGeomCb = NULL;
 
 struct bcmsideband_ctx {
-    NxWrap *nx_wrap;
-    uint64_t nexus_client;
-    ANativeWindow *native_window;
-    native_handle_t *native_handle;
-    BcmSidebandBinder_wrap *bcmSidebandHwcBinder;
-    sb_geometry_cb geometry_cb;
-    void *geometry_cb_ctx;
-    int surfaceClientId;
+   ANativeWindow *native_window;
+   native_handle_t *native_handle;
+   int32_t surface;
+   int32_t index;
+   void *caller;
 };
 
-void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
-{
-   ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
-
-   if (cb)
-      cb(cb_data, msg, ntfy);
+Return<void> SdbGeomCb::onGeom(int32_t i, const DspSvcExtGeom& geom) {
+   if (geom_cb) {
+      struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)geom_ctx;
+      if (i != ctx->index) {
+         ALOGW("SdbGeomCb::onGeom(%d), but registered for %d", i, ctx->index);
+      } else {
+         geom_cb(ctx->caller, geom.geom_x, geom.geom_y, geom.geom_w, geom.geom_h);
+      }
+   }
+   return Void();
 }
 
-static void BcmSidebandBinderNotify(void *cb_data, int msg, struct hwc_notification_info &ntfy)
-{
-    struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)cb_data;
+struct bcmsideband_ctx * libbcmsideband_init_sideband(
+   int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+   ANativeWindow *native_window,
+   sb_geometry_cb cb) {
 
-    switch (msg)
-    {
-    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
-    {
-       NEXUS_Rect position, clip;
-       position.x = ntfy.frame.x;
-       position.y = ntfy.frame.y;
-       position.width = ntfy.frame.w;
-       position.height = ntfy.frame.h;
-       clip.x = ntfy.clipped.x;
-       clip.y = ntfy.clipped.y;
-       clip.width = ntfy.clipped.w;
-       clip.height = ntfy.clipped.h;
-       if (ctx->geometry_cb)
-          (*ctx->geometry_cb)(ctx->geometry_cb_ctx, position.x, position.y, position.width, position.height);
-       ALOGE("%s: frame:{%d,%d,%d,%d}, clipped:{%d,%d,%d,%d}, display:{%d,%d}, zorder:%d", __FUNCTION__,
-             position.x, position.y, position.width, position.height,
-             clip.x, clip.y, clip.width, clip.height,
-             ntfy.display_width, ntfy.display_height, ntfy.zorder);
-    }
-    break;
+   struct bcmsideband_ctx *ctx;
+   ctx = (struct bcmsideband_ctx *)malloc(sizeof (*ctx));
+   if (!ctx) {
+      ALOGE("failed to get allocate sideband context");
+      return NULL;
+   }
 
-    default:
-        break;
-    }
+   if (idse() != NULL) {
+      gSdbGeomCb = new SdbGeomCb(cb, ctx);
+      ctx->index = index;
+      ctx->surface = idse()->regSdbCb(index, NULL);
+      ctx->surface = idse()->regSdbCb(index, gSdbGeomCb);
+   } else {
+      ALOGE("failed to get dspsvcext service");
+      free(ctx);
+      return NULL;
+   }
+
+   native_handle_t *native_handle = native_handle_create(0, 2);
+   if (!native_handle) {
+      gSdbGeomCb = NULL;
+      free(ctx);
+      ALOGE("failed to allocate native handle");
+      return NULL;
+   }
+   native_handle->data[0] = 1;
+   native_handle->data[1] = ctx->surface;
+   native_window_set_sideband_stream(native_window, native_handle);
+   ctx->native_window = native_window;
+   ctx->native_handle = native_handle;
+   return ctx;
 }
 
-struct bcmsideband_ctx * libbcmsideband_init_sideband(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
-    ANativeWindow *native_window, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
-    sb_geometry_cb cb)
-{
-    struct bcmsideband_ctx *ctx;
+/* Only used in HDMI TV input Hal */
+struct bcmsideband_ctx *libbcmsideband_init_sideband_tif(
+   int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+   native_handle_t **p_native_handle,
+   sb_geometry_cb cb,
+   void *cb_ctx) {
 
-    ctx = (struct bcmsideband_ctx *)malloc(sizeof (*ctx));
-    if (!ctx)
-        return NULL;
+   struct bcmsideband_ctx *ctx;
+   ctx = (struct bcmsideband_ctx *)malloc(sizeof (*ctx));
+   if (!ctx) {
+      ALOGE("failed to get allocate sideband context");
+      return NULL;
+   }
+   ctx->caller = cb_ctx;
 
-    NxWrap *pNxWrap = new NxWrap("bcmsideband");
-    if (pNxWrap == NULL) {
-        free(ctx);
-        ALOGE("cannot create NxWrap!");
-        return NULL;
-    }
-    pNxWrap->join();
+   if (idse() != NULL) {
+      gSdbGeomCb = new SdbGeomCb(cb, ctx);
+      ctx->index = index;
+      ctx->surface = idse()->regSdbCb(index, NULL);
+      ctx->surface = idse()->regSdbCb(index, gSdbGeomCb);
+   } else {
+      ALOGE("failed to get dspsvcext service");
+      free(ctx);
+      return NULL;
+   }
 
-    // connect to the HWC binder.
-    ctx->bcmSidebandHwcBinder = new BcmSidebandBinder_wrap;
-    if ( NULL == ctx->bcmSidebandHwcBinder )
-    {
-        ALOGE("Unable to connect to HwcBinder");
-        return NULL;
-    }
-    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
-    ctx->bcmSidebandHwcBinder->getsideband(index, ctx->surfaceClientId);
-
-    uint64_t nexus_client = pNxWrap->client();
-    if (!nexus_client) {
-        pNxWrap->leave();
-        delete pNxWrap;
-        free(ctx);
-        ALOGE("createClientContext failed");
-        return NULL;
-    }
-
-    native_handle_t *native_handle = native_handle_create(0, 2);
-    if (!native_handle) {
-        pNxWrap->leave();
-        delete pNxWrap;
-        free(ctx);
-
-        ALOGE("failed to allocate native handle");
-        return NULL;
-    }
-
-    native_handle->data[0] = 2;
-    native_handle->data[1] = ctx->surfaceClientId;
-    native_window_set_sideband_stream(native_window, native_handle);
-
-    ctx->native_window = native_window;
-    ctx->native_handle = native_handle;
-    ctx->nx_wrap = pNxWrap;
-    ctx->nexus_client = nexus_client;
-    ctx->geometry_cb = cb;
-    ctx->geometry_cb_ctx = NULL;
-    return ctx;
-}
-
-struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
-    native_handle_t **p_native_handle, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
-    sb_geometry_cb cb, void *cb_ctx)
-{
-    struct bcmsideband_ctx *ctx;
-
-    ctx = (struct bcmsideband_ctx *)malloc(sizeof (*ctx));
-    if (!ctx)
-        return NULL;
-
-    NxWrap *pNxWrap = new NxWrap("bcmsideband");
-    if (pNxWrap == NULL) {
-        free(ctx);
-        ALOGE("cannot create NxWrap!");
-        return NULL;
-    }
-    pNxWrap->join();
-
-    // connect to the HWC binder.
-    ctx->bcmSidebandHwcBinder = new BcmSidebandBinder_wrap;
-    if ( NULL == ctx->bcmSidebandHwcBinder )
-    {
-        ALOGE("Unable to connect to HwcBinder");
-        return NULL;
-    }
-    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
-    ctx->bcmSidebandHwcBinder->getsideband(index, ctx->surfaceClientId);
-
-    uint64_t nexus_client = pNxWrap->client();
-    if (!nexus_client) {
-        pNxWrap->leave();
-        delete pNxWrap;
-        free(ctx);
-        ALOGE("createClientContext failed");
-        return NULL;
-    }
-
-    native_handle_t *native_handle = native_handle_create(0, 2);
-    if (!native_handle) {
-        pNxWrap->leave();
-        delete pNxWrap;
-        free(ctx);
-
-        ALOGE("failed to allocate native handle");
-        return NULL;
-    }
-
-    native_handle->data[0] = 2;
-    native_handle->data[1] = ctx->surfaceClientId;
-
-    ctx->native_window = NULL;
-    ctx->native_handle = native_handle;
-    ctx->nx_wrap = pNxWrap;
-    ctx->nexus_client = nexus_client;
-    ctx->geometry_cb = cb;
-    ctx->geometry_cb_ctx = cb_ctx;
-    *p_native_handle = native_handle;
-    return ctx;
+   native_handle_t *native_handle = native_handle_create(0, 2);
+   if (!native_handle) {
+      gSdbGeomCb = NULL;
+      free(ctx);
+      ALOGE("failed to allocate native handle");
+      return NULL;
+   }
+   native_handle->data[0] = 1;
+   native_handle->data[1] = ctx->surface;
+   ctx->native_handle = native_handle;
+   *p_native_handle = native_handle;
+   return ctx;
 }
 
 void libbcmsideband_release(struct bcmsideband_ctx *ctx)
 {
-    if (ctx->native_window)
+    ALOGD("> %s()",__FUNCTION__);
+    if (ctx && ctx->native_window)
+    {
         native_window_set_sideband_stream(ctx->native_window, NULL);
-    native_handle_delete(ctx->native_handle);
-    ctx->nx_wrap->leave();
-    delete ctx->nx_wrap;
-    if (ctx->bcmSidebandHwcBinder)
-        delete ctx->bcmSidebandHwcBinder;
-    free(ctx);
+        native_handle_delete(ctx->native_handle);
+        free(ctx);
+    }
+
+    gSdbGeomCb = NULL;
+    ALOGD("< %s()",__FUNCTION__);
 }

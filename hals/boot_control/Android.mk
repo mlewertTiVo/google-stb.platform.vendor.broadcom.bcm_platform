@@ -31,24 +31,14 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libnxwrap
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += libnxbinder
-LOCAL_SHARED_LIBRARIES += libnxevtsrc
-endif
 LOCAL_STATIC_LIBRARIES := libfstab
 LOCAL_C_INCLUDES := system/core/fs_mgr/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
                     $(NXCLIENT_INCLUDES)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/system/core/fs_mgr/include_fstab
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
@@ -56,9 +46,6 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_HEADER_LIBRARIES := liblog_headers
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-endif
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-bootc\"
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_SRC_FILES := boot_control.cpp

@@ -33,13 +33,7 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           libnxwrap \
                           libnxclient \
                           libdl
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += libhwbinder
-else
-LOCAL_SHARED_LIBRARIES += libbinder \
-                          libnxbinder \
-                          libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 ifeq ($(V3D_VARIANT),)

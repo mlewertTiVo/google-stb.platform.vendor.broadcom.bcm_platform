@@ -30,9 +30,7 @@ RELEASE_PREBUILTS := release_prebuilts/user
 else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
-endif
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
@@ -93,16 +91,9 @@ LOCAL_C_INCLUDES := \
     ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
     $(NXCLIENT_INCLUDES)
 
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 LOCAL_C_INCLUDES += \
     ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
     ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
-else
-LOCAL_C_INCLUDES += \
-    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-    ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
@@ -119,11 +110,7 @@ LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 LOCAL_SHARED_LIBRARIES += libnxwrap
 
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += libnxbinder libnxevtsrc
-endif
 
 include $(BUILD_SHARED_LIBRARY)
 endif

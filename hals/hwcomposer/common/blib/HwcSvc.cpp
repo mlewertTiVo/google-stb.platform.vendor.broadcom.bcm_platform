@@ -41,11 +41,7 @@ uint32_t attempt_count = 0;
 const sp<IHwc>& get_hwc(bool retry)
 {
    Mutex::Autolock _l(gLock);
-
-#if defined(BCM_FULL_TREBLE)
    ProcessState::initWithDriver("/dev/vndbinder");
-#endif
-
    if (gHwc.get() == 0) {
       attempt_count = 0;
       sp<IServiceManager> sm = defaultServiceManager();

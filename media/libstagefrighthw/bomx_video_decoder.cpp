@@ -64,16 +64,12 @@
 #if defined(SECURE_DECODER_ON)
 #include "nexus_sage.h"
 #endif
-#if defined(BCM_FULL_TREBLE)
 #include <bcm/hardware/dpthak/1.0/IDptHak.h>
-#endif
 #include "vendor_bcm_props.h"
 
-#if defined(BCM_FULL_TREBLE)
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::dpthak::V1_0;
-#endif
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -944,28 +940,11 @@ static void BOMX_OmxBinderNotify(void *cb_data, int msg, struct hwc_notification
         pComponent->BinderNotifyDisplay(ntfy);
         break;
     }
-#if !defined(BCM_FULL_TREBLE)
-    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
-    {
-       NEXUS_Rect position, clip;
-       position.x = ntfy.frame.x;
-       position.y = ntfy.frame.y;
-       position.width = ntfy.frame.w;
-       position.height = ntfy.frame.h;
-       clip.x = ntfy.clipped.x;
-       clip.y = ntfy.clipped.y;
-       clip.width = ntfy.clipped.w;
-       clip.height = ntfy.clipped.h;
-       pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
-       break;
-    }
-#endif
     default:
         break;
     }
 }
 
-#if defined(BCM_FULL_TREBLE)
 Mutex idseLock;
 #define ATTEMPT_PAUSE_USEC 500000
 #define MAX_ATTEMPT_COUNT  4
@@ -1040,7 +1019,6 @@ static void BOMX_SdbGeomCb(void *context, unsigned int x, unsigned int y,
     clip.height = 0;
     pComponent->SetVideoGeometry(&position, &clip, -1, 0, 0, 0, true);
 }
-#endif
 
 static void *BOMX_DisplayThread(void *pParam)
 {
@@ -1470,10 +1448,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_redux(false),
     m_indexSurface(-1),
     m_virtual(false),
-    m_forcePortResetOnHwTex(true)
-#if defined(BCM_FULL_TREBLE)
-    , m_sdbGeomCb(NULL)
-#endif
+    m_forcePortResetOnHwTex(true),
+    m_sdbGeomCb(NULL)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -2132,7 +2108,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, this);
 
-#if defined(BCM_FULL_TREBLE)
     m_sdbGeomCb = new SdbGeomCb(&BOMX_SdbGeomCb, this);
     if ( m_sdbGeomCb == NULL )
     {
@@ -2140,19 +2115,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
-#endif
 
     if (m_tunnelMode)
     {
        int sidebandId;
-#if defined(BCM_FULL_TREBLE)
        if (BOMX_idse() != NULL) {
           sidebandId = BOMX_idse()->regSdbCb(0, NULL);         // safeguard.
           sidebandId = BOMX_idse()->regSdbCb(0, m_sdbGeomCb);  // registration.
        }
-#else
-       m_omxHwcBinder->getsideband(0, sidebandId);
-#endif
        m_pTunnelNativeHandle = native_handle_create(0, 2);
        if (!m_pTunnelNativeHandle)
        {
@@ -2230,19 +2200,13 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         }
         if (m_tunnelMode)
         {
-#if defined(BCM_FULL_TREBLE)
            if (BOMX_idse() != NULL) {
               BOMX_idse()->regSdbCb(0, NULL);
            }
-#else
-           m_omxHwcBinder->freesideband(0);
-#endif
         }
         delete m_omxHwcBinder;
         m_omxHwcBinder = NULL;
-#if defined(BCM_FULL_TREBLE)
         m_sdbGeomCb = NULL;
-#endif
     }
 
     if (m_virtual)
@@ -2286,7 +2250,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSimpleVideoDecoder )
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-#if defined(BCM_FULL_TREBLE)
         if (BOMX_idpt() != NULL) {
            BOMX_idpt()->netcoal("default");
            if ( m_tunnelMode )
@@ -2301,7 +2264,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
                BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
            }
         }
-#endif
     }
     if ( m_hPlaypump )
     {
@@ -3587,7 +3549,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
-#if defined(BCM_FULL_TREBLE)
                 if (BOMX_idpt() != NULL) {
                    BOMX_idpt()->netcoal("default");
                    if ( m_tunnelMode )
@@ -3602,7 +3563,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                       BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
                    }
                 }
-#endif
             }
             break;
         case OMX_StateExecuting:
@@ -3679,7 +3639,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                    }
                 }
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
-#if defined(BCM_FULL_TREBLE)
                 if (BOMX_idpt() != NULL) {
                    BOMX_idpt()->netcoal("vmode");
                    if ( m_tunnelMode )
@@ -3694,7 +3653,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                       BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO);
                    }
                 }
-#endif
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
                 if (m_tunnelMode)
                 {
@@ -3730,7 +3688,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosDelivered = false;
                     m_eosReceived = false;
                     m_ptsReceived = false;
-#if defined(BCM_FULL_TREBLE)
                     if (BOMX_idpt() != NULL) {
                        BOMX_idpt()->netcoal("default");
                        if ( m_tunnelMode )
@@ -3745,7 +3702,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                           BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
                        }
                     }
-#endif
                     return BOMX_BERR_TRACE(errCode);
                 }
 

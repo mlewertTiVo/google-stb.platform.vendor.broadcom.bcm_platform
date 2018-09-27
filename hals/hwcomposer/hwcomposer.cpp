@@ -62,7 +62,7 @@ extern "C" {
 #include "nx_ashmem.h"
 /* last but not least... */
 #include "hwcutils.h"
-#include "treble/hwc2.h"
+#include "hwc2.h"
 
 using namespace bcm::hardware::dspsvcext::V1_0;
 
