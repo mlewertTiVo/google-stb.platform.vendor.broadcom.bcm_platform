@@ -531,6 +531,7 @@ protected:
     OMX_ERRORTYPE UpdateInputDimensions();
     void CleanupPortBuffers(OMX_U32 nPortIndex);
     BOMX_Buffer *AssociateOutVdec2Omx(BOMX_VideoDecoderFrameBuffer *pVdecBuffer, bool &shouldResetPort);
+    void RemoveAllVdecOmxAssociation();
 
     // These functions are used to pace the input buffers rate
     void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);

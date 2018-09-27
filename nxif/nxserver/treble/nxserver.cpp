@@ -856,6 +856,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->display[0].window[1].used = false;
          } else {
             pip = true;
+            /* 8.1. pip limited to 1/4 screen? */
+            if (property_get_bool(BCM_RO_NX_TRIM_PIP_QR,0)) {
+               pMemConfigSettings->display[0].window[1].sizeLimit =
+                  NEXUS_VideoWindowSizeLimit_eQuarter;
+            }
          }
       }
    }
@@ -1073,6 +1078,12 @@ static nxserver_t init_nxserver(void)
     if (settings.session[0].audioPlaybacks > 0) {
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
+    }
+    memset(value, 0, sizeof(value));
+    if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NULL)) {
+       if (strlen(value)) {
+          settings.audioPlayback.fifoSize = calc_heap_size(value);
+       }
     }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
