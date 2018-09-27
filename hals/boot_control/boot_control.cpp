@@ -117,7 +117,7 @@ static int write_device(struct eio_boot *bc_eio) {
    if (fstab == nullptr) {
       ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
       sprintf(fstab_name, "/fstab.%s", hardware);
-      struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      fstab = fs_mgr_read_fstab(fstab_name);
       if (fstab == nullptr) {
          ALOGW("failed to read fstab (%s), attempting default location.", fstab_name);
          fstab = fs_mgr_read_fstab_default();
@@ -222,7 +222,7 @@ static void init(struct boot_control_module *module __unused) {
    if (fstab == nullptr) {
       ALOGW("failed to read fstab (%s), attempting fallback location.", fstab_name);
       sprintf(fstab_name, "/fstab.%s", hardware);
-      struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+      fstab = fs_mgr_read_fstab(fstab_name);
       if (fstab == nullptr) {
          ALOGW("failed to read fstab (%s), attempting default location.", fstab_name);
          fstab = fs_mgr_read_fstab_default();
