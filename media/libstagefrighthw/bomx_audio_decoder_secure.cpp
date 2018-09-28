@@ -268,6 +268,68 @@ error:
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateMp3(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+    NxWrap *pNxWrap = NULL;
+    BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
+
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
+    {
+        ALOGW("Unable to determine presence of MP3 hardware!");
+    }
+    else
+    {
+        pNxWrap->join(BOMX_AudioDecoderSecure_StandbyMon, NULL);
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMp3].decode &&
+             !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMpeg].decode )
+        {
+            ALOGW("MP3 hardware support is not available");
+            goto error;
+        }
+    }
+
+    pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
+                              pComponentTpe, pName, pAppData, pCallbacks,
+                              pNxWrap,
+                              BOMX_AUDIO_GET_ROLE_COUNT(g_mp3Role),
+                              g_mp3Role, BOMX_AudioDecoder_GetRoleMp3);
+
+    if ( NULL == pAudioDecoderSec )
+    {
+        goto error;
+    }
+    else
+    {
+        OMX_ERRORTYPE constructorError = pAudioDecoderSec->IsValid();
+        if ( constructorError == OMX_ErrorNone )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            pNxWrap->leave();
+            delete pNxWrap;
+            delete pAudioDecoderSec;
+            return BOMX_ERR_TRACE(constructorError);
+        }
+    }
+
+error:
+    if (pNxWrap)
+    {
+        pNxWrap->leave();
+        delete pNxWrap;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+}
+
 BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
