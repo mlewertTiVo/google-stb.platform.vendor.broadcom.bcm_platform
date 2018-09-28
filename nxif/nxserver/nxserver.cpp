@@ -682,6 +682,16 @@ out:
     return;
 }
 
+static int lookup_first_unused_heap(const NEXUS_PlatformSettings *pPlatformSettings) {
+   unsigned i;
+   for (i=NEXUS_MAX_HEAPS-1;i>=0;i--) {
+      if (!pPlatformSettings->heap[i].size) {
+         return i;
+      }
+   }
+   return -1;
+}
+
 static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType, bool nullsized = false)
 {
     unsigned i;
@@ -1374,16 +1384,9 @@ static nxserver_t init_nxserver(void)
      */
     trim_mem_config(&memConfigSettings, svp);
 
-    rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
-    if (rc) {
-       ALOGE("FATAL: failed NEXUS_Platform_MemConfigInit");
-       return NULL;
-    }
-
     /* insert a 'user' dtu heap in the dtu space. */
     if (property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0)) {
-       NEXUS_PlatformCreateHeapSettings chs;
-       NEXUS_HeapHandle hh;
+       int fhi = -1;
        char addr[PROPERTY_VALUE_MAX];
        char size[PROPERTY_VALUE_MAX];
        if (property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
@@ -1392,22 +1395,29 @@ static nxserver_t init_nxserver(void)
           property_get(BCM_RO_NX_HEAP_DTU_USER_ADDR, addr, "0xAC000000");
           property_get(BCM_RO_NX_HEAP_DTU_USER_SIZE, size, "0x14000000"); /* 320MB */
           if (strlen(addr) && strlen(size)) {
-             NEXUS_Platform_GetDefaultCreateHeapSettings(&chs);
-             chs.offset = strtoull(addr, NULL, 16);
-             chs.size   = strtoull(size, NULL, 16);
-             chs.memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_HIGH_MEMORY;
-             chs.heapType = NEXUS_HEAP_TYPE_DTU;
-             chs.alignment = 0;
-             chs.locked = false;
-             chs.userAddress = (unsigned int)NULL;
-             hh = NEXUS_Platform_CreateHeap(&chs);
-             if (hh == NULL) {
-                ALOGE("failed to create user-dtu heap.");
-             } else {
-                ALOGI("user-dtu: heap %p (@%s, size %s)", hh, addr, size);
+             fhi = lookup_first_unused_heap(&platformSettings);
+             if (fhi == -1) {
+                ALOGE("failed to associate user-dtu heap (need more heaps?).");
              }
+             platformSettings.heap[fhi].memcIndex  = 0;
+             platformSettings.heap[fhi].heapType   = NEXUS_HEAP_TYPE_DTU;
+             platformSettings.heap[fhi].offset     = strtoull(addr, NULL, 16);
+             platformSettings.heap[fhi].size       = strtoull(size, NULL, 16);
+             platformSettings.heap[fhi].alignment  = 0;
+             platformSettings.heap[fhi].memoryType = NEXUS_MEMORY_TYPE_MANAGED|
+                                                     NEXUS_MEMORY_TYPE_HIGH_MEMORY|
+                                                     NEXUS_MEMORY_TYPE_APPLICATION_CACHED;
+             ALOGI("user-dtu: heap %d (@%s, size %s)", fhi, addr, size);
+             /* expose to client as the dynamic heap. */
+             settings.heaps.dynamicHeap = fhi;
           }
        }
+    }
+
+    rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
+    if (rc) {
+       ALOGE("FATAL: failed NEXUS_Platform_MemConfigInit");
+       return NULL;
     }
 
     BKNI_CreateMutex(&g_app.lock);
