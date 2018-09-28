@@ -87,6 +87,7 @@
 #define BCM_RO_NX_TRACE_MODULES                       "ro.nx.trace_modules"
 #define BCM_RO_NX_AUDIO_LOG                           "ro.nx.audio_log"
 #define BCM_RO_NX_HD_OUT_OBR                          "ro.nx.vidout.obr"
+#define BCM_RO_NX_AP_NUM                              "ro.nx.audio.pbk"
 #define BCM_RO_NX_AP_FIFO_SZ                          "ro.nx.audio.pbkfifosz"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
