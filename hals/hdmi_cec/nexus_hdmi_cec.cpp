@@ -42,8 +42,7 @@
 
 // Verbose messages removed
 //#define LOG_NDEBUG 0
-
-#define LOG_TAG "Brcmstb-HDMI-CEC"
+#define LOG_TAG "bcm-hdmi-cec"
 
 #include <errno.h>
 #include <utils/Log.h>
@@ -53,7 +52,7 @@
 #include <utils/Errors.h>
 #include <hardware/hdmi_cec.h>
 #include "cutils/properties.h"
-#include "legacy/nexus_hdmi_cec.h"
+#include "nexus_hdmi_cec.h"
 #include <nxwrap.h>
 #include <nxcec.h>
 
@@ -542,40 +541,29 @@ void NexusHdmiCecDevice::HdmiCecRxMessageHandler::onMessageReceived(const sp<AMe
     }
 }
 
-/******************************************************************************
-  HdmiHotplugEventListener methods
-******************************************************************************/
-NexusHdmiCecDevice::HdmiHotplugEventListener::HdmiHotplugEventListener(sp<NexusHdmiCecDevice> device) : mNexusHdmiCecDevice(device)
-{
-}
-
-NexusHdmiCecDevice::HdmiHotplugEventListener::~HdmiHotplugEventListener()
-{
-}
-
-status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHpd(bool connected)
+void NexusHdmiCecDevice::onHpd(bool connected)
 {
     int isConnected = connected ? HDMI_CONNECTED : HDMI_NOT_CONNECTED;
 
     ALOGV("%s: HDMI %s", __PRETTY_FUNCTION__, connected ? "connected" : "disconnected");
 
-    if (mNexusHdmiCecDevice->mHotplugConnected != isConnected) {
+    if (mHotplugConnected != isConnected) {
         uint16_t addr;
 
         // If not in standby or the STB is configured to allow waking up the box on reception of
         // an HDMI hotplug event, then allow the event to propogate to Android if there has
         // been a change in the "connected" state.
-        mNexusHdmiCecDevice->standbyLock();
-        if (!mNexusHdmiCecDevice->mStandby || (mNexusHdmiCecDevice->mStandby && mNexusHdmiCecDevice->getHdmiHotplugWakeup())) {
-            mNexusHdmiCecDevice->standbyUnlock();
+        standbyLock();
+        if (!mStandby || (mStandby && getHdmiHotplugWakeup())) {
+            standbyUnlock();
             ALOGV("%s: About to call CEC HDMI HOTPLUG callback...", __PRETTY_FUNCTION__);
-            mNexusHdmiCecDevice->fireHotplugCallback(isConnected);
+            fireHotplugCallback(isConnected);
         }
         else {
-            mNexusHdmiCecDevice->standbyUnlock();
+            standbyUnlock();
         }
     }
-    return NO_ERROR;
+    return;
 }
 
 /******************************************************************************
@@ -660,7 +648,6 @@ NexusHdmiCecDevice::NexusHdmiCecDevice() : mCecLogicalAddr(UNDEFINED_LOGICAL_ADD
                                            mNxWrap(NULL),
                                            mCallback(NULL),
                                            mHdmiCecDevice(NULL),
-                                           mHdmiHotplugEventListener(NULL),
                                            mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL),
                                            mHdmiCecTxMessageHandler(NULL), mHdmiCecTxMessageLooper(NULL),
                                            mCecHandle(NULL) {
@@ -722,6 +709,11 @@ void NexusHdmiCecDevice::cecDeviceReadyCb(void *context, int param) {
    }
 }
 
+static void HpdNtfyCb(void *context, bool connected) {
+   NexusHdmiCecDevice *dev = (NexusHdmiCecDevice *)context;
+   dev->onHpd(connected);
+}
+
 status_t NexusHdmiCecDevice::initialise()
 {
     NEXUS_PlatformConfiguration *pPlatformConfig;
@@ -730,12 +722,14 @@ status_t NexusHdmiCecDevice::initialise()
     NEXUS_HdmiOutputStatus hdmiStatus;
     NEXUS_CecStatus cecStatus;
     status_t status;
+    uint64_t c;
 
     mNxWrap = new NxWrap("Android-HDMI-CEC");
     if (mNxWrap == NULL) {
         goto out_error;
     }
     mNxWrap->join(standbyMonitor, (void *)this);
+    c = mNxWrap->client();
 
     pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
     if (pPlatformConfig == NULL) {
@@ -745,12 +739,22 @@ status_t NexusHdmiCecDevice::initialise()
     mCecHandle  = pPlatformConfig->outputs.cec[0];
     mHdmiHandle = pPlatformConfig->outputs.hdmi[0];
     BKNI_Free(pPlatformConfig);
+
+    if (mHdmiHandle == NULL) {
+       goto out_error;
+    }
+
     if (mCecHandle == NULL) {
         NEXUS_Cec_GetDefaultSettings(&cecSettings);
         mCecHandle = NEXUS_Cec_Open(0, &cecSettings);
         if (mCecHandle == NULL) {
             goto out_error;
         }
+    }
+
+    errCode = NEXUS_Cec_SetHdmiOutput(mCecHandle, mHdmiHandle);
+    if (errCode) {
+       goto out_error;
     }
 
     errCode = NEXUS_HdmiOutput_GetStatus(mHdmiHandle, &hdmiStatus);
@@ -804,18 +808,16 @@ status_t NexusHdmiCecDevice::initialise()
        goto out_error;
     }
 
-    mHdmiHotplugEventListener = NexusHdmiCecDevice::HdmiHotplugEventListener::instantiate(this);
-    if (mHdmiHotplugEventListener == NULL) {
-       goto out_error;
-    }
-    mNxWrap->regHpdEvt(mHdmiHotplugEventListener);
+    mNxWrap->regHp(c, &HpdNtfyCb, (void *)this);
 
     if (NEXUS_Cec_GetStatus(mCecHandle, &cecStatus) != NEXUS_SUCCESS) {
        goto out_error;
     }
     mLogicalAddress = cecStatus.logicalAddress;
-    if (cecStatus.ready) {
-       char looperName[] = "Hdmi Cec  x Message Looper";
+
+    if ((cecStatus.physicalAddress[0] != 0xFF) &&
+        (cecStatus.physicalAddress[1] != 0xFF)) {
+       char looperName[] = "Hdmi Cec Rx|Tx Msgs";
 
        looperName[9] = 'R';
        mHdmiCecRxMessageLooper = new ALooper;
@@ -868,9 +870,9 @@ out_error:
     }
     mHdmiCecTxMessageHandler = NULL;
     mHdmiCecTxMessageLooper = NULL;
-    mHdmiHotplugEventListener = NULL;
     mUInput = NULL;
     if (mNxWrap) {
+       mNxWrap->regHp(c, NULL, (void *)this);
        mNxWrap->leave();
        delete mNxWrap;
        mNxWrap = NULL;
@@ -880,6 +882,7 @@ out_error:
 
 status_t NexusHdmiCecDevice::uninitialise()
 {
+    uint64_t c;
     if (mNxWrap != NULL) {
        if (mHdmiCecRxMessageHandler.get() != NULL && mHdmiCecRxMessageLooper.get() != NULL) {
           mHdmiCecRxMessageLooper->unregisterHandler(mHdmiCecRxMessageHandler->id());
@@ -893,10 +896,6 @@ status_t NexusHdmiCecDevice::uninitialise()
           mHdmiCecTxMessageHandler = NULL;
           mHdmiCecTxMessageLooper = NULL;
        }
-       if (mHdmiHotplugEventListener.get() != NULL) {
-          mNxWrap->unregHpdEvt(mHdmiHotplugEventListener);
-          mHdmiHotplugEventListener = NULL;
-       }
        if (mUInput.get() != NULL) {
           mUInput = NULL;
        }
@@ -904,6 +903,8 @@ status_t NexusHdmiCecDevice::uninitialise()
           NEXUS_Cec_Close(mCecHandle);
           mCecHandle = NULL;
        }
+       c = mNxWrap->client();
+       mNxWrap->regHp(c, NULL, (void *)this);
        mNxWrap->leave();
        delete mNxWrap;
        mNxWrap = NULL;
@@ -980,7 +981,7 @@ bool NexusHdmiCecDevice::getHdmiHotplugWakeup()
     static bool wakeup = false;
 
     if (!cached) {
-        wakeup = property_get_bool(PROPERTY_HDMI_HOTPLUG_WAKEUP, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP);
+        wakeup = property_get_bool(BCM_RO_HDMI_HOTPLUG_WAKEUP, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP);
         cached = true;
     }
     return wakeup;
@@ -1108,7 +1109,7 @@ out:
 status_t NexusHdmiCecDevice::getCecVendorId(uint32_t* vendor_id)
 {
    if (mCecVendorId == UNKNOWN_VENDOR_ID) {
-       mCecVendorId = property_get_int32(PROPERTY_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
+       mCecVendorId = property_get_int32(BCM_RO_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
    }
    *vendor_id = mCecVendorId;
    return NO_ERROR;

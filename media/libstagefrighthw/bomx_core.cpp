@@ -60,6 +60,7 @@ static const struct ComponentEntry
     {"OMX.broadcom.audio_decoder.aac.secure",           BOMX_AudioDecoder_Secure_CreateAac,         BOMX_AudioDecoder_GetRoleAac},
     {"OMX.broadcom.audio_decoder.ac3.secure",           BOMX_AudioDecoder_Secure_CreateAc3,         BOMX_AudioDecoder_GetRoleAc3},
     {"OMX.broadcom.audio_decoder.eac3.secure",          BOMX_AudioDecoder_Secure_CreateEAc3,        BOMX_AudioDecoder_GetRoleEAc3},
+    {"OMX.broadcom.audio_decoder.mp3.secure",           BOMX_AudioDecoder_Secure_CreateMp3,         BOMX_AudioDecoder_GetRoleMp3},
 #endif
 #ifdef ENCODER_ON
     {"OMX.broadcom.video_encoder",                      BOMX_VideoEncoder_Create,                   BOMX_VideoEncoder_GetRole},

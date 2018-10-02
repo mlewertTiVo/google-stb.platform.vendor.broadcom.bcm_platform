@@ -95,6 +95,7 @@
 #define BCM_DYN_NX_BOOT_KEY_TWO                       "dyn.nx.boot.key2"
 #define BCM_DYN_NX_HDCP_FORCE                         "dyn.nx.hdcp.force"
 #define BCM_DYN_NX_DISPLAY_SIZE                       "dyn.nx.display-size"
+#define BCM_VDR_DISPLAY_SIZE                          "vendor.display-size"
 
 /* nexus 'static' heap size allocations. */
 #define BCM_RO_NX_HEAP_MAIN                           "ro.nx.heap.main"

@@ -21,20 +21,17 @@ RELEASE_PREBUILTS := release_prebuilts/user
 else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
-endif
 
 ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so),)
 
 PRODUCT_COPY_FILES += \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvdrmengine.so:$(TARGET_COPY_OUT_VENDOR)/lib/mediadrm/libwvdrmengine.so:widevine \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvhidl.so:$(TARGET_COPY_OUT_VENDOR)/lib/libwvhidl.so:widevine
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+
 PRODUCT_COPY_FILES += \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/android.hardware.drm@1.1-service.widevine:$(TARGET_COPY_OUT_VENDOR)/bin/hw/android.hardware.drm@1.1-service.widevine:widevine \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/android.hardware.drm@1.1-service.widevine.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/android.hardware.drm@1.1-service.widevine.rc:widevine
-endif
 
 # no prebuilt binaries included, build from source if we have it
 #

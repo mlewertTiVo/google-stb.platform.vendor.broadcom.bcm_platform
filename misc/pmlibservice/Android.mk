@@ -47,12 +47,7 @@ endif
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
 LOCAL_SRC_FILES := refsw/BSEAV/opensource/glob/glob.c \
                    refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_SRC_FILES += bcm_platform/misc/pmlibservice/treble/PmLibService.cpp
-else
-LOCAL_SRC_FILES += bcm_platform/misc/pmlibservice/legacy/IPmLibService.cpp \
-                   bcm_platform/misc/pmlibservice/legacy/PmLibService.cpp
-endif
+LOCAL_SRC_FILES += bcm_platform/misc/pmlibservice/PmLibService.cpp
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true

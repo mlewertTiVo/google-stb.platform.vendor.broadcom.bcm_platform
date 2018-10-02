@@ -172,8 +172,4 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxmini/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxserver/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec/Android.mk
-ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc/Android.mk
-endif
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxssd/Android.mk

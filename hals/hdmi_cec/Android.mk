@@ -26,27 +26,15 @@ LOCAL_SHARED_LIBRARIES := \
     libnexus \
     libnxwrap
 
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
     bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += \
-    libbinder \
-    libnxbinder \
-    libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -54,13 +42,7 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-LOCAL_SRC_FILES := treble/nexus_hdmi_cec.cpp
-else
-LOCAL_SRC_FILES := legacy/nexus_hdmi_cec.cpp
-endif
-
+LOCAL_SRC_FILES := nexus_hdmi_cec.cpp
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_TAGS := optional
@@ -80,27 +62,15 @@ LOCAL_SHARED_LIBRARIES := \
     libhdmicec \
     libnxwrap
 
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
     bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += \
-    libbinder \
-    libnxbinder \
-    libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -108,11 +78,7 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-endif
 LOCAL_SRC_FILES := hdmi_ext.cpp
-
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_TAGS := optional
@@ -138,27 +104,15 @@ LOCAL_SHARED_LIBRARIES := \
     libhdmiext \
     libnxwrap
 
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += \
     bcm.hardware.nexus@1.0
-else
-LOCAL_SHARED_LIBRARIES += \
-    libbinder \
-    libnxbinder \
-    libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -166,10 +120,6 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-endif
-
 LOCAL_SRC_FILES := hdmi_cec.cpp
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hdmi_cec.$(TARGET_BOARD_PLATFORM)

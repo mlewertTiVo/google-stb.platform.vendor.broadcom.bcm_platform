@@ -36,13 +36,112 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef _NXWRAP_ROOT__H_
-#define _NXWRAP_ROOT__H_
+#ifndef _NXWRAP__H_
+#define _NXWRAP__H_
 
-#if defined(BCM_FULL_TREBLE)
-#include "treble/nxwrap.h"
-#else
-#include "legacy/nxwrap.h"
-#endif
+#include <utils/threads.h>
+#include <utils/Errors.h>
+#include "nxclient.h"
+#include "nxwrap_common.h"
+#include "PmLibService.h"
+
+using namespace android;
+
+typedef bool (*StdbyMonCb)(void *ctx);
+typedef void (*HpNtfyCb)(void *ctx, bool connected);
+typedef void (*DcNtfyCb)(void *ctx);
+
+// basic wrap around nexus client support, allowing any android client
+// to extend into being a nexus client for middleware support.
+//
+// provides a nexus standby monitor integration for clients who require such,
+// usually limited to clients which may have async access to nexus hardware.
+//
+class NxWrap {
+public:
+   NxWrap();
+   NxWrap(const char *name);
+   virtual ~NxWrap() {};
+
+   // connect to middleware, optionally instantiating a standby monitor process.
+   int join();
+   int join_v();
+   int join_once();
+   int join(StdbyMonCb cb, void *ctx);
+   int join_v(StdbyMonCb cb, void *ctx);
+   // disconnect from middleware.
+   void leave();
+   // get the identification of the middleware client from server, can be used to
+   // pass around android clients if needed.
+   uint64_t client();
+   // register a hp (hotplug) event callback through middleware interface (null to
+   // unregister).
+   int regHp(uint64_t cid, HpNtfyCb cb, void *ctx);
+   // register a dc (display changed) event callback through middleware interface (null to
+   // unregister).
+   int regDc(uint64_t cid, DcNtfyCb cb, void *ctx);
+   // set power state to middleware.
+   void setPwr(struct pmlib_state_t *s);
+   // get power state from middleware.
+   void getPwr(struct pmlib_state_t *s);
+   // invoke rmlmk.
+   void rmlmk(uint64_t cid);
+   // setup wake-on-lan
+   int setWoL(const char *ifc);
+   // acquire wakelock on inexus
+   int acquireWL();
+   // release wakelock on inexus
+   int releaseWL();
+
+   static Mutex mLck;
+
+   void actHp(bool connected);
+   void actDc();
+
+protected:
+   struct StdbyMon: public Thread {
+      enum State {
+         STATE_UNKNOWN,
+         STATE_STOPPED,
+         STATE_RUNNING
+      };
+      StdbyMon(StdbyMonCb cb, void *ctx);
+      virtual ~StdbyMon();
+
+      virtual status_t run(const char* name = 0,
+                           int32_t priority = PRIORITY_DEFAULT,
+                           size_t stack = 0);
+
+      virtual void stop() {
+         Mutex::Autolock autoLock(mSmLck);
+         mState = STATE_STOPPED;
+         Thread::requestExit();
+         mSmCond.signal();
+      }
+      bool isRunning() {
+         Mutex::Autolock autoLock(mSmLck);
+         return (mState == STATE_RUNNING);
+      }
+      private:
+         State mState;
+         Mutex mSmLck;
+         Condition mSmCond;
+         StdbyMonCb mCb;
+         void *mCtx;
+         unsigned mStdbyId;
+         bool threadLoop();
+
+         StdbyMon(const StdbyMon &);
+         StdbyMon &operator=(const StdbyMon &);
+   };
+
+private:
+   sp<NxWrap::StdbyMon> mStdbyMon;
+   char mName[NXWRAP_NAME_MAX];
+   HpNtfyCb mHpCb;
+   void *mHpCtx;
+   DcNtfyCb mDcCb;
+   void *mDcCtx;
+};
 
 #endif

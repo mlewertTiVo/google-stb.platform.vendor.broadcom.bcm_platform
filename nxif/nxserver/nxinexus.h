@@ -50,7 +50,7 @@
 #include <fcntl.h>
 #include <cutils/properties.h>
 #include <utils/Vector.h>
-#include "treble/PmLibService.h"
+#include "PmLibService.h"
 
 using namespace android;
 using namespace android::hardware;

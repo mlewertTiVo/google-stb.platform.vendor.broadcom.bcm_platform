@@ -14,12 +14,6 @@
 
 LOCAL_PATH := $(call my-dir)
 
-# hwc version: 1.x (default) for pre-N android; 2.0 starting with N.
-# in N, both v-1.x and v-2.0 continue to be supported.
-ifeq ($(HAL_HWC_VERSION),)
-HAL_HWC_VERSION := v-1.x
-endif
-
 # set to 'true' to avoid stripping symbols during build.
 HWC_DEBUG_SYMBOLS := false
 
@@ -41,9 +35,6 @@ LOCAL_PRELINK_MODULE := false
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-endif
 
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libutils
@@ -80,9 +71,6 @@ LOCAL_SHARED_LIBRARIES += libutils
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
@@ -161,15 +149,10 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libnxwrap
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
 LOCAL_SHARED_LIBRARIES += bcm.hardware.dspsvcext@1.0
 LOCAL_SHARED_LIBRARIES += libhidlbase
 LOCAL_SHARED_LIBRARIES += libhidltransport
-else
-LOCAL_SHARED_LIBRARIES += libnxbinder
-LOCAL_SHARED_LIBRARIES += libnxevtsrc
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
@@ -180,15 +163,10 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/$(HAL_HWC_VERSION)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcext/1.0/default
-else
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
-endif
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -198,24 +176,10 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DBGRCPKT_PLANES_$(LOCAL_DEVICE_BGRCPKT_PLANES)
 
-ifeq ($(LOCAL_DEVICE_TYPE),blemmyes)
-LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.blemmyes.cpp
-else
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-ifneq ($(HAL_HWC_VERSION),v-1.x)
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/treble/hwcomposer.cpp
-LOCAL_SRC_FILES += $(HAL_HWC_VERSION)/treble/hwcsync.c
-else
-LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/legacy/hwcomposer.cpp
-LOCAL_SRC_FILES += $(HAL_HWC_VERSION)/legacy/hwcsync.c
-endif
-else
-LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.cpp
-endif
-endif
+LOCAL_SRC_FILES := hwcomposer.cpp
+LOCAL_SRC_FILES += hwcsync.c
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)
 

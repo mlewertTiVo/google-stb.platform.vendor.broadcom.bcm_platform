@@ -68,22 +68,19 @@
 #include <semaphore.h>
 #include <linux/watchdog.h>
 
-#include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
-
 #include "nxserver.h"
 #include "nxclient.h"
 #include "nxserverlib.h"
 #include "nxserverlib_impl.h"
 #include "namevalue.h"
 #include "nx_ashmem.h"
+#include "vendor_bcm_props.h"
 
 #include "nexus_base_mmap.h"
 #include "nexus_watchdog.h"
 
-#include "legacy/PmLibService.h"
-#include "NxServer.h"
-#include "nxwrap_common.h"
+#include "nxinexus.h"
+#include <hidl/HidlTransportSupport.h>
 #include <linux/brcmstb/proc_info_proxy.h>
 
 #define NX_CLIENT_USAGE_LOG            0
@@ -102,85 +99,17 @@
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
 #define OOM_SCORE_IGNORE               (-16)
-#define OOM_CONSUME_MAX                (110)
+#define OOM_CONSUME_MAX                (192)
 #define OOM_THRESHOLD_AGRESSIVE        (16)
-
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
-#define GRAPHICS_RES_WIDTH_PROP        "ro.nx.hwc2.nfb.w"
-#define GRAPHICS_RES_HEIGHT_PROP       "ro.nx.hwc2.nfb.h"
-
-#define NX_LMK_BG                      "ro.nx.lmk.bg"
-#define NX_LMK_TA                      "ro.nx.lmk.ta"
-#define NX_ACT_GC                      "ro.nx.act.gc"
-#define NX_ACT_GS                      "ro.nx.act.gs"
-#define NX_ACT_LMK                     "ro.nx.act.lmk"
-#define NX_ACT_WD                      "ro.nx.act.wd"
-#define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
-#define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
-#define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
-#define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
-#define NX_COMP_VIDEO                  "ro.nx.cvbs"
-#define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
-#define NX_NO_OUTPUT_VIDEO             "ro.nx.output.dis"
-#define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
 #define NX_WD_TIMEOUT_DEF              60
-#define NX_CAPABLE_DTU                 "ro.nx.capable.dtu"
-#define NX_DOLBY_MS                    "ro.nx.dolby.ms"
-
-#define NX_ODV                         "ro.nx.odv"
-#define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
-#define NX_ODV_ALT_1_USAGE             "ro.nx.odv.a1.use"
-#define NX_ODV_ALT_2_USAGE             "ro.nx.odv.a2.use"
-
-#define NX_HEAP_MAIN                   "ro.nx.heap.main"
-#define NX_HEAP_GFX                    "ro.nx.heap.gfx"
-#define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
-#define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
-#define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
-#define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
-#define NX_HEAP_XRR                    "ro.nx.heap.export"
-#define NX_HEAP_GROW                   "ro.nx.heap.grow"
-#define NX_SVP                         "ro.nx.svp"
-#define NX_SPLASH                      "ro.nx.splash"
-#define NX_HDCP_MODE                   "ro.nx.hdcp.mode"
-
-#define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
-#define NX_HDCP1X_KEY                  "ro.nx.nxserver.hdcp1x_keys"
-#define NX_HDCP2X_KEY                  "ro.nx.nxserver.hdcp2x_keys"
-
-#define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
-#define NX_LOGGER_SIZE                 "ro.nx.logger_size"
-#define NX_AUDIO_LOG                   "ro.nx.audio_log"
-
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
-
 #define NX_PROP_ENABLED                "1"
 #define NX_PROP_DISABLED               "0"
 #define NX_INVALID                     -1
 #define NX_NOGRAB_MAGIC                "AWnG"
-
-#define NX_ANDROID_BOOTCOMPLETE        "ro.nx.boot_completed"
-#define NX_STATE                       "dyn.nx.state"
-
-/* begnine trimming config - not needed for ATV experience - default ENABLED. */
-#define NX_TRIM_VC1                    "ro.nx.trim.vc1"
-#define NX_TRIM_PIP                    "ro.nx.trim.pip"
-#define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
-#define NX_TRIM_STILLS                 "ro.nx.trim.stills"
-#define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
-#define NX_TRIM_DISP                   "ro.nx.trim.disp"
-#define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
-#define NX_TRIM_MTG                    "ro.nx.trim.mtg"
-#define NX_TRIM_HDMIIN                 "ro.nx.trim.hdmiin"
-/* destructive trimming config - feature set limitation - default DISABLED. */
-#define NX_TRIM_VP9                    "ro.nx.trim.vp9"
-#define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
-#define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
-#define NX_TRIM_D0HD                   "ro.nx.trim.d0hd"
-
-#define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
 
 typedef enum {
    SVP_MODE_NONE,
@@ -238,15 +167,17 @@ typedef struct {
         NxClient_JoinSettings joinSettings;
         unsigned pid;
         NEXUS_ClientHandle handle;
-        unsigned mmumem;
-        unsigned nxmem;
-        unsigned gfxmem;
+        unsigned long mmuvrt; /* total mapped for process. */
+        unsigned long mmushm; /* linux allocation (vs cma). */
+        unsigned long mmucma; /* cma allocation (vs linux). */
+        unsigned long nxmem;  /* nexus cma gfx allocation. */
+        unsigned long gfxmem; /* nexus bmem gfx allocation. */
         int score;
     } clients[APP_MAX_CLIENTS];
     unsigned connected;
     WDOG_T wdog;
     CATCHER_T sigterm;
-    NxServer *nxb;
+    NexusImpl *nxi;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -293,6 +224,23 @@ static void nx_wdog_midpoint(void *context, int param)
    BKNI_ReleaseMutex(nx_server->wdog.lock);
 }
 
+static void *inexus_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    prctl(PR_SET_NAME, "nxserver.binder");
+
+    do {
+       configureRpcThreadpool(1, true /* callerWillJoin */);
+       if (nx_server->nxi != NULL) {
+          ALOGI("nxi: start middleware, register hwservice.");
+          nx_server->nxi->registerAsService();
+       }
+       joinRpcThreadpool();
+    } while(nx_server->binder.running);
+    return NULL;
+}
+
 static void *standby_monitor_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -317,8 +265,8 @@ static void *standby_monitor_task(void *argv)
                 nx_server->wdog.inStandby = true;
              }
           } else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
-             prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
-             nx_server->wdog.nx != NULL) {
+                   prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
+                   nx_server->wdog.nx != NULL) {
              BKNI_AcquireMutex(nx_server->wdog.lock);
              nx_server->wdog.inStandby = false;
              NEXUS_Watchdog_StartTimer();
@@ -342,7 +290,7 @@ static void *sigterm_catcher_task(void *argv)
     prctl(PR_SET_NAME, "nxserver.sigterm");
 
     set_sched_policy(0, SP_BACKGROUND);
-    setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_BACKGROUND);
+    setpriority(PRIO_PROCESS, 0, PRIORITY_BACKGROUND);
 
     do
     {
@@ -376,18 +324,35 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     BKNI_AcquireMutex(g_app.clients_lock);
 
     pip = open("/dev/bcmpip", O_RDWR);
-    nxm = open("/dev/ion", O_RDWR);
+    nxm = open("/dev/nxmem", O_RDWR);
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client && g_app.clients[i].pid) {
-            sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+            sprintf(memstats, "%s/%d/rawmem", NX_DRM_ROOT, g_app.clients[i].pid);
             fd = open(memstats, O_RDONLY);
             if (fd >= 0) {
                memset(memstats, 0, sizeof(memstats));
                rc = read(fd, memstats, sizeof(memstats));
                close(fd);
-               g_app.clients[i].mmumem = strtoul(memstats, NULL, 10);
+               fd = sscanf(memstats, "%lu:%lu:%lu",
+                  &g_app.clients[i].mmuvrt, &g_app.clients[i].mmushm, &g_app.clients[i].mmucma);
+               if (fd != 3) {
+                  g_app.clients[i].mmuvrt = 0;
+                  g_app.clients[i].mmushm = 0;
+                  g_app.clients[i].mmucma = 0;
+               }
             } else {
-               g_app.clients[i].mmumem = 0;
+               g_app.clients[i].mmushm = 0;
+               g_app.clients[i].mmucma = 0;
+               sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+               fd = open(memstats, O_RDONLY);
+               if (fd >= 0) {
+                  memset(memstats, 0, sizeof(memstats));
+                  rc = read(fd, memstats, sizeof(memstats));
+                  close(fd);
+                  g_app.clients[i].mmuvrt = strtoul(memstats, NULL, 10);
+               } else {
+                  g_app.clients[i].mmuvrt = 0;
+               }
             }
             pidalloc.pid = g_app.clients[i].pid;
             pidalloc.alloc = 0;
@@ -406,7 +371,11 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                g_app.clients[i].gfxmem = 0;
             }
             g_app.clients[i].score = OOM_SCORE_IGNORE;
-            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem)) {
+            if ((g_app.clients[i].mmuvrt+
+                 g_app.clients[i].mmushm+
+                 g_app.clients[i].mmucma+
+                 g_app.clients[i].nxmem+
+                 g_app.clients[i].gfxmem)) {
                struct proxy_info_oomadj oomadj;
                oomadj.pid = g_app.clients[i].pid;
                rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
@@ -416,16 +385,27 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
             }
 
             ALOGI_IF(NX_CLIENT_USAGE_LOG &&
-                     (g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem),
-               "client[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", i,
+                     (g_app.clients[i].mmuvrt+
+                      g_app.clients[i].mmushm+
+                      g_app.clients[i].mmucma+
+                      g_app.clients[i].nxmem+
+                      g_app.clients[i].gfxmem),
+               "client[%u]:%u::mmuvrt:%luMB::mmushm:%luMB::mmucma:%luMB::nxmem:%luMB::gfxo:%luMB::score:%d",
+               i,
                g_app.clients[i].pid,
-               g_app.clients[i].mmumem,
+               g_app.clients[i].mmuvrt,
+               g_app.clients[i].mmushm,
+               g_app.clients[i].mmucma,
                g_app.clients[i].nxmem,
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
 
-            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem) >= threshold &&
-                g_app.clients[i].score > 0) {
+            if ((g_app.clients[i].mmuvrt+
+                 g_app.clients[i].mmushm+
+                 g_app.clients[i].mmucma+
+                 g_app.clients[i].nxmem+
+                 g_app.clients[i].gfxmem) >= threshold &&
+                g_app.clients[i].score > 1 /* keep background preserved tasks. */) {
                 if (selected == NX_INVALID) {
                    selected = i;
                    break;
@@ -438,9 +418,12 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     }
     if (selected != NX_INVALID) {
        *candidate = g_app.clients[selected].pid;
-       ALOGI("oom-kill[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", selected,
+       ALOGI("oom-kill[%u]:%u::mmuvrt:%luMB::mmushm:%luMB::mmucma:%luMB::nxmem:%luMB::gfxo:%luMB::score:%d",
+          selected,
           *candidate,
-          g_app.clients[selected].mmumem,
+          g_app.clients[selected].mmuvrt,
+          g_app.clients[selected].mmushm,
+          g_app.clients[selected].mmucma,
           g_app.clients[selected].nxmem,
           g_app.clients[selected].gfxmem,
           g_app.clients[selected].score);
@@ -457,38 +440,6 @@ out:
 
 }
 
-static void nxserver_rmlmk(uint64_t client)
-{
-   int candidate = NX_INVALID;
-   int lmk;
-   ALOGI("nxserver_rmlmk(%" PRIu64 "): trim cma now.", client);
-
-   lmk = property_get_int32(NX_LMK_TA, OOM_THRESHOLD_AGRESSIVE);
-   gather_memory_stats_per_process(lmk, &candidate);
-   /* aggressive lmk'ing of the background processes. */
-   if (candidate != NX_INVALID) {
-      kill(candidate, SIGKILL);
-   }
-}
-
-static void *binder_task(void *argv)
-{
-    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
-
-    prctl(PR_SET_NAME, "nxserver.binder");
-
-    do {
-       android::ProcessState::self()->startThreadPool();
-       nx_server->nxb = NxServer::instantiate(&nxserver_rmlmk);
-       PmLibService::instantiate();
-       android::IPCThreadState::self()->joinThreadPool();
-
-    } while(nx_server->binder.running);
-
-done:
-    return NULL;
-}
-
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -503,21 +454,27 @@ static void *proactive_runner_task(void *argv)
 
     prctl(PR_SET_NAME, "nxserver.proac");
 
-    if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_GROW, value, NULL)) {
        if (strlen(value)) {
           gfx_heap_grow_size = calc_heap_size(value);
        }
     }
-    if (property_get(NX_MMA_SHRINK_THRESHOLD, value, NX_MMA_SHRINK_THRESHOLD_DEF)) {
+    if (property_get(BCM_RO_NX_MMA_SHRINK_THRESHOLD, value, NX_MMA_SHRINK_THRESHOLD_DEF)) {
        if (strlen(value)) {
           gfx_heap_shrink_threshold = calc_heap_size(value);
        }
     }
-    active_gc  = property_get_int32(NX_ACT_GC,  1);
-    active_gs  = property_get_int32(NX_ACT_GS,  1);
-    active_lmk = property_get_int32(NX_ACT_LMK, 1);
-    active_wd  = property_get_int32(NX_ACT_WD,  1);
-    active_lmk_bg = property_get_int32(NX_LMK_BG, OOM_CONSUME_MAX);
+    /* reset heap grow mechanism if using dtu. */
+    if (property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0) &&
+        property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
+       gfx_heap_grow_size = 0;
+       gfx_heap_shrink_threshold = 0;
+    }
+    active_gc  = property_get_int32(BCM_RO_NX_ACT_GC,  1);
+    active_gs  = property_get_int32(BCM_RO_NX_ACT_GS,  1);
+    active_lmk = property_get_int32(BCM_RO_NX_ACT_LMK, 1);
+    active_wd  = property_get_int32(BCM_RO_NX_ACT_WD,  1);
+    active_lmk_bg = property_get_int32(BCM_RO_NX_LMK_BG, OOM_CONSUME_MAX);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
@@ -590,10 +547,10 @@ static void *proactive_runner_task(void *argv)
         }
 
         if (!g_app.wdog.init) {
-           if (property_get(NX_ANDROID_BOOTCOMPLETE, value, NULL)) {
+           if (property_get(BCM_RO_NX_BOOT_COMPLETED, value, NULL)) {
               if (strlen(value) && !strncmp(value, NX_PROP_ENABLED, strlen(value))) {
                  if (g_app.wdog.want) {
-                    int wdog_timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
+                    int wdog_timeout = property_get_int32(BCM_RO_NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
                     g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
                     if (g_app.wdog.fd >= 0 && wdog_timeout) {
                        ALOGI("ro.nx.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
@@ -663,10 +620,10 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client &&
             g_app.clients[i].client == client) {
-            ALOGW("nx-RE.connect(%d): '%s'::%p::%d", i,
+            ALOGW("nx-RE.connect(%d): '%s'::%d::%p", i,
                   g_app.clients[i].joinSettings.name,
-                  g_app.clients[i].client,
-                  g_app.clients[i].joinSettings.mode);
+                  g_app.clients[i].joinSettings.mode,
+                  g_app.clients[i].client);
             goto out_lock;
         }
     }
@@ -682,10 +639,11 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
                g_app.connected = APP_MAX_CLIENTS;
             }
             ALOGI_IF(NX_CLIENT_USAGE_LOG,
-               "connect[%u]:%u::%p::'%s'::%p", i,
+               "connect[%u]:%u::%p::'%s'::%d::%p", i,
                g_app.clients[i].pid,
                g_app.clients[i].handle,
                g_app.clients[i].joinSettings.name,
+               g_app.clients[i].joinSettings.mode,
                g_app.clients[i].client);
             break;
         }
@@ -700,6 +658,7 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
 {
     unsigned i;
     BSTD_UNUSED(pJoinSettings);
+
     BKNI_AcquireMutex(g_app.clients_lock);
 
     for (i=0;i<APP_MAX_CLIENTS;i++) {
@@ -721,6 +680,16 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     BKNI_ReleaseMutex(g_app.clients_lock);
 out:
     return;
+}
+
+static int lookup_first_unused_heap(const NEXUS_PlatformSettings *pPlatformSettings) {
+   unsigned i;
+   for (i=NEXUS_MAX_HEAPS-1;i>=0;i--) {
+      if (!pPlatformSettings->heap[i].size) {
+         return i;
+      }
+   }
+   return -1;
 }
 
 static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType, bool nullsized = false)
@@ -747,7 +716,7 @@ static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSet
 {
    char value[PROPERTY_VALUE_MAX];
 
-   if (property_get(NX_TRIM_D0HD, value, NULL)) {
+   if (property_get(BCM_RO_NX_TRIM_D0HD, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->display[0].maxFormat = NEXUS_VideoFormat_e1080p;
       }
@@ -765,7 +734,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    int dec_used = 0;
    NEXUS_PlatformCapabilities platformCap;
    bool transcode = false;
-   bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
+   bool cvbs = property_get_int32(BCM_RO_NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
    bool pip = false;
 
@@ -779,8 +748,19 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 1. encoder configuration. */
    trim_encoder_mem_config(pMemConfigSettings);
 
-   /* 2. additional display(s). */
-   if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
+   /* 1.5. deinterlacer (may be re-enabled in 2. per need). */
+   if (property_get(BCM_RO_NX_TRIM_DEINT, value, NX_PROP_DISABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
+            for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+               pMemConfigSettings->display[i].window[j].deinterlacer = NEXUS_DeinterlacerMode_eNone;
+            }
+         }
+      }
+   }
+
+   /* 2. additional display(s) (but display 0). */
+   if (property_get(BCM_RO_NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
@@ -816,7 +796,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 3. mtg. */
-   if (property_get(NX_TRIM_MTG, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_MTG, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
             for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
@@ -827,19 +807,19 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 4. video input. */
-   if (property_get(NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoInputs.ccir656 = false;
       }
    }
-   if (property_get(NX_TRIM_HDMIIN, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_HDMIIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoInputs.hdDvi = false;
       }
    }
 
    /* 5. vc1 decoder. */
-   if (property_get(NX_TRIM_VC1, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_VC1, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
@@ -851,7 +831,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 6. stills decoder. */
-   if (property_get(NX_TRIM_STILLS, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_STILLS, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
             pMemConfigSettings->stillDecoder[i].used = false;
@@ -860,7 +840,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 7. mosaic video. */
-   if (property_get(NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             pMemConfigSettings->videoDecoder[i].mosaic.maxNumber = 0;
@@ -876,7 +856,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          ++dec_used;
       }
    }
-   if (property_get(NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
+   if (property_get(BCM_RO_NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
       if (strlen(value)) {
          if (strtoul(value, NULL, 0) > 0) {
             pip = false;
@@ -886,6 +866,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->display[0].window[1].used = false;
          } else {
             pip = true;
+            /* 8.1. pip limited to 1/4 screen? */
+            if (property_get_bool(BCM_RO_NX_TRIM_PIP_QR,0)) {
+               pMemConfigSettings->display[0].window[1].sizeLimit =
+                  NEXUS_VideoWindowSizeLimit_eQuarter;
+            }
          }
       }
    }
@@ -908,7 +893,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
      /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
       *    we can instantiate an encoder without decoder back-end (architectural change).
       */
-      if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
+      if (property_get(BCM_RO_NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
          if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
             /* start index -> 1.  beware interaction with pip above. */
             for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
@@ -924,7 +909,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 10. vp9. */
-   if (property_get(NX_TRIM_VP9, value, NULL)) {
+   if (property_get(BCM_RO_NX_TRIM_VP9, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             if (pMemConfigSettings->videoDecoder[i].used) {
@@ -938,7 +923,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 11. uhd decoder. */
-   if (property_get(NX_TRIM_4KDEC, value, NULL)) {
+   if (property_get(BCM_RO_NX_TRIM_4KDEC, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             if (pMemConfigSettings->videoDecoder[i].used &&
@@ -950,7 +935,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 12. color depth. */
-   if (property_get(NX_TRIM_10BCOL, value, NULL)) {
+   if (property_get(BCM_RO_NX_TRIM_10BCOL, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             if (pMemConfigSettings->videoDecoder[i].used) {
@@ -960,11 +945,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 13. extra picture buffers for VP8/9 worst-case decode */
+   /* 13. extra picture buffers for VP8|9 worst-case decode */
    for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if ( pMemConfigSettings->videoDecoder[i].used && 
-          (pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] ||
-           pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp8]) ) {
+      if (pMemConfigSettings->videoDecoder[i].used &&
+          (pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp8] ||
+           pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9])) {
          pMemConfigSettings->videoDecoder[i].extraPictureBuffers = 2;
       }
    }
@@ -977,7 +962,7 @@ static NEXUS_VideoFormat forced_output_format(void)
    char name[PROPERTY_VALUE_MAX];
 
    memset(value, 0, sizeof(value));
-   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+   sprintf(name, "persist.%s", BCM_XX_NX_HD_OUT_FMT);
    if (property_get(name, value, "")) {
       if (strlen(value)) {
          forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -986,7 +971,7 @@ static NEXUS_VideoFormat forced_output_format(void)
 
    if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
       memset(value, 0, sizeof(value));
-      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      sprintf(name, "ro.%s", BCM_XX_NX_HD_OUT_FMT);
       if (property_get(name, value, "")) {
          if (strlen(value)) {
             forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
@@ -1008,12 +993,13 @@ static nxserver_t init_nxserver(void)
     char value[PROPERTY_VALUE_MAX];
     char key_hdcp1x[PROPERTY_VALUE_MAX];
     char key_hdcp2x[PROPERTY_VALUE_MAX];
+    char cfg_thermal[PROPERTY_VALUE_MAX];
     int ix, jx;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
     SVP_MODE_T svp;
-    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
+    bool cvbs = property_get_int32(BCM_RO_NX_COMP_VIDEO, 0) ? true : false;
     int32_t dolby = 0;
     bool inv_hdcp1x = false, inv_hdcp2x = false;
 
@@ -1026,18 +1012,18 @@ static nxserver_t init_nxserver(void)
     }
 
     memset(&cmdline_settings, 0, sizeof(cmdline_settings));
-    cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 0);
-    cmdline_settings.dtu = property_get_bool(NX_CAPABLE_DTU, 0);
+    cmdline_settings.frontend = property_get_bool(BCM_RO_NX_CAPABLE_FRONT_END, 0);
+    cmdline_settings.dtu = property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0);
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
-    platformSettings.videoDecoderModuleSettings.deferInit = property_get_bool(NX_SPLASH, 0);
+    platformSettings.videoDecoderModuleSettings.deferInit = property_get_bool(BCM_RO_NX_SPLASH, 0);
     defer_init_encoder(&platformSettings, platformSettings.videoDecoderModuleSettings.deferInit);
 
     memset(value, 0, sizeof(value));
-    if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
+    if ( property_get(BCM_RO_NX_AUDIO_LOUDNESS, value, "disabled") ) {
         if ( !strcmp(value, "atsc") ) {
             ALOGI("Enabling ATSC A/85 Loudness Equivalence");
             cmdline_settings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eAtscA85;
@@ -1045,11 +1031,11 @@ static nxserver_t init_nxserver(void)
             ALOGI("Enabling EBU-R128 Loudness Equivalence");
             cmdline_settings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eEbuR128;
         } else if ( strcmp(value, "disabled") ) {
-            ALOGE("Unrecognized value '%s' for %s - expected disabled, atsc, or ebu", value, NX_AUDIO_LOUDNESS);
+            ALOGE("Unrecognized value '%s' for %s - expected disabled, atsc, or ebu", value, BCM_RO_NX_AUDIO_LOUDNESS);
         }
     }
 
-    dolby = property_get_int32(NX_DOLBY_MS,0);
+    dolby = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
     switch (dolby) {
     case 11:
        ALOGI("enabling dolby-ms11");
@@ -1074,9 +1060,9 @@ static nxserver_t init_nxserver(void)
     settings.session[0].ir_input.mode[1] = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
     settings.fbsize.width = property_get_int32(
-        GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+        BCM_RO_HWC2_EXT_NFB_W, GRAPHICS_RES_WIDTH_DEFAULT);
     settings.fbsize.height = property_get_int32(
-        GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
+        BCM_RO_HWC2_EXT_NFB_H, GRAPHICS_RES_HEIGHT_DEFAULT);
     forced_format = forced_output_format();
     if ((forced_format != NEXUS_VideoFormat_eUnknown) && (forced_format < NEXUS_VideoFormat_eMax)) {
        /* -display_format XX */
@@ -1093,15 +1079,27 @@ static nxserver_t init_nxserver(void)
     if (!cvbs) {
        settings.session[0].output.sd = false;
     } else {
-       settings.session[0].output.sd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
+       settings.session[0].output.sd = (property_get_int32(BCM_RO_NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
     }
     settings.session[0].output.encode = false;
-    settings.session[0].output.hd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
+    settings.session[0].output.hd = (property_get_int32(BCM_RO_NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
     /* -enablePassthroughBuffer */
     settings.audioDecoder.enablePassthroughBuffer = true;
-    if (settings.session[0].audioPlaybacks > 0) {
+    ix = property_get_int32(BCM_RO_NX_AP_NUM, settings.session[0].audioPlaybacks);
+    if ((ix > 0) && (ix < (int)settings.session[0].audioPlaybacks)) {
+       settings.session[0].audioPlaybacks = (unsigned)ix;
+    }
+    if (settings.session[0].audioPlaybacks > 1) {
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
+    } else {
+       /* problem? TBD. */
+    }
+    memset(value, 0, sizeof(value));
+    if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NULL)) {
+       if (strlen(value)) {
+          settings.audioPlayback.fifoSize = calc_heap_size(value);
+       }
     }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
@@ -1112,15 +1110,15 @@ static nxserver_t init_nxserver(void)
        settings.display.compositePreferences.enabled = false;
     }
 
-    settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
+    settings.allowCompositionBypass = property_get_int32(BCM_RO_NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
     if (cvbs) {
        settings.allowCompositionBypass = false;
     }
     settings.framebuffers = NSC_FB_NUMBER;
-    settings.pixelFormat = property_get_bool(NX_HWC2_FBCOMP ,0) ?
+    settings.pixelFormat = property_get_bool(BCM_RO_HWC2_TWEAK_FBCOMP ,0) ?
        NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8 : NEXUS_PixelFormat_eA8_R8_G8_B8;
 
-    settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
+    settings.videoDecoder.dynamicPictureBuffers = property_get_int32(BCM_RO_NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
        unsigned d;
        for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
@@ -1133,7 +1131,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
+    if (property_get(BCM_RO_NX_HEAP_HIGH_MEM, value, "")) {
        /* high-mem heap is used for 40 bits addressing. */
        int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
        if (strlen(value) && (index != -1)) {
@@ -1141,7 +1139,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_DRV_MANAGED, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_DRV_MANAGED, value, NULL)) {
        /* driver-managed heap is used for encoder on some platforms only. */
        int index = lookup_heap_memory_type(&platformSettings,
           (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_DRIVER_UNCACHED|NEXUS_MEMORY_TYPE_DRIVER_CACHED|NEXUS_MEMORY_TYPE_APPLICATION_CACHED));
@@ -1150,7 +1148,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_VIDEO_SECURE, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
        if (strlen(value) && (index != -1)) {
           /* -heap video_secure,XXy */
@@ -1158,7 +1156,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_XRR, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_XRR, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_EXPORT_REGION, true);
        if (strlen(value) && (index != -1)) {
           /* -heap export,XXy */
@@ -1166,7 +1164,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_MAIN, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_MAIN, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
        if (strlen(value) && (index != -1)) {
           /* -heap main,XXy */
@@ -1174,7 +1172,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_GFX, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_GFX, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (strlen(value) && (index != -1)) {
           /* -heap gfx,XXy */
@@ -1182,7 +1180,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_GFX2, value, NULL)) {
+    if (property_get(BCM_RO_NX_HEAP_GFX2, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
        if (strlen(value) && (index != -1)) {
           /* -heap gfx2,XXy */
@@ -1190,7 +1188,9 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (property_get(NX_HEAP_GROW, value, NULL)) {
+    if ((!cmdline_settings.dtu ||
+          (cmdline_settings.dtu && !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)))
+        && property_get(BCM_RO_NX_HEAP_GROW, value, NULL)) {
        if (strlen(value)) {
           /* -growHeapBlockSize XXy */
           settings.growHeapBlockSize = calc_heap_size(value);
@@ -1215,6 +1215,7 @@ static nxserver_t init_nxserver(void)
              const char *password = &value[8];
              settings.certificate.length = strlen(password);
              memcpy(settings.certificate.data, password, settings.certificate.length);
+             ALOGI("%s: setup trusted key from file \'%s\'\n", __FUNCTION__, nx_key);
           }
        }
        fclose(key);
@@ -1222,7 +1223,7 @@ static nxserver_t init_nxserver(void)
 
     /* -hdcp1x_keys some-key-file */
     memset(key_hdcp1x, 0, sizeof(key_hdcp1x));
-    property_get(NX_HDCP1X_KEY, key_hdcp1x, NULL);
+    property_get(BCM_RO_NX_HDCP1X_KEY, key_hdcp1x, NULL);
     if (strlen(key_hdcp1x)) {
        struct stat sbuf;
        if (stat(key_hdcp1x, &sbuf) == -1) {
@@ -1234,7 +1235,7 @@ static nxserver_t init_nxserver(void)
     }
     /* -hdcp2x_keys some-key-file */
     memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
-    property_get(NX_HDCP2X_KEY, key_hdcp2x, NULL);
+    property_get(BCM_RO_NX_HDCP2X_KEY, key_hdcp2x, NULL);
     if (strlen(key_hdcp2x)) {
        struct stat sbuf;
        if (stat(key_hdcp2x, &sbuf) == -1) {
@@ -1244,11 +1245,23 @@ static nxserver_t init_nxserver(void)
           strncpy(settings.hdcp.hdcp2xBinFile, key_hdcp2x, strlen(key_hdcp2x));
        }
     }
-    settings.hdcp.versionSelect = (NxClient_HdcpVersion)property_get_int32(NX_HDCP_MODE, 0);
+    settings.hdcp.versionSelect = (NxClient_HdcpVersion)property_get_int32(BCM_RO_NX_HDCP_MODE, 0);
     if (inv_hdcp1x && inv_hdcp2x) {
        memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
-       sprintf(key_hdcp2x, "dyn.nx.hdcp.force");
+       sprintf(key_hdcp2x, BCM_DYN_NX_HDCP_FORCE);
        property_set(key_hdcp2x, "0");
+    }
+
+    /* -thermal_config_file thermal-configuration */
+    memset(cfg_thermal, 0, sizeof(cfg_thermal));
+    property_get(BCM_RO_NX_CFG_THERMAL, cfg_thermal, NULL);
+    if (strlen(cfg_thermal)) {
+       struct stat sbuf;
+       if (stat(cfg_thermal, &sbuf) == -1) {
+          ALOGW("WARNING: thermal configured (%s), but not present!", cfg_thermal);
+       } else {
+          settings.thermal.thermal_config_file = cfg_thermal;
+       }
     }
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
@@ -1256,14 +1269,14 @@ static nxserver_t init_nxserver(void)
     /* svp configuration. */
     memset(value, 0, sizeof(value));
     if (cmdline_settings.dtu) {
-       property_get(NX_SVP, value, "dtu");
+       property_get(BCM_RO_NX_SVP, value, "dtu");
        svp = SVP_MODE_DTU;
        if (strstr(value, "trans") != NULL) {
           sprintf(value, "dtu-trans");
           svp = SVP_MODE_DTU_TRANSCODE;
        }
     } else {
-       property_get(NX_SVP, value, "play");
+       property_get(BCM_RO_NX_SVP, value, "play");
        svp = SVP_MODE_PLAYBACK;
        if (!strncmp(value, "none-trans", strlen("none-trans"))) {
           svp = SVP_MODE_NONE_TRANSCODE;
@@ -1285,7 +1298,77 @@ static nxserver_t init_nxserver(void)
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
        return NULL;
     }
-    if (settings.growHeapBlockSize) {
+
+    if (property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0)) {
+       char addr[PROPERTY_VALUE_MAX];
+       char size[PROPERTY_VALUE_MAX];
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_PBUF0_SET, true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get(BCM_RO_NX_HEAP_DTU_PBUF0_ADDR, addr, "0x80000000");
+          property_get(BCM_RO_NX_HEAP_DTU_PBUF0_SIZE, size, "0x16000000"); /* 352MB */
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling pbuf0 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].size   = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC0_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_PBUF1_SET, true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get(BCM_RO_NX_HEAP_DTU_PBUF1_ADDR, addr, "");
+          property_get(BCM_RO_NX_HEAP_DTU_PBUF1_SIZE, size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling pbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size   = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_SPBUF0_SET, true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get(BCM_RO_NX_HEAP_DTU_SPBUF0_ADDR, addr, "0x96000000");
+          property_get(BCM_RO_NX_HEAP_DTU_SPBUF0_SIZE, size, "0x16000000"); /* 352MB */
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling spbuf0 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC0_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_SPBUF1_SET, true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get(BCM_RO_NX_HEAP_DTU_SPBUF1_ADDR, addr, "");
+          property_get(BCM_RO_NX_HEAP_DTU_SPBUF1_SIZE, size, "");
+          if (strlen(addr) && strlen(size)) {
+             ALOGI("%s: dtu-shuffling spbuf1 @%s, size %s", __FUNCTION__, addr, size);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset = strtoull(addr, NULL, 16);
+             platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size = strtoull(size, NULL, 16);
+             if (platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].offset +
+                 platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].size > ((uint64_t)1)<<32) {
+                platformSettings.heap[NEXUS_MEMC1_SECURE_PICTURE_BUFFER_HEAP].memoryType |=
+                   NEXUS_MEMORY_TYPE_HIGH_MEMORY|NEXUS_MEMORY_TYPE_MANAGED;
+             }
+          }
+       }
+    }
+
+    if (settings.growHeapBlockSize || !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        g_app.dcma_index = settings.heaps.dynamicHeap;
        platformSettings.heap[g_app.dcma_index].heapType |= NX_ASHMEM_NEXUS_DCMA_MARKER;
@@ -1300,6 +1383,36 @@ static nxserver_t init_nxserver(void)
      * and aware of the feature targetted for the platform.
      */
     trim_mem_config(&memConfigSettings, svp);
+
+    /* insert a 'user' dtu heap in the dtu space. */
+    if (property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0)) {
+       int fhi = -1;
+       char addr[PROPERTY_VALUE_MAX];
+       char size[PROPERTY_VALUE_MAX];
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
+          memset(addr, 0, sizeof(addr));
+          memset(size, 0, sizeof(size));
+          property_get(BCM_RO_NX_HEAP_DTU_USER_ADDR, addr, "0xAC000000");
+          property_get(BCM_RO_NX_HEAP_DTU_USER_SIZE, size, "0x14000000"); /* 320MB */
+          if (strlen(addr) && strlen(size)) {
+             fhi = lookup_first_unused_heap(&platformSettings);
+             if (fhi == -1) {
+                ALOGE("failed to associate user-dtu heap (need more heaps?).");
+             }
+             platformSettings.heap[fhi].memcIndex  = 0;
+             platformSettings.heap[fhi].heapType   = NEXUS_HEAP_TYPE_DTU;
+             platformSettings.heap[fhi].offset     = strtoull(addr, NULL, 16);
+             platformSettings.heap[fhi].size       = strtoull(size, NULL, 16);
+             platformSettings.heap[fhi].alignment  = 0;
+             platformSettings.heap[fhi].memoryType = NEXUS_MEMORY_TYPE_MANAGED|
+                                                     NEXUS_MEMORY_TYPE_HIGH_MEMORY|
+                                                     NEXUS_MEMORY_TYPE_APPLICATION_CACHED;
+             ALOGI("user-dtu: heap %d (@%s, size %s)", fhi, addr, size);
+             /* expose to client as the dynamic heap. */
+             settings.heaps.dynamicHeap = fhi;
+          }
+       }
+    }
 
     rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
     if (rc) {
@@ -1405,6 +1518,21 @@ static int set_video_outputs_state(bool enabled)
     return rc;
 }
 
+static void nxserver_rmlmk(uint64_t client)
+{
+   int candidate = NX_INVALID;
+   int lmk;
+   ALOGI("nxserver_rmlmk(%" PRIu64 "): trim cma now.", client);
+
+   lmk = property_get_int32(BCM_RO_NX_LMK_TA, OOM_THRESHOLD_AGRESSIVE);
+   gather_memory_stats_per_process(lmk, &candidate);
+   /* aggressive lmk'ing of the background processes. */
+   if (candidate != NX_INVALID) {
+      kill(candidate, SIGKILL);
+   }
+}
+
+#define NXWRAP_JOIN_V "/vendor/usr/jwl"
 int main(void)
 {
     struct timespec t;
@@ -1445,7 +1573,7 @@ int main(void)
     setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
     set_sched_policy(0, SP_FOREGROUND);
 
-    property_set(NX_STATE, "init");
+    property_set(BCM_DYN_NX_STATE, "init");
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
@@ -1460,7 +1588,7 @@ int main(void)
 
     /* Setup logger environment */
     int32_t loggerDisabled;
-    loggerDisabled = property_get_int32(NX_LOGGER_DISABLED, 0);
+    loggerDisabled = property_get_int32(BCM_RO_NX_LOGGER_DISABLED, 0);
     if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
@@ -1468,10 +1596,10 @@ int main(void)
         setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
-    if (property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0') {
+    if (property_get(BCM_RO_NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0') {
         setenv("debug_log_size", loggerSize, 1);
     }
-    if (property_get_int32(NX_AUDIO_LOG, 0)) {
+    if (property_get_int32(BCM_RO_NX_AUDIO_LOG, 0)) {
         ALOGD("Enabling audio DSP logs to /data/nxmedia");
         setenv("audio_uart_file", "/data/nxmedia/audio_uart", 1);
         setenv("audio_debug_file", "/data/nxmedia/audio_debug", 1);
@@ -1499,7 +1627,7 @@ int main(void)
         _exit(1);
     }
 
-    if (property_get_int32(NX_ACT_WD, 1)) {
+    if (property_get_int32(BCM_RO_NX_ACT_WD, 1)) {
        g_app.wdog.want = true;
     } else {
        g_app.wdog.fd = NX_INVALID;
@@ -1520,6 +1648,10 @@ int main(void)
 
     ALOGI("connecting ourselves.");
     NxClient_GetDefaultJoinSettings(&joinSettings);
+    if ((joinSettings.mode != NEXUS_ClientMode_eVerified) &&
+        !access(NXWRAP_JOIN_V, R_OK)) {
+      joinSettings.mode = NEXUS_ClientMode_eVerified;
+    }
     rc = NxClient_Join(&joinSettings);
     if (rc != NEXUS_SUCCESS) {
        ALOGE("failed to join the server!");
@@ -1535,29 +1667,36 @@ int main(void)
        pthread_attr_destroy(&attr);
     }
 
-    ALOGI("starting binder-ipc.");
-    g_app.binder.running = 1;
-    pthread_attr_init(&attr);
-    if (pthread_create(&g_app.binder.runner, &attr,
-                       binder_task, (void *)&g_app) != 0) {
-        ALOGE("failed binder start, ignoring...");
-        g_app.binder.running = 0;
+    ALOGI("starting i-nexus.");
+    g_app.nxi = new NexusImpl();
+    if (g_app.nxi != NULL) {
+       g_app.nxi->rmlmk_callback(&nxserver_rmlmk);
+       g_app.nxi->start_middleware();
+       pthread_attr_init(&attr);
+       g_app.binder.running = 1;
+       if (pthread_create(&g_app.binder.runner, &attr,
+                          inexus_task, (void *)&g_app) != 0) {
+           ALOGE("failed i-nexus start, ignoring (but not looking good)...");
+           g_app.binder.running = 0;
+       }
+       pthread_attr_destroy(&attr);
+    } else {
+       ALOGE("failed i-nexus creation, ignoring (but not looking good)...");
     }
-    pthread_attr_destroy(&attr);
 
     ALOGI("trigger memory configuration setup.");
-    property_set(NX_STATE, "memcfg");
+    property_set(BCM_DYN_NX_STATE, "memcfg");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
     memset(&ashmem_mgr_cfg, 0, sizeof(struct nx_ashmem_mgr_cfg));
-    if (property_get_int32(NX_ODV, 0)) {
-       property_get(NX_ODV_ALT_THRESHOLD, device, "0m");
+    if (property_get_int32(BCM_RO_NX_ODV, 0)) {
+       property_get(BCM_RO_NX_ODV_ALT_THRESHOLD, device, "0m");
        ashmem_mgr_cfg.alt_use_threshold = calc_heap_size(device);
-       ashmem_mgr_cfg.alt_use_max[0] = property_get_int32(NX_ODV_ALT_1_USAGE, -1);
-       ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
+       ashmem_mgr_cfg.alt_use_max[0] = property_get_int32(BCM_RO_NX_ODV_ALT_1_USAGE, -1);
+       ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(BCM_RO_NX_ODV_ALT_2_USAGE, -1);
     }
 
-    property_get("ro.nx.ashmem.devname", device, NULL);
+    property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
     if (strlen(device)) {
        strcpy(name, "/dev/");
        strcat(name, device);
@@ -1582,7 +1721,7 @@ int main(void)
        }
     }
 
-    if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
+    if (!property_get_bool(BCM_RO_NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
        rc = set_video_outputs_state(true);
        if (rc) {
           ALOGE("could not enable video outputs!");
@@ -1592,7 +1731,7 @@ int main(void)
     alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
 
     ALOGI("trigger nexus waiters now.");
-    property_set(NX_STATE, "loaded");
+    property_set(BCM_DYN_NX_STATE, "loaded");
 
     ALOGI("init done.");
     while (1) {
@@ -1608,7 +1747,19 @@ int main(void)
 
     ALOGI("terminating nxserver.");
 
-    property_set(NX_STATE, "ended");
+    property_set(BCM_DYN_NX_STATE, "ended");
+
+    if (g_app.nxi != NULL) {
+       g_app.nxi->stop_middleware();
+    }
+    if (g_app.binder.running) {
+       g_app.binder.running = 0;
+       pthread_join(g_app.binder.runner, NULL);
+    }
+    if (g_app.nxi != NULL) {
+       delete g_app.nxi;
+       g_app.nxi = NULL;
+    }
 
     if (g_app.wdog.nx) {
        NEXUS_Watchdog_StopTimer();
@@ -1629,12 +1780,6 @@ int main(void)
        pthread_join(g_app.proactive_runner.runner, NULL);
     }
     BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
-
-    g_app.nxb->terminate();
-    if (g_app.binder.running) {
-       g_app.binder.running = 0;
-       pthread_join(g_app.binder.runner, NULL);
-    }
 
     if (g_app.sigterm.running) {
        g_app.sigterm.running = 0;
