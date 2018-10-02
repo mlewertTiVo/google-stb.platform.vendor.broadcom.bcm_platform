@@ -1684,7 +1684,9 @@ int main(void)
        ALOGE("failed i-nexus creation, ignoring (but not looking good)...");
     }
 
-    ALOGI("trigger memory configuration setup.");
+    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
+
+    ALOGI("trigger external memory configuration setup.");
     property_set(BCM_DYN_NX_STATE, "memcfg");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
@@ -1727,8 +1729,6 @@ int main(void)
           ALOGE("could not enable video outputs!");
        }
     }
-
-    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
 
     ALOGI("trigger nexus waiters now.");
     property_set(BCM_DYN_NX_STATE, "loaded");
