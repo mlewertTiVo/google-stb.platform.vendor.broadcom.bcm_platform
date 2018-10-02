@@ -52,6 +52,7 @@
 #define BCM_RO_MEDIA_EARLYDROP_THRESHOLD                 "ro.nx.media.stat.earlydrop_thres"
 #define BCM_RO_MEDIA_DISABLE_RUNTIME_HEAPS               "ro.nx.rth.disable"
 #define BCM_RO_MEDIA_VDEC_STATS_PROPERTY                 "ro.nx.media.vdec_stats.level"
+#define BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM                 "ro.nx.media.vdec_outportbuf"
 
 #define BCM_RO_MEDIA_ADEC_PES_DEBUG                      "ro.nx.media.adec_pes_debug"
 #define BCM_RO_MEDIA_ADEC_INPUT_DEBUG                    "ro.nx.media.adec_input_debug"
