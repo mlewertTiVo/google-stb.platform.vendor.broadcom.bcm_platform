@@ -3578,7 +3578,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
         // Generate unique file name
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        strftime(fname, sizeof(fname), "/data/nxmedia/venc-%F_%H_%M_%S.csv", timeinfo);
+        strftime(fname, sizeof(fname), "/data/vendor/nxmedia/venc-%F_%H_%M_%S.csv", timeinfo);
         ALOGD("ITB descriptors output file:%s", fname);
         m_pITBDescDumpFile = fopen(fname, "w+");
         if ( m_pITBDescDumpFile )
@@ -3601,7 +3601,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
         // Generate unique file name
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        strftime(fname, sizeof(fname), "/data/nxmedia/venc-%F_%H_%M_%S.input", timeinfo);
+        strftime(fname, sizeof(fname), "/data/vendor/nxmedia/venc-%F_%H_%M_%S.input", timeinfo);
         ALOGD("Encoder input debug file:%s", fname);
         m_pInputDumpFile = fopen(fname, "wb+");
         if ( NULL == m_pInputDumpFile )

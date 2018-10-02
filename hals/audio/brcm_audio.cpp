@@ -1129,7 +1129,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         // Generate unique filename
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        snprintf(fname, sizeof(fname), "/data/nxmedia/aout-dev_%u-", devices);
+        snprintf(fname, sizeof(fname), "/data/vendor/nxmedia/aout-dev_%u-", devices);
         strftime(fname+strlen(fname), sizeof(fname)-strlen(fname), "%F_%H_%M_%S.output", timeinfo);
         ALOGD("Audio debug output file:%s", fname);
         bout->outDebugFile = fopen(fname, "wb+");

@@ -2068,7 +2068,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         timeinfo = localtime(&rawtime);
         if ( pesDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.pes", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.pes", timeinfo);
             ALOGD("PES debug output file:%s", fname);
             m_pPesFile = fopen(fname, "wb+");
             if ( NULL == m_pPesFile )
@@ -2079,7 +2079,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         if ( inputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.input", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.input", timeinfo);
             ALOGD("Input debug output file:%s", fname);
             m_pInputFile = fopen(fname, "wb+");
             if ( NULL == m_pInputFile )
@@ -2090,7 +2090,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         if ( outputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.output", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.output", timeinfo);
             ALOGD("Output debug output file:%s", fname);
             m_pOutputFile = fopen(fname, "wb+");
             if ( NULL == m_pOutputFile )

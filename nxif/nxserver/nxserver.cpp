@@ -1600,10 +1600,10 @@ int main(void)
         setenv("debug_log_size", loggerSize, 1);
     }
     if (property_get_int32(BCM_RO_NX_AUDIO_LOG, 0)) {
-        ALOGD("Enabling audio DSP logs to /data/nxmedia");
-        setenv("audio_uart_file", "/data/nxmedia/audio_uart", 1);
-        setenv("audio_debug_file", "/data/nxmedia/audio_debug", 1);
-        setenv("audio_core_file", "/data/nxmedia/audio_core", 1);
+        ALOGD("Enabling audio DSP logs to /data/vendor/nxmedia");
+        setenv("audio_uart_file", "/data/vendor/nxmedia/audio_uart", 1);
+        setenv("audio_debug_file", "/data/vendor/nxmedia/audio_debug", 1);
+        setenv("audio_core_file", "/data/vendor/nxmedia/audio_core", 1);
     }
 
     char modules[PROPERTY_VALUE_MAX];

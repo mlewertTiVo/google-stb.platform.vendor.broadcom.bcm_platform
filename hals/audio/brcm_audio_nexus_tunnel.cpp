@@ -1258,7 +1258,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         // Generate unique filename
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        snprintf(fname, sizeof(fname), "/data/nxmedia/aout-tunnel-dev_%u-", bout->devices);
+        snprintf(fname, sizeof(fname), "/data/vendor/nxmedia/aout-tunnel-dev_%u-", bout->devices);
         strftime(fname+strlen(fname), sizeof(fname)-strlen(fname), "%F_%H_%M_%S.pes", timeinfo);
         ALOGD("Tunneled audio PES debug output file:%s", fname);
         bout->nexus.tunnel.pes_debug = fopen(fname, "wb+");
