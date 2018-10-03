@@ -1575,8 +1575,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput,
-       property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES),
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES,
        ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight),
        false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
@@ -3157,6 +3156,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         m_metadataEnabled = pMetadata->bStoreMetaData == OMX_TRUE ? true : false;
+        if ( m_metadataEnabled )
+        {
+            OMX_PARAM_PORTDEFINITIONTYPE portDef;
+            int maxFrames = property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES);
+            if ( maxFrames > B_MAX_FRAMES )
+            {
+                m_pVideoPorts[1]->GetDefinition(&portDef);
+                portDef.nBufferCountActual = maxFrames;
+                portDef.nBufferCountMin = maxFrames;
+                m_pVideoPorts[1]->SetDefinition(&portDef);
+            }
+        }
         return OMX_ErrorNone;
     }
     case OMX_IndexParamPrepareForAdaptivePlayback:
