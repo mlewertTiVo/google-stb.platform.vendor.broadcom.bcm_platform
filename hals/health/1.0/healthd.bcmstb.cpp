@@ -16,8 +16,10 @@
 
 #include <healthd/healthd.h>
 
-void healthd_board_init(struct healthd_config*) {
-    // use defaults
+#define BCM_FAKE_BATTERY_STATUS_PATH "/data/vendor/fkbat/status"
+
+void healthd_board_init(struct healthd_config* c) {
+   c->batteryStatusPath = BCM_FAKE_BATTERY_STATUS_PATH;
 }
 
 int healthd_board_battery_update(struct android::BatteryProperties* p) {
