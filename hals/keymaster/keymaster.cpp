@@ -1721,7 +1721,7 @@ static keymaster_error_t km_update(
       if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
       if (km_cus.out_data.buffer) SRAI_Memory_Free(km_cus.out_data.buffer);
       if (km_cus.in_params) KM_Tag_DeleteContext(km_cus.in_params);
-      ALOGE("km_finish: failed crypto operation: finish, err: %u (%d)",
+      ALOGE("km_update: failed crypto operation: update, err: %u (%d)",
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
@@ -1763,7 +1763,7 @@ static keymaster_error_t km_update(
             km_bb_free(km_op);
             free(km_op);
             SRAI_Memory_Free(km_cus.out_data.buffer);
-            ALOGE("km_finish: failed copying generated key");
+            ALOGE("km_update: failed copying generated key");
             return KM_ERROR_MEMORY_ALLOCATION_FAILED;
          }
       }
