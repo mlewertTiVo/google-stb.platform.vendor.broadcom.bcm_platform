@@ -61,6 +61,7 @@
 #define BCM_RO_NX_ACT_GS                              "ro.nx.act.gs"
 #define BCM_RO_NX_ACT_LMK                             "ro.nx.act.lmk"
 #define BCM_RO_NX_ACT_WD                              "ro.nx.act.wd"
+#define BCM_RO_NX_ACT_EV                              "ro.nx.act.ev"
 #define BCM_RO_NX_MMA_SHRINK_THRESHOLD                "ro.nx.heap.shrink"
 #define BCM_RO_NX_AUDIO_LOUDNESS                      "ro.nx.audio_loudness"
 #define BCM_RO_NX_CAPABLE_COMP_BYPASS                 "ro.nx.capable.cb"
@@ -92,6 +93,7 @@
 #define BCM_RO_NX_BPCM_NUM                            "ro.nx.audio.bpcm"
 #define BCM_RO_NX_PBAND                               "ro.nx.trpt.pband"
 #define BCM_RO_NX_PPUMP                               "ro.nx.trpt.ppump"
+#define BCM_RO_NX_EV_MAXCLI                           "ro.nx.ev.maxcli"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
 #define BCM_SYS_RECOVERY_NX_STATE                     "sys.recov.nx.state"
@@ -154,4 +156,3 @@
 #define BCM_XX_NX_HD_OUT_FMT                          "nx.vidout.force"
 
 #endif /* VENDOR_BCM_PROPS__NEXUS */
-
