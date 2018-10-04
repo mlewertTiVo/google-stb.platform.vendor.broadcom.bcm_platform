@@ -67,6 +67,7 @@
 #include <sys/prctl.h>
 #include <semaphore.h>
 #include <linux/watchdog.h>
+#include <dirent.h>
 
 #include "nxserver.h"
 #include "nxclient.h"
@@ -83,6 +84,7 @@
 #include <linux/brcmstb/proc_info_proxy.h>
 
 #define NX_CLIENT_USAGE_LOG            0
+#define NX_CLIENT_EVM_LOG              1
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
@@ -156,6 +158,11 @@
 #define NX_PROP_DISABLED               "0"
 #define NX_INVALID                     -1
 
+#define BCM_RO_NX_ACT_EV               "ro.nx.act.ev"
+#define BCM_RO_NX_EV_MAXCLI            "ro.nx.ev.maxcli"
+#define EVM_CNT_DEF                    (14)
+#define MMU_MAX_CLIENTS                (32) /* 16 in reality at the moment. */
+
 #define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
 #define NX_STATE                       "dyn.nx.state"
 
@@ -186,6 +193,12 @@ typedef enum {
    SVP_MODE_DTU,
    SVP_MODE_DTU_TRANSCODE,
 } SVP_MODE_T;
+
+typedef enum {
+   EVM_NONE,
+   EVM_SOFT,
+   EVM_ZEALOUS,
+} EVICTOR_MODE_T;
 
 typedef struct {
    pthread_t runner;
@@ -239,10 +252,15 @@ typedef struct {
         unsigned gfxmem;
         int score;
     } clients[APP_MAX_CLIENTS];
+    struct {
+        unsigned pid;
+        int score;
+    } mmu_cli[MMU_MAX_CLIENTS];
     unsigned connected;
     WDOG_T wdog;
     CATCHER_T sigterm;
     NexusImpl *nxi;
+    EVICTOR_MODE_T evm;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -375,7 +393,7 @@ done:
 }
 
 // devices with v3d mmu have a gem driver which logs data to the
-// dri debugfs, we gather the information fro there.  legacy devices
+// dri debugfs, we gather the information from there.  legacy devices
 // without v3d mmu do not have this information and will work as before
 // for the moment.
 #define NX_DRM_ROOT "/sys/kernel/debug/dri/0/"
@@ -476,6 +494,77 @@ out:
 
 }
 
+static void gather_mmu_clients(int *candidate) {
+    int pip, selected, score, pid;
+    size_t count, threshold;
+    int rc;
+    DIR *dp;
+    FILE *keybox, *otp;
+    struct dirent *entry;
+
+    *candidate = NX_INVALID;
+    selected = NX_INVALID;
+    memset(g_app.mmu_cli, 0, sizeof(g_app.mmu_cli));
+
+    if ((dp = opendir(NX_DRM_ROOT)) == NULL) {
+       // nothing to do.
+       return;
+    }
+    pip = open("/dev/bcmpip", O_RDWR);
+
+    count = 0;
+    while ((entry = readdir(dp)) != NULL) {
+       pid = strtol(entry->d_name, NULL, 10);
+       if (pid == 0 || errno == EINVAL)
+          continue;
+       struct proxy_info_oomadj oomadj;
+       oomadj.pid = pid;
+       rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
+       if (rc >= 0) {
+          g_app.mmu_cli[count].pid = pid;
+          g_app.mmu_cli[count].score = oomadj.score;
+          ALOGI_IF(NX_CLIENT_EVM_LOG,
+             "mmu-client[%u]:%u::score:%d",
+             count,
+             g_app.mmu_cli[count].pid,
+             g_app.mmu_cli[count].score);
+          if (g_app.mmu_cli[count].score > 1 /* keep background preserved tasks. */) {
+             if (selected == NX_INVALID) {
+                selected = count;
+             }
+             if ((selected != NX_INVALID) &&
+                 (g_app.clients[count].score > g_app.clients[selected].score)) {
+                selected = count;
+             }
+          }
+       }
+       /* total mmu clients. */
+       count++;
+    }
+    closedir(dp);
+    if (pip >= 0) {
+       close(pip);
+    }
+
+    threshold = (size_t)property_get_int32(BCM_RO_NX_EV_MAXCLI, EVM_CNT_DEF);
+    if (selected != NX_INVALID) {
+       if (count >= threshold) {
+          *candidate = g_app.mmu_cli[selected].pid;
+       }
+       ALOGI("mmu-%s@%d[%u]:%u::score:%d::cnt:%d",
+          (count >= threshold) ? "evict" : "cand",
+          threshold,
+          selected,
+          *candidate != NX_INVALID ? *candidate : g_app.mmu_cli[selected].pid,
+          g_app.mmu_cli[selected].score,
+          count);
+    }
+
+out:
+    return;
+
+}
+
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -504,14 +593,18 @@ static void *proactive_runner_task(void *argv)
     active_gs  = property_get_int32(NX_ACT_GS,  1);
     active_lmk = property_get_int32(NX_ACT_LMK, 1);
     active_wd  = property_get_int32(NX_ACT_WD,  1);
+    nx_server->evm = (EVICTOR_MODE_T)property_get_int32(BCM_RO_NX_ACT_EV, EVM_SOFT);
+    if (nx_server->evm < EVM_NONE) nx_server->evm = EVM_NONE;
+    if (nx_server->evm > EVM_ZEALOUS) nx_server->evm = EVM_ZEALOUS;
     active_lmk_bg = property_get_int32(NX_LMK_BG, OOM_CONSUME_MAX);
 
-    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
+    ALOGI("%s: launching, grow:%u::shrink:%u, active::gc:%c::gs:%c::lmk:%c::wd:%c::evm:%d",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
           active_gc ? 'o' : 'x',
           active_gs ? 'o' : 'x',
           active_lmk ? 'o' : 'x',
-          active_wd ? 'o' : 'x');
+          active_wd ? 'o' : 'x',
+          nx_server->evm);
 
     do
     {
@@ -530,11 +623,21 @@ static void *proactive_runner_task(void *argv)
         * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
         *
+        * 3) proactive "evictor" on behalf of gmem mmu usage to control how many mmu
+        *    clients are registered at any one time (only applies to device with mmu).
+        *
         */
         if (active_lmk) {
            gather_memory_stats_per_process(active_lmk_bg, &candidate);
            // aggressive lmk'ing of the background processes using more than threshold memory.
            // this requires some further tune up.
+           if (candidate != NX_INVALID) {
+              kill(candidate, SIGKILL);
+           }
+        }
+
+        if (nx_server->evm > EVM_NONE) {
+           gather_mmu_clients(&candidate);
            if (candidate != NX_INVALID) {
               kill(candidate, SIGKILL);
            }
@@ -639,12 +742,23 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
 {
     unsigned i;
     struct nxclient_status status;
+    int candidate = NX_INVALID;
     nxclient_get_status(client, &status);
     BSTD_UNUSED(pClientSettings);
+
+    if (g_app.evm == EVM_ZEALOUS) {
+       gather_mmu_clients(&candidate);
+       if ((candidate != NX_INVALID) &&
+           (candidate != (int)status.pid)) {
+          kill(candidate, SIGKILL);
+       }
+    }
+
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         ALOGE("failed to add nx-client %p", client);
         goto out;
     }
+
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client &&
             g_app.clients[i].client == client) {
@@ -675,6 +789,7 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
             break;
         }
     }
+
 out_lock:
     BKNI_ReleaseMutex(g_app.clients_lock);
 out:
