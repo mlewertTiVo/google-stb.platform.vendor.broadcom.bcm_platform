@@ -520,3 +520,11 @@ static void  SSDTl_priv_indication_cb(SRAI_ModuleHandle module, uint32_t arg, ui
     }
     return;
 }
+
+void SSDTl_Shutdown(void)
+{
+    ALOGD("Shutting down");
+    isRunning = false;
+    BKNI_SetEvent(indication_event);
+    SSDTl_Uninit();
+}

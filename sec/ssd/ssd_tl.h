@@ -52,6 +52,7 @@ void SSDTl_Get_Default_Settings(ssdd_Settings *ssdd_settings);
 BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings);
 void SSDTl_Wait_For_Operations(void);
 void SSDTl_Uninit(void);
+void SSDTl_Shutdown(void);
 
 #ifdef __cplusplus
 }
