@@ -3160,7 +3160,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
             int maxFrames = property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES);
-            if ( maxFrames > B_MAX_FRAMES )
+            if ( (maxFrames > B_MAX_FRAMES) && !m_secureDecoder && !m_secureRuntimeHeaps )
             {
                 m_pVideoPorts[1]->GetDefinition(&portDef);
                 portDef.nBufferCountActual = maxFrames;
@@ -7617,6 +7617,14 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
             }
 
+            if ( returnSettings[numFrames].recycle || returnSettings[numFrames].display )
+            {
+                if ( pBuffer->frameStatus.serialNumber >  m_lastReturnedSerial )
+                {
+                    m_lastReturnedSerial = pBuffer->frameStatus.serialNumber;
+                }
+            }
+
             numFrames++;
             pBuffer = pNext;
         }
@@ -7660,7 +7668,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
             }
 
-            ALOGV("Returning %u frames (%u recycled) to nexus last=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber);
+            ALOGV("Returning %u frames (%u recycled) to nexus last=%u, lastSerial=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber, m_lastReturnedSerial);
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {
@@ -7668,7 +7676,6 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 // Not much else we can do
             }
 
-            m_lastReturnedSerial = pLast->frameStatus.serialNumber;
             if ((m_formatChangeState == FCState_eWaitForSerial) && (m_formatChangeSerial == (m_lastReturnedSerial + 1))) {
                 ALOGV("%s: processing format change, m_formatChangeSerial:%u", __FUNCTION__, m_formatChangeSerial);
                 CancelTimerId(m_formatChangeTimerId);
