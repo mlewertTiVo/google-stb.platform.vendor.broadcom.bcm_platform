@@ -7163,6 +7163,25 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 portDefs.format.video.nStride = ComputeStride(portDefs.format.video.eColorFormat, pBuffer->frameStatus.surfaceCreateSettings.imageWidth);
                                 portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
                                 portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.eColorFormat, portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
+                                if ((portDefs.nBufferCountActual > B_MAX_FRAMES) ||
+                                    (portDefs.nBufferCountMin > B_MAX_FRAMES)) {
+                                   if (m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eMax) {
+                                      ALOGI("Reduce speculative port buffer bloat due to non-use [%d,%d->%d,%d]",
+                                         portDefs.nBufferCountActual, portDefs.nBufferCountMin, B_MAX_FRAMES, B_MAX_FRAMES);
+                                      portDefs.nBufferCountActual = B_MAX_FRAMES;
+                                      portDefs.nBufferCountMin = B_MAX_FRAMES;
+                                   }
+                                } else {
+                                   int maxFrames = property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES);
+                                   if ((m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eConfirmed) &&
+                                       (maxFrames > B_MAX_FRAMES) &&
+                                       !m_secureDecoder && !m_secureRuntimeHeaps /*redundant*/) {
+                                       ALOGI("Bloat port buffer due to verified use [%d,%d->%d]",
+                                         portDefs.nBufferCountActual, portDefs.nBufferCountMin, maxFrames);
+                                       portDefs.nBufferCountActual = maxFrames;
+                                       portDefs.nBufferCountMin = maxFrames;
+                                   }
+                                }
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
                                 m_outputWidth = portDefs.format.video.nFrameWidth;
                                 m_outputHeight = portDefs.format.video.nFrameHeight;
