@@ -111,8 +111,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 
 /* dump frames content for each composition, requires:
  *
- *   # mkdir -p /data/nxmedia/hwc2
- *   # chmod 777 /data/nxmedia/hwc2
+ *   # mkdir -p /data/vendor/nxmedia/hwc2
+ *   # chmod 777 /data/vendor/nxmedia/hwc2
  *   # setprop dyn.nx.hwc2.dump.data <dump>
  *   # dumpsys SurfaceFlinger
  *
@@ -124,11 +124,11 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
  *   # setprop dyn.nx.hwc2.dump.this <what>
  *   # <test>
  *   # setprop dyn.nx.hwc2.dump.this 0
- *   # ls -l /data/nxmedia/hwc2
+ *   # ls -l /data/vendor/nxmedia/hwc2
  *
  * <what> is: 0 (nothing), 1 (header), 2 (content), 3 (filter).
  */
-#define HWC2_DUMP_LOC   "/data/nxmedia/hwc2"
+#define HWC2_DUMP_LOC   "/data/vendor/nxmedia/hwc2"
 
 /* callbacks into client registered on launch. */
 struct hwc2_reg_cb_t {

@@ -63,7 +63,7 @@ static bool stdbMon(
    nxwrap_pwr_state pwr_s;
    bool pwr = nxwrap_get_pwr_info(&pwr_s, NULL);
    if (pwr && (pwr_s > ePowerState_S2)) {
-      SSDTl_Uninit();
+      SSDTl_Shutdown();
       pthread_join(wait_task, NULL);
       property_set(BCM_DYN_SSD_STATE, "ended");
       mStandby = true;

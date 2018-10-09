@@ -1014,7 +1014,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         timeinfo = localtime(&rawtime);
         if ( pesDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/adec-%F_%H_%M_%S.pes", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/adec-%F_%H_%M_%S.pes", timeinfo);
             ALOGD("PES debug output file:%s", fname);
             m_pPesFile = fopen(fname, "wb+");
             if ( NULL == m_pPesFile )
@@ -1025,7 +1025,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         }
         if ( inputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/adec-%F_%H_%M_%S.input", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/adec-%F_%H_%M_%S.input", timeinfo);
             ALOGD("Input debug output file:%s", fname);
             m_pInputFile = fopen(fname, "wb+");
             if ( NULL == m_pInputFile )
@@ -1036,7 +1036,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         }
         if ( outputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/adec-%F_%H_%M_%S.output", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/adec-%F_%H_%M_%S.output", timeinfo);
             ALOGD("Output debug output file:%s", fname);
             m_pOutputFile = fopen(fname, "wb+");
             if ( NULL == m_pOutputFile )

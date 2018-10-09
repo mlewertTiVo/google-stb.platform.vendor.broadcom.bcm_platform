@@ -1600,10 +1600,10 @@ int main(void)
         setenv("debug_log_size", loggerSize, 1);
     }
     if (property_get_int32(BCM_RO_NX_AUDIO_LOG, 0)) {
-        ALOGD("Enabling audio DSP logs to /data/nxmedia");
-        setenv("audio_uart_file", "/data/nxmedia/audio_uart", 1);
-        setenv("audio_debug_file", "/data/nxmedia/audio_debug", 1);
-        setenv("audio_core_file", "/data/nxmedia/audio_core", 1);
+        ALOGD("Enabling audio DSP logs to /data/vendor/nxmedia");
+        setenv("audio_uart_file", "/data/vendor/nxmedia/audio_uart", 1);
+        setenv("audio_debug_file", "/data/vendor/nxmedia/audio_debug", 1);
+        setenv("audio_core_file", "/data/vendor/nxmedia/audio_core", 1);
     }
 
     char modules[PROPERTY_VALUE_MAX];
@@ -1684,7 +1684,9 @@ int main(void)
        ALOGE("failed i-nexus creation, ignoring (but not looking good)...");
     }
 
-    ALOGI("trigger memory configuration setup.");
+    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
+
+    ALOGI("trigger external memory configuration setup.");
     property_set(BCM_DYN_NX_STATE, "memcfg");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
@@ -1727,8 +1729,6 @@ int main(void)
           ALOGE("could not enable video outputs!");
        }
     }
-
-    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
 
     ALOGI("trigger nexus waiters now.");
     property_set(BCM_DYN_NX_STATE, "loaded");

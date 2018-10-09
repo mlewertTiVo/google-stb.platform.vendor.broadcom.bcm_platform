@@ -1575,7 +1575,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight), false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES,
+       ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight),
+       false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
     {
         ALOGW("Unable to create video output port");
@@ -2065,7 +2067,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         timeinfo = localtime(&rawtime);
         if ( pesDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.pes", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.pes", timeinfo);
             ALOGD("PES debug output file:%s", fname);
             m_pPesFile = fopen(fname, "wb+");
             if ( NULL == m_pPesFile )
@@ -2076,7 +2078,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         if ( inputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.input", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.input", timeinfo);
             ALOGD("Input debug output file:%s", fname);
             m_pInputFile = fopen(fname, "wb+");
             if ( NULL == m_pInputFile )
@@ -2087,7 +2089,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         if ( outputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.output", timeinfo);
+            strftime(fname, sizeof(fname), "/data/vendor/nxmedia/vdec-%F_%H_%M_%S.output", timeinfo);
             ALOGD("Output debug output file:%s", fname);
             m_pOutputFile = fopen(fname, "wb+");
             if ( NULL == m_pOutputFile )
@@ -3154,6 +3156,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         m_metadataEnabled = pMetadata->bStoreMetaData == OMX_TRUE ? true : false;
+        if ( m_metadataEnabled )
+        {
+            OMX_PARAM_PORTDEFINITIONTYPE portDef;
+            int maxFrames = property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES);
+            if ( (maxFrames > B_MAX_FRAMES) && !m_secureDecoder && !m_secureRuntimeHeaps )
+            {
+                m_pVideoPorts[1]->GetDefinition(&portDef);
+                portDef.nBufferCountActual = maxFrames;
+                portDef.nBufferCountMin = maxFrames;
+                m_pVideoPorts[1]->SetDefinition(&portDef);
+            }
+        }
         return OMX_ErrorNone;
     }
     case OMX_IndexParamPrepareForAdaptivePlayback:
@@ -7149,6 +7163,25 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 portDefs.format.video.nStride = ComputeStride(portDefs.format.video.eColorFormat, pBuffer->frameStatus.surfaceCreateSettings.imageWidth);
                                 portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
                                 portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.eColorFormat, portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
+                                if ((portDefs.nBufferCountActual > B_MAX_FRAMES) ||
+                                    (portDefs.nBufferCountMin > B_MAX_FRAMES)) {
+                                   if (m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eMax) {
+                                      ALOGI("Reduce speculative port buffer bloat due to non-use [%d,%d->%d,%d]",
+                                         portDefs.nBufferCountActual, portDefs.nBufferCountMin, B_MAX_FRAMES, B_MAX_FRAMES);
+                                      portDefs.nBufferCountActual = B_MAX_FRAMES;
+                                      portDefs.nBufferCountMin = B_MAX_FRAMES;
+                                   }
+                                } else {
+                                   int maxFrames = property_get_int32(BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM, B_MAX_FRAMES);
+                                   if ((m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eConfirmed) &&
+                                       (maxFrames > B_MAX_FRAMES) &&
+                                       !m_secureDecoder && !m_secureRuntimeHeaps /*redundant*/) {
+                                       ALOGI("Bloat port buffer due to verified use [%d,%d->%d]",
+                                         portDefs.nBufferCountActual, portDefs.nBufferCountMin, maxFrames);
+                                       portDefs.nBufferCountActual = maxFrames;
+                                       portDefs.nBufferCountMin = maxFrames;
+                                   }
+                                }
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
                                 m_outputWidth = portDefs.format.video.nFrameWidth;
                                 m_outputHeight = portDefs.format.video.nFrameHeight;
@@ -7603,6 +7636,14 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
             }
 
+            if ( returnSettings[numFrames].recycle || returnSettings[numFrames].display )
+            {
+                if ( pBuffer->frameStatus.serialNumber >  m_lastReturnedSerial )
+                {
+                    m_lastReturnedSerial = pBuffer->frameStatus.serialNumber;
+                }
+            }
+
             numFrames++;
             pBuffer = pNext;
         }
@@ -7646,7 +7687,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
             }
 
-            ALOGV("Returning %u frames (%u recycled) to nexus last=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber);
+            ALOGV("Returning %u frames (%u recycled) to nexus last=%u, lastSerial=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber, m_lastReturnedSerial);
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {
@@ -7654,7 +7695,6 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 // Not much else we can do
             }
 
-            m_lastReturnedSerial = pLast->frameStatus.serialNumber;
             if ((m_formatChangeState == FCState_eWaitForSerial) && (m_formatChangeSerial == (m_lastReturnedSerial + 1))) {
                 ALOGV("%s: processing format change, m_formatChangeSerial:%u", __FUNCTION__, m_formatChangeSerial);
                 CancelTimerId(m_formatChangeTimerId);
