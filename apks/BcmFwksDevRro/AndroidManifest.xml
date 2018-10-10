@@ -1,6 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="com.bcm.android.overlay"
-    android:versionCode="1"
-    android:versionName="1.0">
-    <overlay android:isStatic="true" android:priority="1" android:targetPackage="android"/>
-</manifest>

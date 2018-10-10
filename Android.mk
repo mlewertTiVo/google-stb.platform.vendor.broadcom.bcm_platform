@@ -36,7 +36,6 @@ include ${BCM_APPS_PATH}/BcmBP3Config/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmFwksRro/Android.mk
-include ${BCM_APPS_PATH}/BcmFwksDevRro/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 #include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
