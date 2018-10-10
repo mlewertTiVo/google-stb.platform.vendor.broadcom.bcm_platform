@@ -806,6 +806,21 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
+   /* 3.5. 3d. */
+   if (property_get(BCM_RO_NX_TRIM_3D, value, NX_PROP_ENABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].window[0].support3d = false;
+      }
+   }
+
+   /* 3.6. capture. */
+   if (property_get(BCM_RO_NX_TRIM_CAP, value, NX_PROP_DISABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].window[0].capture = false;
+         pMemConfigSettings->display[0].window[0].convertAnyFrameRate = false;
+      }
+   }
+
    /* 4. video input. */
    if (property_get(BCM_RO_NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
@@ -1101,6 +1116,10 @@ static nxserver_t init_nxserver(void)
           settings.audioPlayback.fifoSize = calc_heap_size(value);
        }
     }
+    ix = property_get_int32(BCM_RO_NX_BPCM_NUM, 0);
+    if ((ix > 0) && (ix < (int)platformSettings.audioModuleSettings.numPcmBuffers)) {
+       platformSettings.audioModuleSettings.numPcmBuffers = ix;
+    }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
     if (cvbs) {
@@ -1128,6 +1147,22 @@ static nxserver_t init_nxserver(void)
           if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
              platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
           }
+       }
+    }
+
+    ix = property_get_int32(BCM_RO_NX_PBAND, NEXUS_NUM_PARSER_BANDS);
+    if ((ix > 0) && (ix < (int)NEXUS_NUM_PARSER_BANDS)) {
+       for (jx = ix; jx < NEXUS_NUM_PARSER_BANDS; jx++) {
+          platformSettings.transportModuleSettings.maxDataRate.parserBand[jx] = 0;
+          platformSettings.transportModuleSettings.clientEnabled.parserBand[jx].rave = 0;
+          platformSettings.transportModuleSettings.clientEnabled.parserBand[jx].message = 0;
+       }
+    }
+    ix = property_get_int32(BCM_RO_NX_PPUMP, NEXUS_NUM_PLAYPUMPS);
+    if ((ix > 0) && (ix < (int)NEXUS_NUM_PLAYPUMPS)) {
+       for (jx = ix; jx < NEXUS_NUM_PLAYPUMPS; jx++) {
+          platformSettings.transportModuleSettings.clientEnabled.playback[jx].rave = 0;
+          platformSettings.transportModuleSettings.clientEnabled.playback[jx].message = 0;
        }
     }
 
