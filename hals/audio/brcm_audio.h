@@ -257,6 +257,7 @@ struct brcm_stream_out {
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_write_time;
                     nsecs_t last_pause_time;
+                    unsigned last_bytes_written;
                     bool debounce;
                     bool debounce_pausing;
                     bool debounce_more;
@@ -268,7 +269,9 @@ struct brcm_stream_out {
                     size_t lastCount;
                     unsigned audioblocks_per_frame;
                     unsigned frame_multiplier;
+                    unsigned bitrate;
                     FILE *pes_debug;
+                    bool priming;
                     unsigned fadeLevel;
                 } tunnel;
             };

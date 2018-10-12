@@ -147,6 +147,7 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
     info->num_audio_blks = num_blocks;
     info->sample_rate = probe.sample_rate;
     info->bitrate = probe.bitrate;
+    info->frame_size = res;
 
     return true;
 }
