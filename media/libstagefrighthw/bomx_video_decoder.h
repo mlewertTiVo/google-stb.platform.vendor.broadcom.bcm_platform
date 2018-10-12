@@ -419,6 +419,7 @@ protected:
     OmxBinder_wrap *m_omxHwcBinder;
     int m_memTracker;
     bool m_secureRuntimeHeaps;
+    bool m_decInstanceCounted;
 
     // Needed to save the latest geometry and frame serial to display
     NEXUS_Rect m_framePosition, m_frameClip;

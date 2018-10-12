@@ -1428,6 +1428,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
     m_secureRuntimeHeaps(false),
+    m_decInstanceCounted(false),
     m_frameSerial(0),
     m_displayFrameAvailable(false),
     m_displayThreadStop(false),
@@ -1750,6 +1751,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
        g_decActiveStateLock.lock();
        g_decInstanceCount++;
+       m_decInstanceCounted = true;
        // sanity checking
        if ( (g_decInstanceCount == 1) && (g_decActiveState != B_DEC_ACTIVE_STATE_INACTIVE) )
        {
@@ -2437,9 +2439,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
 
     g_decActiveStateLock.lock();
-    if ( --g_decInstanceCount == 0 )
+    if ( m_decInstanceCounted && (--g_decInstanceCount == 0) )
     {
         g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
+        m_decInstanceCounted = false;
     }
     g_decActiveStateLock.unlock();
 
