@@ -47,10 +47,12 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 #include "vendor_bcm_props.h"
 
 #define SYS_BOOT_REASON "sys.boot.reason"
-#define BOOT_FROM_DEEP_SLEEP "warm,s3_wakeup"
+// trigger on the non canonical boot reason (earlier).
+#define BOOT_FROM_DEEP_SLEEP "s3_wakeup"
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
@@ -65,6 +67,30 @@ NexusIrInput::NexusIrInput() :
 NexusIrInput::~NexusIrInput()
 {
     stop();
+}
+
+static pthread_t boot_reason;
+static void *boot_reason_wait(void *argv) {
+   int boot_reason = 0;
+   (void)argv;
+   char value[PROPERTY_VALUE_MAX];
+   while (!boot_reason) {
+      // this property will always be set, but may be later in the boot process.
+      property_get(SYS_BOOT_REASON, value, "");
+      if (strlen(value)) {
+         ALOGI("%s published, value=%s", SYS_BOOT_REASON, value);
+         if (!strncmp(value, BOOT_FROM_DEEP_SLEEP, strlen(value))) {
+            property_set(BCM_DYN_NX_BOOT_KEY_TWO, "1");
+         }
+         boot_reason = 1;
+      } else {
+         // it takes about 2 secs from the time we boot to the time we see the
+         // boot reason, so no rush...
+         ALOGV("%s not published, waiting...", SYS_BOOT_REASON);
+         usleep(500*1000);
+      }
+   }
+   return NULL;
 }
 
 bool NexusIrInput::start(NEXUS_IrInputMode mode,
@@ -90,15 +116,10 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
         ALOGE("NexusIrInput start failed!");
     }
     else {
-        /* Determine if the system is woken up by the wakeup key */
-        char value[PROPERTY_VALUE_MAX];
-        property_get(SYS_BOOT_REASON, value, "");
-        if (strlen(value) > 0 && !strncmp(value, BOOT_FROM_DEEP_SLEEP, strlen(value))) {
-            NEXUS_IrInputEvent event;
-            if (NEXUS_IrInput_ReadEvent(m_handle, &event) == NEXUS_SUCCESS && event.code == m_power_key_two) {
-                ALOGV("Woken up by power key two");
-                property_set(BCM_DYN_NX_BOOT_KEY_TWO, "1");
-            }
+        NEXUS_IrInputEvent event;
+        if ((NEXUS_IrInput_ReadEvent(m_handle, &event) == NEXUS_SUCCESS) &&
+            (event.code == m_power_key_two)) {
+           pthread_create(&boot_reason, NULL, boot_reason_wait, NULL);
         }
 
         NEXUS_IrInputDataFilter irPattern;
