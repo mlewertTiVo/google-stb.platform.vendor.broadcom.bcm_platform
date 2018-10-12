@@ -7,21 +7,11 @@ LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/priv-app
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_PACKAGE_NAME := BcmCustomizer
-
-ifdef PRODUCT_SHIPPING_API_LEVEL
 ifeq ($(call math_gt_or_eq,$(PRODUCT_SHIPPING_API_LEVEL),28),)
 LOCAL_PRIVATE_PLATFORM_APIS := true
 endif
-else
-# warning: assume legacy configuration.
-LOCAL_PRIVATE_PLATFORM_APIS := true
-endif
-
+LOCAL_PACKAGE_NAME := BcmCustomizerBase
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CERTIFICATE := platform
-
-LOCAL_STATIC_ANDROID_LIBRARIES := \
-    android-support-annotations
 
 include $(BUILD_PACKAGE)
