@@ -400,17 +400,18 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
 
-            if ((g_app.clients[i].mmuvrt+
-                 g_app.clients[i].mmushm+
-                 g_app.clients[i].mmucma+
-                 g_app.clients[i].nxmem+
-                 g_app.clients[i].gfxmem) >= threshold &&
-                g_app.clients[i].score > 1 /* keep background preserved tasks. */) {
+            if (((g_app.clients[i].mmuvrt+
+                  g_app.clients[i].mmushm+
+                  g_app.clients[i].mmucma+
+                  g_app.clients[i].nxmem+
+                  g_app.clients[i].gfxmem) >= threshold) &&
+                (g_app.clients[i].score > 1) /* allow background preserved tasks. */) {
                 if (selected == NX_INVALID) {
                    selected = i;
-                   break;
                 }
-                if (g_app.clients[i].score > g_app.clients[selected].score) {
+                if ((selected != NX_INVALID) &&
+                    (selected != (int)i) &&
+                    (g_app.clients[i].score > g_app.clients[selected].score)) {
                    selected = i;
                 }
             }
