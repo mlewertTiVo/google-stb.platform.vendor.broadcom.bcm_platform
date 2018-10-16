@@ -388,8 +388,11 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
 
    if (nx != NULL) {
       *nxwrap = nx;
-      nx->join();
       client = nx->client();
+      if (!client) {
+         nx->join();
+         client = nx->client();
+      }
    }
 
    return (void *)(intptr_t)client;
@@ -402,8 +405,11 @@ extern "C" void* nxwrap_create_verified_client(void **nxwrap) {
 
    if (nx != NULL) {
       *nxwrap = nx;
-      nx->join_v();
       client = nx->client();
+      if (!client) {
+         nx->join_v();
+         client = nx->client();
+      }
    }
 
    return (void *)(intptr_t)client;
