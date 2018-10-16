@@ -165,6 +165,7 @@ public:
     inline size_t GetNumEntries();
     void SetLastReturnedPts(unsigned pts);
     unsigned GetMaxDeltaPts();
+    unsigned GetLastAddedPts();
     void PrintStats();
     void Reset();
 
@@ -370,6 +371,7 @@ protected:
     bool m_eosPending;
     bool m_eosDelivered;
     bool m_eosReceived;
+    unsigned m_eosPts;
     enum FormatChangeState
     {
         FCState_eNone,
@@ -550,10 +552,30 @@ protected:
     virtual NEXUS_Error OpenPidChannel(uint32_t pid);
     virtual void ClosePidChannel();
 
+    // Helper class to report rendered frame events to the framework when doing
+    // video tunneling
+    class BOMX_RenderedFrameHandler
+    {
+    public:
+        const size_t MAX_FRAMES_REPORTED_AFTER_EOS = 48;
+        BOMX_RenderedFrameHandler(BOMX_VideoDecoder *parent);
+        ~BOMX_RenderedFrameHandler() {};
+        void NewRenderedFrame(OMX_S64 timestamp, bool isEos);
+        void Reset();
+
+    private:
+        BOMX_VideoDecoder *m_pParent;
+        bool m_eosHandlingStarted;
+        size_t m_numRenderedAfterEos;
+        unsigned m_reportedFrameDelta;
+    };
+
+    BOMX_RenderedFrameHandler m_renderedFrameHandler;
 private:
     BOMX_VIDEO_STATS_DEC;
 
     void DumpInputBuffer(OMX_BUFFERHEADERTYPE *pHeader);
+
 };
 
 #endif //BOMX_VIDEO_DECODER_H__

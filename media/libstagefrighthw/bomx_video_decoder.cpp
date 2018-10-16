@@ -1319,6 +1319,18 @@ unsigned BOMX_InputDataTracker::GetMaxDeltaPts()
     return (largest - smallest);
 }
 
+unsigned BOMX_InputDataTracker::GetLastAddedPts()
+{
+    unsigned lastAdded = UINT_MAX;
+
+    List<unsigned>::iterator it = m_ptsTracker.begin();
+    for (; it != m_ptsTracker.end(); ++it) {
+        lastAdded = *it;
+    }
+
+    return lastAdded;
+}
+
 void BOMX_InputDataTracker::PrintStats()
 {
     if ( m_numInputBuffers > 0 )
@@ -1332,7 +1344,6 @@ void BOMX_InputDataTracker::Reset()
     m_numRetBuffers = 0;
     m_numNotRetBuffers = 0;
 }
-
 
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
@@ -1398,6 +1409,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_eosPending(false),
     m_eosDelivered(false),
     m_eosReceived(false),
+    m_eosPts(UINT_MAX),
     m_formatChangeState(FCState_eNone),
     m_formatChangeTimerId(NULL),
     m_nativeGraphicsEnabled(false),
@@ -1450,7 +1462,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_indexSurface(-1),
     m_virtual(false),
     m_forcePortResetOnHwTex(true),
-    m_sdbGeomCb(NULL)
+    m_sdbGeomCb(NULL),
+    m_renderedFrameHandler(this)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -3366,6 +3379,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
+            m_eosPts = UINT_MAX;
+            m_renderedFrameHandler.Reset();
             m_ptsReceived = false;
             B_Mutex_Lock(m_hDisplayMutex);
             m_displayFrameAvailable = false;
@@ -3557,6 +3572,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_eosPending = false;
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_eosPts = UINT_MAX;
+                m_renderedFrameHandler.Reset();
                 m_ptsReceived = false;
                 m_pBufferTracker->Flush();
                 ReturnPortBuffers(m_pVideoPorts[0]);
@@ -3704,6 +3721,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosPending = false;
                     m_eosDelivered = false;
                     m_eosReceived = false;
+                    m_eosPts = UINT_MAX;
+                    m_renderedFrameHandler.Reset();
                     m_ptsReceived = false;
                     if (BOMX_idpt() != NULL) {
                        BOMX_idpt()->netcoal("default");
@@ -4010,6 +4029,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 m_pBufferTracker->Flush();
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_eosPts = UINT_MAX;
+                m_renderedFrameHandler.Reset();
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 m_frameSerial = 0;
@@ -5437,6 +5458,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         pInfo->numDescriptors += numRequested;
         m_submittedDescriptors += numConsumed;
         m_eosPending = true;
+        // Empty EOS buffer won't be tracked. We need to remember the timestamp of the last frame in
+        // order to properly signal EOS
+        if (pBufferHeader->nFilledLen == 0 && m_tunnelMode )
+            m_eosPts = m_inputDataTracker.GetLastAddedPts();
         if ( NULL != m_pPesFile )
         {
             fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, m_pPesFile);
@@ -6870,53 +6895,29 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                }
             }
 
-            bool reportRenderedFrame = false;
+            bool newRenderedFrame = false;
             if (status.pts != 0 && m_tunnelCurrentPts != status.pts) {
                 if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
                 {
                     ALOGI("Unable to find tracker entry for pts %#x", status.pts);
                     BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
                 }
-                m_tunnelCurrentPts = status.pts;
-                reportRenderedFrame = true;
 
-                if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(omxHeader.nTimeStamp) )
+                m_tunnelCurrentPts = status.pts;
+                newRenderedFrame = true;
+
+                if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) || (m_eosPending && (status.pts == m_eosPts)) )
                 {
-                    // Defer EOS until the last output frame (with the latest timestamp) is returned
-                    m_eosReceived = true;
-                    omxHeader.nFlags &= ~OMX_BUFFERFLAG_EOS;
-                }
-                else if ( m_eosReceived && m_pBufferTracker->Last(omxHeader.nTimeStamp) )
-                {
-                    m_eosReceived = false;
                     omxHeader.nFlags |= OMX_BUFFERFLAG_EOS;
-                }
-                if ( omxHeader.nFlags & OMX_BUFFERFLAG_EOS )
-                {
-                    ALOGV("EOS picture received");
-                    if ( m_eosPending )
-                    {
-                        omxHeader.nFlags |= OMX_BUFFERFLAG_EOS;
-                        m_eosPending = false;
-                        m_eosDelivered = true;
-                    }
-                    else
-                    {
-                        // Fatal error - we did something wrong.
-                        ALOGW("Additional frames received after EOS");
-                        ALOG_ASSERT(true == m_eosPending);
-                        return;
-                    }
+                    m_eosPending = false;
+                    m_eosDelivered = true;
                 }
             } else {
                 ALOGV("%s: status.pts:%u, m_tunnelCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
             }
 
-            if (reportRenderedFrame) {
-                OMX_VIDEO_RENDEREVENTTYPE renderEvent;
-                renderEvent.nSystemTimeNs = now;
-                renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
-                (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+            if (newRenderedFrame) {
+                m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, false);
                 ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Rendering ts=%lld pts=%u now=%" PRIu64 "",
                         omxHeader.nTimeStamp, status.pts, now);
 
@@ -6929,6 +6930,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) && m_eosDelivered )
                 {
                     (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventBufferFlag, m_videoPortBase+1, omxHeader.nFlags, NULL);
+                    m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, true);
                 }
             } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
                 // when we're in the process of dropping frames to reach the start pts, return as many
@@ -8348,4 +8350,48 @@ void BOMX_VideoDecoder::ClosePidChannel()
         NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
         m_hPidChannel = NULL;
     }
+}
+
+BOMX_VideoDecoder::BOMX_RenderedFrameHandler::BOMX_RenderedFrameHandler(BOMX_VideoDecoder *parent)
+:m_pParent(parent),
+ m_eosHandlingStarted(false)
+{
+}
+
+void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::NewRenderedFrame(OMX_S64 timestamp, bool isEos)
+{
+    OMX_VIDEO_RENDEREVENTTYPE renderEvent;
+    bool reportRenderedFrame = true;
+
+    if ( !m_eosHandlingStarted && m_pParent->m_eosPending )
+    {
+        m_eosHandlingStarted = true;
+        m_numRenderedAfterEos = 0;
+        m_reportedFrameDelta = (m_pParent->m_inputDataTracker.GetNumEntries() / MAX_FRAMES_REPORTED_AFTER_EOS) + 1;
+        ALOGV("%s: starting eos handling, entries:%u, frameDelta:%u",
+            __FUNCTION__, m_pParent->m_inputDataTracker.GetNumEntries(), m_reportedFrameDelta);
+    }
+
+    if ( m_eosHandlingStarted )
+    {
+        reportRenderedFrame = false;
+        if ( ++m_numRenderedAfterEos % m_reportedFrameDelta == 0 )
+        {
+           reportRenderedFrame = true;
+        }
+    }
+
+    if ( reportRenderedFrame || isEos )
+    {
+        ALOGV("%s: rendering event, frame with ts:%lld, eos:%d", __FUNCTION__, timestamp, isEos);
+        renderEvent.nSystemTimeNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        renderEvent.nMediaTimeUs = timestamp;
+        (void)m_pParent->m_callbacks.EventHandler((OMX_HANDLETYPE)m_pParent->m_pComponentType,
+            m_pParent->m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+    }
+}
+
+void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::Reset()
+{
+    m_eosHandlingStarted = false;
 }
