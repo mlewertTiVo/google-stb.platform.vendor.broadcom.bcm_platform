@@ -393,7 +393,6 @@ protected:
     native_handle_t *m_pTunnelNativeHandle;
     uint32_t m_tunnelCurrentPts;
     bool m_waitingForStc;
-    nsecs_t m_flushTime;
     unsigned m_stcSyncValue;
     bool m_stcResumePending;
     unsigned m_outputWidth;

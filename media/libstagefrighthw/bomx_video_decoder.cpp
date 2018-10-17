@@ -91,7 +91,6 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
-#define B_WAIT_FOR_STC_SYNC_TIMEOUT_MS (10000)
 #define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
 /****************************************************************************
@@ -1423,7 +1422,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
-    m_flushTime(0),
     m_stcSyncValue(B_STC_SYNC_INVALID_VALUE),
     m_stcResumePending(false),
     m_outputWidth(1920),
@@ -4044,7 +4042,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     NEXUS_Error errCode;
 
                     m_waitingForStc = true;
-                    m_flushTime = systemTime(SYSTEM_TIME_MONOTONIC);
                     m_stcResumePending = false;
 
                     // Pause decoder until a valid stc is available
@@ -6853,10 +6850,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     resumeDecoder = true;
                     m_stcSyncValue = stcSync;
                     ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
-                } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
-                    ALOGW("%s: timeout waiting for stc", __FUNCTION__);
-                    resumeDecoder = true;
-                    m_stcSyncValue = B_STC_SYNC_INVALID_VALUE;
                 }
 
                 if (resumeDecoder) {
