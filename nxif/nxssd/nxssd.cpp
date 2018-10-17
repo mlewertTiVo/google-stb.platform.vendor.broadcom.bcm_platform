@@ -65,7 +65,6 @@ static bool stdbMon(
    if (pwr && (pwr_s > ePowerState_S2)) {
       SSDTl_Shutdown();
       pthread_join(wait_task, NULL);
-      property_set(BCM_DYN_SSD_STATE, "ended");
       mStandby = true;
    }
    return true;

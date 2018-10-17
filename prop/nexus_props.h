@@ -89,6 +89,9 @@
 #define BCM_RO_NX_HD_OUT_OBR                          "ro.nx.vidout.obr"
 #define BCM_RO_NX_AP_NUM                              "ro.nx.audio.pbk"
 #define BCM_RO_NX_AP_FIFO_SZ                          "ro.nx.audio.pbkfifosz"
+#define BCM_RO_NX_BPCM_NUM                            "ro.nx.audio.bpcm"
+#define BCM_RO_NX_PBAND                               "ro.nx.trpt.pband"
+#define BCM_RO_NX_PPUMP                               "ro.nx.trpt.ppump"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
 #define BCM_SYS_RECOVERY_NX_STATE                     "sys.recov.nx.state"
@@ -135,12 +138,14 @@
 #define BCM_RO_NX_TRIM_VIDIN                          "ro.nx.trim.vidin"
 #define BCM_RO_NX_TRIM_MTG                            "ro.nx.trim.mtg"
 #define BCM_RO_NX_TRIM_HDMIIN                         "ro.nx.trim.hdmiin"
+#define BCM_RO_NX_TRIM_3D                             "ro.nx.trim.disp.3d"
 /* destructive trimming config - feature set limitation - default DISABLED. */
 #define BCM_RO_NX_TRIM_VP9                            "ro.nx.trim.vp9"
 #define BCM_RO_NX_TRIM_4KDEC                          "ro.nx.trim.4kdec"
 #define BCM_RO_NX_TRIM_10BCOL                         "ro.nx.trim.10bcol"
 #define BCM_RO_NX_TRIM_D0HD                           "ro.nx.trim.d0hd"
 #define BCM_RO_NX_TRIM_DEINT                          "ro.nx.trim.deint"
+#define BCM_RO_NX_TRIM_CAP                            "ro.nx.trim.disp.cap"
 
 #define BCM_DYN_NX_HD_OUT_HWC                         "dyn.nx.vidout.hwc"
 #define BCM_DYN_NX_HD_OUT_SET                         "dyn.nx.vidout.set"
