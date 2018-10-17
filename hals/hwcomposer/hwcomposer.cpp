@@ -716,7 +716,9 @@ static void hwc2_hdmi_collect(
          float xdp = bedid.maxHorizSize ? (w * 1000.0 / ((float)bedid.maxHorizSize * 0.39370)) : 0.0;
          float ydp = bedid.maxVertSize  ? (h * 1000.0 / ((float)bedid.maxVertSize * 0.39370)) : 0.0;
          cfg->xdp = (int)xdp;
+         if (!cfg->xdp) cfg->xdp = 160;
          cfg->ydp = (int)ydp;
+         if (!cfg->ydp) cfg->ydp = 160;
          cfg = cfg->next;
       }
    }
