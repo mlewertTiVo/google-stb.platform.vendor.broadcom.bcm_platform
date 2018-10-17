@@ -16,6 +16,7 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(SAGE_SUPPORT),y)
 GOOGLE_CLEARKEY_ROOT := ../../../../../../../frameworks/av/drm/mediacas/plugins/clearkey
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
@@ -93,3 +94,5 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := \
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
+endif
+
