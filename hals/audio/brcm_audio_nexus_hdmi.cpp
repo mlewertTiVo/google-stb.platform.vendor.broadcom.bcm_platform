@@ -44,9 +44,8 @@ using namespace android;
 struct hdmi_audio_format_map_t {
     NEXUS_AudioCodec nexusCodec;
     const char *formatString;
+    const char *additionalFormatString;
     bool compressed;
-    bool channels_5_1;
-    bool channels_7_1;
 };
 
 static struct hdmi_audio_format_map_t formatMap[] =
@@ -55,40 +54,33 @@ static struct hdmi_audio_format_map_t formatMap[] =
         .nexusCodec = NEXUS_AudioCodec_ePcm,
         .formatString = "AUDIO_FORMAT_PCM_16_BIT",
         .compressed = false,
-        .channels_5_1 = false,
-        .channels_7_1 = false,
     },
     {
         .nexusCodec = NEXUS_AudioCodec_eAc3,
         .formatString = "AUDIO_FORMAT_AC3",
         .compressed = true,
-        .channels_5_1 = true,
-        .channels_7_1 = false,
     },
     {
         .nexusCodec = NEXUS_AudioCodec_eAc3Plus,
         .formatString = "AUDIO_FORMAT_E_AC3",
+        .additionalFormatString = "AUDIO_FORMAT_E_AC3_JOC",
         .compressed = true,
-        .channels_5_1 = true,
-        .channels_7_1 = true,
     },
     {
         .nexusCodec = NEXUS_AudioCodec_eDts,
         .formatString = "AUDIO_FORMAT_DTS",
         .compressed = true,
-        .channels_5_1 = true,
-        .channels_7_1 = false,
     },
     {
         .nexusCodec = NEXUS_AudioCodec_eDtsHd,
         .formatString = "AUDIO_FORMAT_DTS_HD",
         .compressed = true,
-        .channels_5_1 = true,
-        .channels_7_1 = true,
     },
 };
 
 static int num_codecs = sizeof(formatMap)/sizeof(formatMap[0]);
+
+#define E_AC3_JOC_BIT 0x01
 
 static void property_append (String8& camels_back, const char *straw) {
     if (!camels_back.contains(straw)) {
@@ -101,7 +93,7 @@ static void property_append (String8& camels_back, const char *straw) {
 void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& formats)
 {
     NEXUS_HdmiOutputHandle hdmiHandle;
-    NEXUS_HdmiOutputStatus hdmiStatus;
+    NEXUS_HdmiOutputEdidData hdmiEdid;
     NEXUS_PlatformConfiguration *pConfig;
     NEXUS_Error errCode;
 
@@ -114,41 +106,52 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
         NEXUS_Platform_GetConfiguration(pConfig);
         hdmiHandle = pConfig->outputs.hdmi[0]; /* always first output. */
         BKNI_Free(pConfig);
-        errCode = NEXUS_HdmiOutput_GetStatus(hdmiHandle, &hdmiStatus);
-        if (!errCode) {
+        errCode = NEXUS_HdmiOutput_GetEdidData(hdmiHandle, &hdmiEdid);
+        if (!errCode && hdmiEdid.valid && hdmiEdid.audiodb.valid) {
             int codec;
             bool compressed = false;
-            bool channels_5_1 = false;
-            bool channels_7_1 = false;
+            unsigned maxChannels = 2;
 
             for (codec = 0; codec < num_codecs; codec++) {
-                if (hdmiStatus.audioCodecSupported[formatMap[codec].nexusCodec]) {
+                if (hdmiEdid.audiodb.audioFormat[formatMap[codec].nexusCodec].supported) {
                     ALOGV("%s: codec %s supported\n", __PRETTY_FUNCTION__, formatMap[codec].formatString);
 
                     /* Check for compressed and multichannel codecs */
                     compressed = compressed || (formatMap[codec].compressed);
-                    channels_5_1 = channels_5_1 || (formatMap[codec].channels_5_1);
-                    channels_7_1 = channels_7_1 || (formatMap[codec].channels_7_1);
+                    if (hdmiEdid.audiodb.audioFormat[formatMap[codec].nexusCodec].audioChannels > maxChannels)
+                        maxChannels = hdmiEdid.audiodb.audioFormat[formatMap[codec].nexusCodec].audioChannels;
 
                     /* Append formats string */
                     if (!formats.isEmpty())
                         formats.append("|");
                     formats.append(formatMap[codec].formatString);
+
+                    /* Handle format specifics */
+                    switch (formatMap[codec].nexusCodec) {
+                        case NEXUS_AudioCodec_eAc3Plus:
+                            if (hdmiEdid.audiodb.audioFormat[formatMap[codec].nexusCodec].dataType.compressed.formatDependentValue & E_AC3_JOC_BIT) {
+                                formats.append("|");
+                                formats.append(formatMap[codec].additionalFormatString);
+                            }
+                            break;
+                        default:
+                            break;
+                    }
                 }
             }
 
             /* Advertise the standard sampling rates and let Nexus do upsampling if necessary.
-             * Add the 4K multiples of 44.1KHz and 48Khz if compressed codec is supported */
+             * Add the 4x multiples of 44.1KHz and 48Khz if compressed codec is supported */
             rates.append("8000|11025|12000|16000|22050|24000|32000|44100|48000");
             if (compressed)
                 rates.append("|176400|192000");
 
             channels.append("AUDIO_CHANNEL_OUT_MONO|AUDIO_CHANNEL_OUT_STEREO");
-            if (compressed)
+            if (maxChannels >= 4)
                 channels.append("|AUDIO_CHANNEL_OUT_QUAD");
-            if (channels_5_1)
+            if (maxChannels >= 6)
                 channels.append("|AUDIO_CHANNEL_OUT_5POINT1");
-            if (channels_7_1)
+            if (maxChannels >= 8)
                 channels.append("|AUDIO_CHANNEL_OUT_7POINT1");
         }
     }
