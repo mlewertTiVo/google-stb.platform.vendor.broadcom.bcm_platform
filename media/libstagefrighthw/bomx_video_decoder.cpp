@@ -1587,7 +1587,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES,
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, m_tunnelMode ? 0 : B_MAX_FRAMES,
        ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight),
        false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
