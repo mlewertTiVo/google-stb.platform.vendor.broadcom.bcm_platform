@@ -49,6 +49,7 @@
 #define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
 #define LOG_ICB_DEBUG       (1<<6)  /* use of intermediate composition buffer for blit ops. */
 #define LOG_COMP_TICK_DEBUG (1<<7)  /* timekeeper information during frame composition. */
+#define LOG_ROT_DEBUG       (1<<8)  /* rotation. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
