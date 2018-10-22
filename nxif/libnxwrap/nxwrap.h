@@ -92,6 +92,8 @@ public:
    int acquireWL();
    // release wakelock on inexus
    int releaseWL();
+   // mark this client as SRAI user.
+   void sraiClient();
 
    static Mutex mLck;
 

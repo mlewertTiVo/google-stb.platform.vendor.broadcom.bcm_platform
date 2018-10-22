@@ -401,6 +401,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     {
         ALOGV("Creating persistent nxclient connection");
         g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxWrap.sraiClient();
         g_persistNxClientOn = true;
     }
     g_persistNxWrapLock.unlock();
@@ -414,6 +415,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     {
         // Check if the platform supports VP9
         pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -1733,6 +1735,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
         ALOGV("Creating persistent nxclient connection");
         g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxWrap.sraiClient();
         g_persistNxClientOn = true;
     }
     g_persistNxWrapLock.unlock();
@@ -1749,6 +1752,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         else
         {
             m_pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
+            m_pNxWrap->sraiClient();
         }
     }
     m_nexusClient = m_pNxWrap->client();

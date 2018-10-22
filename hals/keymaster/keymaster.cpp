@@ -2098,6 +2098,7 @@ static int km_open(
       return -EINVAL;
    }
    km_hdl->nxwrap->join_v(km_stdby, (void *)km_hdl);
+   km_hdl->nxwrap->sraiClient();
    NxClient_GetDefaultCallbackThreadSettings(&cts);
    cts.standbyStateChanged.callback  = km_stdcg;
    cts.standbyStateChanged.context   = (void *)km_hdl;

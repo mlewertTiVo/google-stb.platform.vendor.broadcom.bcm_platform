@@ -48,6 +48,7 @@
 #include <nxwrap.h>
 #include "nexus_platform.h"
 #include <bcm/hardware/nexus/1.0/INexus.h>
+#include "sage_srai.h"
 
 using namespace android;
 using namespace android::hardware;
@@ -376,6 +377,15 @@ int NxWrap::releaseWL() {
       return status == NexusStatus::SUCCESS ? 0 : -EINVAL;
    }
    return -EAGAIN;
+}
+
+void NxWrap::sraiClient() {
+   SRAI_Settings ss;
+   SRAI_GetSettings(&ss);
+   ss.generalHeapIndex     = NXCLIENT_FULL_HEAP;
+   ss.videoSecureHeapIndex = NXCLIENT_VIDEO_SECURE_HEAP;
+   ss.exportHeapIndex      = NXCLIENT_EXPORT_HEAP;
+   SRAI_SetSettings(&ss);
 }
 
 // helper functions for easy hook up.  creates the middleware client and returns a
