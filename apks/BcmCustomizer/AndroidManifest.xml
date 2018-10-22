@@ -28,6 +28,11 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+        <service android:name=".HdmiAudioPlugService">
+            <intent-filter>
+                <action android:name="android.media.action.HDMI_AUDIO_PLUG" />
+            </intent-filter>
+        </service>
         <activity android:name=".SplashActivity"
                   android:label="@string/app_label"
                   android:excludeFromRecents="true"
