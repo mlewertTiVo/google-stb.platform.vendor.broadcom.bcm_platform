@@ -49,6 +49,7 @@ typedef struct {
     unsigned num_audio_blks;    // numblkscod
     unsigned sample_rate;
     unsigned bitrate;
+    unsigned frame_size;
 } eac3_frame_hdr_info;
 
 const uint8_t *nexus_find_ac3_sync_frame(const uint8_t *data, size_t len, eac3_frame_hdr_info *info);

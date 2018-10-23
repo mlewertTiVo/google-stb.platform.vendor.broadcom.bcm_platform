@@ -85,15 +85,5 @@ public class BootCompletedReceiver extends BroadcastReceiver {
                 Log.i(TAG, nrdpAudioSettingKey + " set to " + nrdpAudioSettingMS12Value);
             }
         }
-
-        final String nrdpSettingKey = "nrdp_platform_capabilities";
-        final String nrdpSettingNoVP9Value = "{\"vp9Disabled\":\"true\"}";
-
-        final String nrdpSettingString;
-        nrdpSettingString = Settings.Global.getString(context.getContentResolver(), nrdpSettingKey);
-        if (nrdpSettingString == null) {
-            Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, nrdpSettingNoVP9Value);
-            Log.i(TAG, nrdpSettingKey + " set to " + nrdpSettingNoVP9Value);
-        }
     }
 }

@@ -129,6 +129,7 @@ bool convertLegacyFeaturesToHidlChipCapabilities(
         return false;
     }
     *hidl_caps = {};
+    using HidlChipCaps = IWifiChip::ChipCapabilityMask;
     for (const auto feature : {legacy_hal::WIFI_LOGGER_MEMORY_DUMP_SUPPORTED,
                                legacy_hal::WIFI_LOGGER_DRIVER_DUMP_SUPPORTED,
                                legacy_hal::WIFI_LOGGER_CONNECT_EVENT_SUPPORTED,
@@ -146,6 +147,7 @@ bool convertLegacyFeaturesToHidlChipCapabilities(
             *hidl_caps |= convertLegacyFeatureToHidlChipCapability(feature);
         }
     }
+    *hidl_caps |= HidlChipCaps::DEBUG_ERROR_ALERTS;
     return true;
 }
 

@@ -1,0 +1,4 @@
+103461503a90a54a62560b6a220c04c3144a9a44bfd42fe2e7134f57802d29d0 bcm.hardware.dspsvcext@1.0::types
+80fbcebf809bcc7dd2752de7024169960be690723915035825813d8689b58c92 bcm.hardware.dspsvcext@1.0::IDspSvcExt
+7ec3e9f7e7d5ecf6887e0be120aecf187d0977f03ada8bcaf11316b21d44c0fc bcm.hardware.dspsvcext@1.0::IDspSvcExtSdbGeomCb
+

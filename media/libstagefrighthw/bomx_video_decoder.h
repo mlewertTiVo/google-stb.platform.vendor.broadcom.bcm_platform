@@ -143,7 +143,7 @@ struct BOMX_VideoDecoderFrameBuffer
     BOMX_VideoDecoderFrameBufferState state;
     NEXUS_VideoDecoderFrameStatus frameStatus;
     NEXUS_StripedSurfaceHandle hStripedSurface;
-    private_handle_t *pPrivateHandle;
+    void *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
     bool display;
 };
@@ -165,6 +165,7 @@ public:
     inline size_t GetNumEntries();
     void SetLastReturnedPts(unsigned pts);
     unsigned GetMaxDeltaPts();
+    unsigned GetLastAddedPts();
     void PrintStats();
     void Reset();
 
@@ -370,6 +371,7 @@ protected:
     bool m_eosPending;
     bool m_eosDelivered;
     bool m_eosReceived;
+    unsigned m_eosPts;
     enum FormatChangeState
     {
         FCState_eNone,
@@ -391,7 +393,6 @@ protected:
     native_handle_t *m_pTunnelNativeHandle;
     uint32_t m_tunnelCurrentPts;
     bool m_waitingForStc;
-    nsecs_t m_flushTime;
     unsigned m_stcSyncValue;
     bool m_stcResumePending;
     unsigned m_outputWidth;
@@ -419,6 +420,7 @@ protected:
     OmxBinder_wrap *m_omxHwcBinder;
     int m_memTracker;
     bool m_secureRuntimeHeaps;
+    bool m_decInstanceCounted;
 
     // Needed to save the latest geometry and frame serial to display
     NEXUS_Rect m_framePosition, m_frameClip;
@@ -504,7 +506,7 @@ protected:
     bool GraphicsCheckpoint();
     void CopyAlignedSurfaceToClient(uint8_t *pClientMemory, const uint8_t *pSurfaceMemory, uint16_t height, unsigned int pitch, OMX_S32 stride);
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
-    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
+    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(VideoDecoderOutputMetaData *pMetadata);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
     OMX_ERRORTYPE DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface);
 
@@ -549,10 +551,30 @@ protected:
     virtual NEXUS_Error OpenPidChannel(uint32_t pid);
     virtual void ClosePidChannel();
 
+    // Helper class to report rendered frame events to the framework when doing
+    // video tunneling
+    class BOMX_RenderedFrameHandler
+    {
+    public:
+        const size_t MAX_FRAMES_REPORTED_AFTER_EOS = 48;
+        BOMX_RenderedFrameHandler(BOMX_VideoDecoder *parent);
+        ~BOMX_RenderedFrameHandler() {};
+        void NewRenderedFrame(OMX_S64 timestamp, bool isEos);
+        void Reset();
+
+    private:
+        BOMX_VideoDecoder *m_pParent;
+        bool m_eosHandlingStarted;
+        size_t m_numRenderedAfterEos;
+        unsigned m_reportedFrameDelta;
+    };
+
+    BOMX_RenderedFrameHandler m_renderedFrameHandler;
 private:
     BOMX_VIDEO_STATS_DEC;
 
     void DumpInputBuffer(OMX_BUFFERHEADERTYPE *pHeader);
+
 };
 
 #endif //BOMX_VIDEO_DECODER_H__

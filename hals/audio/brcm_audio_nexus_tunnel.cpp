@@ -86,12 +86,17 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_TUNNEL_NEXUS_LATENCY_MS      (128)   // Audio latency is 128ms + lipsync offset in standard latency mode
 
 #define BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE      (2048)
-#define BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED     (40)
-#define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US   (20000)
-/* Drain delay x retries = 500ms */
-#define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX  (25)
+#define BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS     (200)
+#define BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS    (125)
+#define BRCM_AUDIO_TUNNEL_COMP_EST_BYTE_MUL     (5)
+#define BRCM_AUDIO_TUNNEL_COMP_THRES_MUL        (4)
 
 #define BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID      (0xFFFFFFFF)
+
+#define KBITRATE_TO_BYTES_PER_125MS(kbr)        ((kbr) * 16)    // 1024/8/8
+#define KBITRATE_TO_BYTES_PER_3S(kbr)           ((kbr) * 384)   // 1024*3/8
+#define MORE_THAN_20_PERCENT(x)                 ((x) * 6 / 5)
+#define BYTES_TO_MS_FROM_KBITRATE(bytes,kbr)    (((bytes) * 1000) / ((kbr) * 128))
 
 /*
  * Function declarations
@@ -328,6 +333,136 @@ static uint32_t nexus_tunnel_bout_get_latency(struct brcm_stream_out *bout)
     return BRCM_AUDIO_TUNNEL_NEXUS_LATENCY_MS;
 }
 
+static int32_t nexus_tunnel_bout_get_fifo_depth(struct brcm_stream_out *bout)
+{
+    NEXUS_AudioDecoderStatus decStatus;
+    NEXUS_PlaypumpStatus ppStatus;
+    unsigned bitrate = 0;
+
+    ALOG_ASSERT(!bout->nexus.tunnel.pcm_format);
+
+    NEXUS_Error rc = NEXUS_SimpleAudioDecoder_GetStatus(bout->nexus.tunnel.audio_decoder, &decStatus);
+    if (rc != NEXUS_SUCCESS) {
+        ALOGE("%s: Error retriving audio decoder status %u", __FUNCTION__, rc);
+        return -1;
+    }
+    rc = NEXUS_Playpump_GetStatus(bout->nexus.tunnel.playpump, &ppStatus);
+    if (rc != NEXUS_SUCCESS) {
+        ALOGE("%s: Error retriving playpump status %u", __FUNCTION__, rc);
+        return -1;
+    }
+
+    switch (decStatus.codec) {
+        case NEXUS_AudioCodec_eAc3:
+        case NEXUS_AudioCodec_eAc3Plus: {
+            bitrate = decStatus.codecStatus.ac3.bitrate;
+        }
+        case NEXUS_AudioCodec_eDts:
+        case NEXUS_AudioCodec_eDtsHd: {
+            bitrate = decStatus.codecStatus.dts.bitRate;
+        }
+        default: {
+        }
+    }
+    if (bitrate > 0 && bitrate != bout->nexus.tunnel.bitrate) {
+        bout->nexus.tunnel.bitrate = bitrate;
+        ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
+    }
+
+    ALOGV("%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_3S(bout->nexus.tunnel.bitrate));
+
+    return ppStatus.fifoDepth + decStatus.fifoDepth;
+}
+
+static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
+{
+    NEXUS_Error res;
+    NEXUS_AudioDecoderTrickState trickState;
+    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    trickState.rate = 0;
+    res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+       return false;
+    }
+
+    res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error pausing STC %u", __FUNCTION__, res);
+
+       trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+       NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+       return false;
+    }
+    return true;
+}
+
+static bool nexus_tunnel_bout_resume_pcm(struct brcm_stream_out *bout)
+{
+    NEXUS_Error res;
+    NEXUS_AudioDecoderTrickState trickState;
+
+    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    if (trickState.rate == 0) {
+        trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+        res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+        if (res != NEXUS_SUCCESS) {
+           ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+           return false;
+        }
+
+        res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
+        if (res != NEXUS_SUCCESS) {
+           ALOGE("%s: Error resuming STC %u", __FUNCTION__, res);
+
+           trickState.rate = 0;
+           NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+           return false;
+        }
+    }
+
+    return true;
+}
+
+static bool nexus_tunnel_bout_resume_comp(struct brcm_stream_out *bout)
+{
+    NEXUS_Error res;
+    NEXUS_AudioDecoderTrickState trickState;
+
+    ALOG_ASSERT(!bout->nexus.tunnel.pcm_format);
+    int32_t fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
+    if (fifoDepth < 0) {
+        return false;
+    }
+
+    if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate)) {
+        ALOGV("%s: Resume without priming", __FUNCTION__);
+        NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+        trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+        res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+        if (res != NEXUS_SUCCESS) {
+           ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+           return false;
+        }
+
+        res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
+        if (res != NEXUS_SUCCESS) {
+           ALOGE("%s: Error resuming STC %u", __FUNCTION__, res);
+
+           trickState.rate = 0;
+           NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+           return false;
+        }
+        bout->nexus.tunnel.priming = false;
+    }
+    else {
+        ALOGV("%s: Resume with priming", __FUNCTION__);
+        bout->nexus.tunnel.priming = true;
+    }
+
+    return true;
+}
+
 static void nexus_tunnel_bout_debounce_reset(struct brcm_stream_out *bout)
 {
     bout->nexus.tunnel.debounce = false;
@@ -422,12 +557,37 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     }
     ALOGV("%s: Audio decoder started (0x%x:%d)", __FUNCTION__, bout->config.format, start_settings.primary.codec);
 
+    bout->nexus.tunnel.priming = false;
+    if (!bout->nexus.tunnel.pcm_format && bout->nexus.tunnel.stc_channel != NULL && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
+        NEXUS_AudioDecoderTrickState trickState;
+        NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
+        trickState.rate = 0;
+        ret = NEXUS_SimpleAudioDecoder_SetTrickState(audio_decoder, &trickState);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Error pausing audio decoder for priming %u", __FUNCTION__, ret);
+        }
+        else {
+            ret = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
+            if (ret != NEXUS_SUCCESS) {
+               ALOGE("%s: Error pausing STC for priming %u", __FUNCTION__, ret);
+
+               trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+               NEXUS_SimpleAudioDecoder_SetTrickState(audio_decoder, &trickState);
+            }
+            else {
+                bout->nexus.tunnel.priming = true;
+            }
+        }
+    }
+
     nexus_tunnel_bout_debounce_reset(bout);
     bout->nexus.tunnel.last_write_time = 0;
 
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+    bout->nexus.tunnel.bitrate = 0;
+    bout->nexus.tunnel.last_bytes_written = 0;
     bout->framesPlayed = 0;
 
     return 0;
@@ -493,6 +653,8 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+    bout->nexus.tunnel.bitrate = 0;
+    bout->nexus.tunnel.last_bytes_written = 0;
     bout->framesPlayed = 0;
 
     return 0;
@@ -582,22 +744,21 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        return 0;
     }
 
-    NEXUS_AudioDecoderTrickState trickState;
-    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-    trickState.rate = 0;
-    res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-    if (res != NEXUS_SUCCESS) {
-       ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
-       return -ENOMEM;
+    if (bout->nexus.tunnel.pcm_format) {
+        if (!nexus_tunnel_bout_pause_int(bout)) {
+            return -ENOMEM;
+        }
     }
-
-    res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
-    if (res != NEXUS_SUCCESS) {
-       ALOGE("%s: Error pausing STC %u", __FUNCTION__, res);
-
-       trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-       NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-       return -ENOMEM;
+    else {
+        if (!bout->nexus.tunnel.priming) {
+            if (!nexus_tunnel_bout_pause_int(bout)) {
+                return -ENOMEM;
+            }
+        }
+        else {
+            ALOGV("%s: Stop priming", __FUNCTION__);
+            bout->nexus.tunnel.priming = false;
+        }
     }
     ALOGV("%s", __FUNCTION__);
 
@@ -621,22 +782,17 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
        return 0;
     }
 
-    NEXUS_AudioDecoderTrickState trickState;
-    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-    res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-    if (res != NEXUS_SUCCESS) {
-       ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
-       return -ENOMEM;
+    if (bout->nexus.tunnel.pcm_format) {
+        if (!nexus_tunnel_bout_resume_pcm(bout)) {
+            return -ENOMEM;
+        }
     }
-
-    res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
-    if (res != NEXUS_SUCCESS) {
-       ALOGE("%s: Error resuming STC %u", __FUNCTION__, res);
-
-       trickState.rate = 0;
-       NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
-       return -ENOMEM;
+    else {
+        if (!bout->nexus.tunnel.priming) {
+            if (!nexus_tunnel_bout_resume_comp(bout)) {
+                return -ENOMEM;
+            }
+        }
     }
     ALOGV("%s", __FUNCTION__);
 
@@ -687,6 +843,8 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
     bout->nexus.tunnel.first_write = false;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+    bout->nexus.tunnel.bitrate = 0;
+    bout->nexus.tunnel.last_bytes_written = 0;
 
     return 0;
 }
@@ -701,6 +859,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     size_t nexus_space;
     NEXUS_Error rc;
     NEXUS_AudioDecoderStatus decStatus;
+    NEXUS_PlaypumpStatus ppStatus;
+    NEXUS_AudioDecoderTrickState trickState;
     BKNI_EventHandle event = bout->nexus.event;
     bool init_stc = false;
 
@@ -756,6 +916,45 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         size_t offset;
         bool split_header = false;
         size_t bytes_segment = bytes;
+
+        if (!bout->nexus.tunnel.pcm_format) {
+            NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
+            if (!bout->nexus.tunnel.priming && trickState.rate != 0) {
+                /* Limit from accumulating too much data */
+                if (bout->nexus.tunnel.bitrate > 0) {
+                    unsigned bitrate;
+                    int32_t fifoDepth;
+                    bool ppDataRdy = false;
+                    while (1) {
+                        fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
+                        if (fifoDepth < 0) {
+                            break;
+                        }
+                        if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_3S(bout->nexus.tunnel.bitrate)) {
+                            /* Enough data accumulated in playpump and decoder */
+                            if (ppDataRdy) {
+                                ret = 0;
+                                goto done;
+                            }
+                            BKNI_ResetEvent(event);
+                            pthread_mutex_unlock(&bout->lock);
+                            ret = BKNI_WaitForEvent(event, 50);
+                            pthread_mutex_lock(&bout->lock);
+                            if (ret == BERR_TIMEOUT) {
+                                ret = 0;
+                                goto done;
+                            }
+                            ppDataRdy = true;
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+            else if (bout->nexus.tunnel.priming) {
+                nexus_tunnel_bout_resume_comp(bout);
+            }
+        }
 
         ALOG_ASSERT(av_header.is_empty() || av_header.is_complete());
         // Search for next packet header
@@ -848,16 +1047,24 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
 
                     // For E-AC3, DTS, and DTS-HD, parse the frame header to determine the number of PCM samples per frame
                     if (bout->nexus.tunnel.audioblocks_per_frame == 0) {
-                        if (bout->config.format == AUDIO_FORMAT_E_AC3) {
+                        if (bout->config.format == AUDIO_FORMAT_AC3 || bout->config.format == AUDIO_FORMAT_E_AC3) {
                             const uint8_t *syncframe = (const uint8_t *)memmem(buffer, bytes, g_nexus_parse_eac3_syncword, sizeof(g_nexus_parse_eac3_syncword));
                             if (syncframe != NULL) {
                                 eac3_frame_hdr_info info;
                                 if (nexus_parse_eac3_frame_hdr(syncframe, bytes - (syncframe - (const uint8_t *)buffer), &info)) {
-                                    bout->nexus.tunnel.audioblocks_per_frame = info.num_audio_blks;
-                                    bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+                                    if (bout->config.format == AUDIO_FORMAT_E_AC3) {
+                                        bout->nexus.tunnel.audioblocks_per_frame = info.num_audio_blks;
+                                        bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+                                        bout->nexus.tunnel.bitrate = info.bitrate;
+                                    }
+                                    else { // AC3
+                                        bout->nexus.tunnel.audioblocks_per_frame = NEXUS_PCM_FRAMES_PER_AC3_FRAME / NEXUS_PCM_FRAMES_PER_AC3_AUDIO_BLOCK;
+                                        bout->nexus.tunnel.frame_multiplier = NEXUS_PCM_FRAMES_PER_AC3_FRAME;
+                                        bout->nexus.tunnel.bitrate = info.bitrate;
+                                    }
                                 }
                                 else {
-                                    ALOGV("%s: Error parsing E-AC3 sync frame", __FUNCTION__);
+                                    ALOGV("%s: Error parsing E-/AC3 sync frame", __FUNCTION__);
                                 }
                             }
                         }
@@ -868,7 +1075,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                                 bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
                             }
                         }
-                        ALOGI_IF(bout->nexus.tunnel.audioblocks_per_frame > 0, "%s: %u blocks detected, fmt:%x mpy:%u", __FUNCTION__, bout->nexus.tunnel.audioblocks_per_frame, bout->config.format, bout->nexus.tunnel.frame_multiplier);
+                        ALOGI_IF(bout->nexus.tunnel.audioblocks_per_frame > 0, "%s: %u blocks detected, fmt:%x mpy:%u bkps:%u", __FUNCTION__, bout->nexus.tunnel.audioblocks_per_frame, bout->config.format, bout->nexus.tunnel.frame_multiplier, bout->nexus.tunnel.bitrate);
                     }
                 }
             }
@@ -984,6 +1191,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                     }
                 }
 
+                BKNI_ResetEvent(event);
                 pthread_mutex_unlock(&bout->lock);
                 ret = BKNI_WaitForEvent(event, 500);
                 pthread_mutex_lock(&bout->lock);
@@ -996,10 +1204,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOG_ASSERT(!bout->suspended);
 
                 if (ret != BERR_SUCCESS) {
-                    NEXUS_PlaypumpStatus status;
-                    NEXUS_Playpump_GetStatus(playpump, &status);
+                    NEXUS_Playpump_GetStatus(playpump, &ppStatus);
                     ALOGE("%s: playpump write timeout, ret=%d, ns:%zu, fifoS:%zu fifoD:%zu",
-                            __FUNCTION__, ret, nexus_space, status.fifoSize, status.fifoDepth);
+                            __FUNCTION__, ret, nexus_space, ppStatus.fifoSize, ppStatus.fifoDepth);
                     ret = -ENOSYS;
                     break;
                 }
@@ -1012,6 +1219,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         }
     }
 
+done:
     /* Return error if no bytes written */
     if (bytes_written == 0) {
         return ret;
@@ -1028,20 +1236,54 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
     }
     else {
-        uint32_t i;
-        for (i = 0; i < BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX; i++) {
-            rc = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decStatus);
-            if (rc != NEXUS_SUCCESS) {
-                break;
+        NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
+        if (!bout->nexus.tunnel.priming && trickState.rate != 0) {
+            if (bout->nexus.tunnel.bitrate > 0) {
+                nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
+                int32_t deltaMs = toMillisecondTimeoutDelay(bout->nexus.tunnel.last_write_time, now);
+
+                bout->nexus.tunnel.last_bytes_written += bytes_written;
+
+                if (deltaMs >= BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS ||
+                    bout->nexus.tunnel.last_bytes_written >= bout->buffer_size * BRCM_AUDIO_TUNNEL_COMP_EST_BYTE_MUL) {
+
+                    uint32_t expectedBytes = bout->nexus.tunnel.bitrate * 128 * (uint32_t)deltaMs / 1000;
+                    if (bout->nexus.tunnel.last_bytes_written > MORE_THAN_20_PERCENT(expectedBytes)) {
+                        uint32_t diffBytes = bout->nexus.tunnel.last_bytes_written - MORE_THAN_20_PERCENT(expectedBytes);
+                        uint32_t throttleMs = BYTES_TO_MS_FROM_KBITRATE(diffBytes, bout->nexus.tunnel.bitrate);
+                        uint32_t fifoLoThres = KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate) * BRCM_AUDIO_TUNNEL_COMP_THRES_MUL;
+
+                        ALOGV("%s: throttle %ums(%u) delta %dms written %u(%u) diff %u loThs %u", __FUNCTION__, throttleMs, BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS, deltaMs, bout->nexus.tunnel.last_bytes_written, expectedBytes, diffBytes, fifoLoThres);
+                        if (throttleMs > BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS) {
+                            throttleMs = BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS;
+                        }
+                        pthread_mutex_unlock(&bout->lock);
+                        usleep(throttleMs * 1000);
+                        pthread_mutex_lock(&bout->lock);
+
+                        int32_t fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
+                        if (fifoDepth >= 0 && (uint32_t)fifoDepth < fifoLoThres) {
+                            ALOGV("%s: low depth %d", __FUNCTION__, fifoDepth);
+                            bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
+                            bout->nexus.tunnel.last_bytes_written = 0;
+                        }
+                    }
+                    else {
+                        ALOGV("%s: delta %dms written %u(%d)", __FUNCTION__, deltaMs, bout->nexus.tunnel.last_bytes_written, expectedBytes);
+                        bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
+                        bout->nexus.tunnel.last_bytes_written = 0;
+                    }
+                }
+                else {
+                    ALOGV("%s: delta %dms written %u", __FUNCTION__, deltaMs, bout->nexus.tunnel.last_bytes_written);
+                }
             }
-            if (decStatus.queuedFrames < BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED) {
-                break;
-            }
-            pthread_mutex_unlock(&bout->lock);
-            usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
-            pthread_mutex_lock(&bout->lock);
         }
-        ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, decStatus.queuedFrames);
+        else {
+            bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
+            bout->nexus.tunnel.last_bytes_written = 0;
+        }
+        ALOGV("%s: prime %d rate %d wr %d", __FUNCTION__, bout->nexus.tunnel.priming, trickState.rate, bytes_written);
     }
 
     return bytes_written;
@@ -1146,14 +1388,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     if (bout->dolbyMs12) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
-
-        NEXUS_SimpleAudioDecoderSettings settings;
-        NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &settings);
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
-        bout->nexus.tunnel.fadeLevel = 100;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-        NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &settings);
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
@@ -1285,6 +1519,15 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         }
     }
 
+    if (bout->dolbyMs12) {
+        NEXUS_SimpleAudioDecoderSettings settings;
+        NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &settings);
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        bout->nexus.tunnel.fadeLevel = 100;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &settings);
+    }
     return 0;
 
 err_pid:

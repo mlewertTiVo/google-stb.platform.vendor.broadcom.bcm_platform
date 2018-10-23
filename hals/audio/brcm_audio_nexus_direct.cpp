@@ -1180,14 +1180,6 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
-
-        NEXUS_SimpleAudioDecoderSettings settings;
-        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
-        bout->nexus.direct.fadeLevel = 100;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
@@ -1297,6 +1289,16 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         if (ret) {
             ALOGE("%s: Error setting auto mode, ret = %d", __FUNCTION__, ret);
         }
+    }
+
+    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
+        NEXUS_SimpleAudioDecoderSettings settings;
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+        bout->nexus.direct.fadeLevel = 100;
+        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
     return 0;
 

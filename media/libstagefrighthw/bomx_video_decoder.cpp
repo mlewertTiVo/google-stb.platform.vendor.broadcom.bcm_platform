@@ -91,7 +91,6 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
-#define B_WAIT_FOR_STC_SYNC_TIMEOUT_MS (10000)
 #define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
 /****************************************************************************
@@ -1319,6 +1318,18 @@ unsigned BOMX_InputDataTracker::GetMaxDeltaPts()
     return (largest - smallest);
 }
 
+unsigned BOMX_InputDataTracker::GetLastAddedPts()
+{
+    unsigned lastAdded = UINT_MAX;
+
+    List<unsigned>::iterator it = m_ptsTracker.begin();
+    for (; it != m_ptsTracker.end(); ++it) {
+        lastAdded = *it;
+    }
+
+    return lastAdded;
+}
+
 void BOMX_InputDataTracker::PrintStats()
 {
     if ( m_numInputBuffers > 0 )
@@ -1332,7 +1343,6 @@ void BOMX_InputDataTracker::Reset()
     m_numRetBuffers = 0;
     m_numNotRetBuffers = 0;
 }
-
 
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
@@ -1398,6 +1408,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_eosPending(false),
     m_eosDelivered(false),
     m_eosReceived(false),
+    m_eosPts(UINT_MAX),
     m_formatChangeState(FCState_eNone),
     m_formatChangeTimerId(NULL),
     m_nativeGraphicsEnabled(false),
@@ -1411,7 +1422,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
-    m_flushTime(0),
     m_stcSyncValue(B_STC_SYNC_INVALID_VALUE),
     m_stcResumePending(false),
     m_outputWidth(1920),
@@ -1428,6 +1438,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
     m_secureRuntimeHeaps(false),
+    m_decInstanceCounted(false),
     m_frameSerial(0),
     m_displayFrameAvailable(false),
     m_displayThreadStop(false),
@@ -1449,7 +1460,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_indexSurface(-1),
     m_virtual(false),
     m_forcePortResetOnHwTex(true),
-    m_sdbGeomCb(NULL)
+    m_sdbGeomCb(NULL),
+    m_renderedFrameHandler(this)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1575,7 +1587,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES,
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, m_tunnelMode ? 0 : B_MAX_FRAMES,
        ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight),
        false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
@@ -1750,6 +1762,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
        g_decActiveStateLock.lock();
        g_decInstanceCount++;
+       m_decInstanceCounted = true;
        // sanity checking
        if ( (g_decInstanceCount == 1) && (g_decActiveState != B_DEC_ACTIVE_STATE_INACTIVE) )
        {
@@ -2437,9 +2450,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
 
     g_decActiveStateLock.lock();
-    if ( --g_decInstanceCount == 0 )
+    if ( m_decInstanceCounted && (--g_decInstanceCount == 0) )
     {
         g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
+        m_decInstanceCounted = false;
     }
     g_decActiveStateLock.unlock();
 
@@ -3363,6 +3377,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
+            m_eosPts = UINT_MAX;
+            m_renderedFrameHandler.Reset();
             m_ptsReceived = false;
             B_Mutex_Lock(m_hDisplayMutex);
             m_displayFrameAvailable = false;
@@ -3554,6 +3570,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_eosPending = false;
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_eosPts = UINT_MAX;
+                m_renderedFrameHandler.Reset();
                 m_ptsReceived = false;
                 m_pBufferTracker->Flush();
                 ReturnPortBuffers(m_pVideoPorts[0]);
@@ -3701,6 +3719,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosPending = false;
                     m_eosDelivered = false;
                     m_eosReceived = false;
+                    m_eosPts = UINT_MAX;
+                    m_renderedFrameHandler.Reset();
                     m_ptsReceived = false;
                     if (BOMX_idpt() != NULL) {
                        BOMX_idpt()->netcoal("default");
@@ -4007,6 +4027,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 m_pBufferTracker->Flush();
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_eosPts = UINT_MAX;
+                m_renderedFrameHandler.Reset();
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 m_frameSerial = 0;
@@ -4020,7 +4042,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     NEXUS_Error errCode;
 
                     m_waitingForStc = true;
-                    m_flushTime = systemTime(SYSTEM_TIME_MONOTONIC);
                     m_stcResumePending = false;
 
                     // Pause decoder until a valid stc is available
@@ -4877,9 +4898,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             BOMX_VideoDecoder_MemUnlock((private_handle_t *)pInfo->typeInfo.native.pPrivateHandle);
             break;
         case BOMX_VideoDecoderOutputBufferType_eMetadata:
-            if ( pInfo->typeInfo.metadata.pMetadata->pHandle )
+            if ( pInfo->typeInfo.metadata.pMetadata )
             {
-                pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+                pFrameBuffer = FindFrameBuffer(pInfo->typeInfo.metadata.pMetadata);
             }
             else
             {
@@ -5434,6 +5455,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         pInfo->numDescriptors += numRequested;
         m_submittedDescriptors += numConsumed;
         m_eosPending = true;
+        // Empty EOS buffer won't be tracked. We need to remember the timestamp of the last frame in
+        // order to properly signal EOS
+        if (pBufferHeader->nFilledLen == 0 && m_tunnelMode )
+            m_eosPts = m_inputDataTracker.GetLastAddedPts();
         if ( NULL != m_pPesFile )
         {
             fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, m_pPesFile);
@@ -5483,14 +5508,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         }
 
         ALOG_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
-        if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
+        if ( NULL != pInfo->typeInfo.metadata.pMetadata )
         {
-            pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+            pFrameBuffer = FindFrameBuffer(pInfo->typeInfo.metadata.pMetadata);
         }
         else
         {
             pFrameBuffer = NULL;
         }
+        ALOGW_IF(pFrameBuffer == NULL, "Frame buffer not found for metadata %p", pInfo->typeInfo.metadata.pMetadata);
     }
     else
     {
@@ -6824,10 +6850,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     resumeDecoder = true;
                     m_stcSyncValue = stcSync;
                     ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
-                } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
-                    ALOGW("%s: timeout waiting for stc", __FUNCTION__);
-                    resumeDecoder = true;
-                    m_stcSyncValue = B_STC_SYNC_INVALID_VALUE;
                 }
 
                 if (resumeDecoder) {
@@ -6866,53 +6888,29 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                }
             }
 
-            bool reportRenderedFrame = false;
+            bool newRenderedFrame = false;
             if (status.pts != 0 && m_tunnelCurrentPts != status.pts) {
                 if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
                 {
                     ALOGI("Unable to find tracker entry for pts %#x", status.pts);
                     BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
                 }
-                m_tunnelCurrentPts = status.pts;
-                reportRenderedFrame = true;
 
-                if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(omxHeader.nTimeStamp) )
+                m_tunnelCurrentPts = status.pts;
+                newRenderedFrame = true;
+
+                if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) || (m_eosPending && (status.pts == m_eosPts)) )
                 {
-                    // Defer EOS until the last output frame (with the latest timestamp) is returned
-                    m_eosReceived = true;
-                    omxHeader.nFlags &= ~OMX_BUFFERFLAG_EOS;
-                }
-                else if ( m_eosReceived && m_pBufferTracker->Last(omxHeader.nTimeStamp) )
-                {
-                    m_eosReceived = false;
                     omxHeader.nFlags |= OMX_BUFFERFLAG_EOS;
-                }
-                if ( omxHeader.nFlags & OMX_BUFFERFLAG_EOS )
-                {
-                    ALOGV("EOS picture received");
-                    if ( m_eosPending )
-                    {
-                        omxHeader.nFlags |= OMX_BUFFERFLAG_EOS;
-                        m_eosPending = false;
-                        m_eosDelivered = true;
-                    }
-                    else
-                    {
-                        // Fatal error - we did something wrong.
-                        ALOGW("Additional frames received after EOS");
-                        ALOG_ASSERT(true == m_eosPending);
-                        return;
-                    }
+                    m_eosPending = false;
+                    m_eosDelivered = true;
                 }
             } else {
                 ALOGV("%s: status.pts:%u, m_tunnelCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
             }
 
-            if (reportRenderedFrame) {
-                OMX_VIDEO_RENDEREVENTTYPE renderEvent;
-                renderEvent.nSystemTimeNs = now;
-                renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
-                (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+            if (newRenderedFrame) {
+                m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, false);
                 ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Rendering ts=%lld pts=%u now=%" PRIu64 "",
                         omxHeader.nTimeStamp, status.pts, now);
 
@@ -6925,6 +6923,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) && m_eosDelivered )
                 {
                     (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventBufferFlag, m_videoPortBase+1, omxHeader.nFlags, NULL);
+                    m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, true);
                 }
             } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
                 // when we're in the process of dropping frames to reach the start pts, return as many
@@ -7076,7 +7075,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) could
                     // end up permanently in the allocated list if the application is playing video in a loop.
                     if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata){
-                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                        pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
                     }
                 }
                 else
@@ -7113,13 +7112,15 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                  m_forcePortResetOnHwTex &&
                                  (m_pVideoPorts[1]->GetBufferHwTexUsed() < BOMX_PortBufferHwTexUsage_eMax))
                             {
+                                int fmtSet = 0;
                                 if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
                                 {
-                                    pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                                    pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
+                                    fmtSet = ((private_handle_t *)(pInfo->typeInfo.metadata.pMetadata->pHandle))->fmt_set;
                                 }
                                 if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                                      ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
-                                      ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX)))
+                                      ((fmtSet & GR_HWTEX) == GR_HWTEX)))
                                 {
                                     ALOGI("Hw Texture - force port reset %ux%u -> %lux%lu",
                                           m_outputWidth, m_outputHeight,
@@ -7217,15 +7218,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
 
                     // Setting private handle for meta mode ahead of time
+                    int fmtSet = 0;
                     if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
                     {
-                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                        pBuffer->pPrivateHandle = pInfo->typeInfo.metadata.pMetadata;
+                        fmtSet = ((private_handle_t *)(pInfo->typeInfo.metadata.pMetadata->pHandle))->fmt_set;
                     }
 
                     // Don't try to create a striped surface for secure video
                     if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
-                           ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
+                           ((fmtSet & GR_HWTEX) == GR_HWTEX) ) )
                     {
                         pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
                         if ( pBuffer->hStripedSurface )
@@ -7330,10 +7333,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         {
                             void *pMemory;
                             PSHARED_DATA pSharedData;
-                            BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                            VideoDecoderOutputMetaData *pMetadata = (VideoDecoderOutputMetaData *)pBuffer->pPrivateHandle;
+                            private_handle_t *pPrivateHandle = (private_handle_t *)(pMetadata->pHandle);
+                            BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
-                                ALOGW("Unable to convert SHARED_DATA physical address %p", pBuffer->pPrivateHandle);
+                                ALOGW("Unable to convert SHARED_DATA physical address %p", pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -7384,7 +7389,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     ALOGI_IF(LOG_SAND_TO_HWTEX,
                                        "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit::%d",
                                        pBuffer->frameStatus.serialNumber,
-                                       pBuffer->pPrivateHandle,
+                                       pPrivateHandle,
                                        pBuffer->hStripedSurface,
                                        pSharedData->container.vImageWidth,
                                        pSharedData->container.vImageHeight,
@@ -7403,7 +7408,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
-                            BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
+                            BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
                         }
                         break;
                     default:
@@ -7552,13 +7557,26 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 returnSettings[numFrames].display = pBuffer->display;
                 returnSettings[numFrames].recycle = true;
 
-                if (m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pBufferInfo)
+                private_handle_t *pPrivateHandle = NULL;
+                if (m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata)
                 {
-                    pBuffer->pPrivateHandle = (private_handle_t *)pBuffer->pBufferInfo->typeInfo.metadata.pMetadata->pHandle;
+                    if ( pBuffer->pBufferInfo )
+                    {
+                        pPrivateHandle = (private_handle_t *)pBuffer->pBufferInfo->typeInfo.metadata.pMetadata->pHandle;
+                    }
+                    else if ( pBuffer->pPrivateHandle )
+                    {
+                        VideoDecoderOutputMetaData *pMetadata = (VideoDecoderOutputMetaData *)pBuffer->pPrivateHandle;
+                        pPrivateHandle = (private_handle_t *)(pMetadata->pHandle);
+                    }
                 }
-                if ( pBuffer->pPrivateHandle )
+                else
                 {
-                    BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                    pPrivateHandle = (private_handle_t *)pBuffer->pPrivateHandle;
+                }
+                if ( pPrivateHandle )
+                {
+                    BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
                     if ( pMemory )
                     {
                         pSharedData = (PSHARED_DATA)pMemory;
@@ -7591,7 +7609,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                             hStripedSurface = pSharedData->container.stripedSurface;
                             pSharedData->container.stripedSurface = NULL;
                         }
-                        BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
+                        BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
                     }
                 }
                 pBuffer->pPrivateHandle = NULL;
@@ -7904,15 +7922,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     return OMX_ErrorNone;
 }
 
-
-BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_t *pPrivateHandle)
+BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(VideoDecoderOutputMetaData *pMetadata)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
-    ALOG_ASSERT(NULL != pPrivateHandle);
+    ALOG_ASSERT(NULL != pMetadata);
 
     // Scan allocated frame list for matching private handle
     for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
-          NULL != pFrameBuffer && pFrameBuffer->pPrivateHandle != pPrivateHandle;
+          NULL != pFrameBuffer && pFrameBuffer->pPrivateHandle != pMetadata;
           pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
 
     return pFrameBuffer;
@@ -8326,4 +8343,48 @@ void BOMX_VideoDecoder::ClosePidChannel()
         NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
         m_hPidChannel = NULL;
     }
+}
+
+BOMX_VideoDecoder::BOMX_RenderedFrameHandler::BOMX_RenderedFrameHandler(BOMX_VideoDecoder *parent)
+:m_pParent(parent),
+ m_eosHandlingStarted(false)
+{
+}
+
+void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::NewRenderedFrame(OMX_S64 timestamp, bool isEos)
+{
+    OMX_VIDEO_RENDEREVENTTYPE renderEvent;
+    bool reportRenderedFrame = true;
+
+    if ( !m_eosHandlingStarted && m_pParent->m_eosPending )
+    {
+        m_eosHandlingStarted = true;
+        m_numRenderedAfterEos = 0;
+        m_reportedFrameDelta = (m_pParent->m_inputDataTracker.GetNumEntries() / MAX_FRAMES_REPORTED_AFTER_EOS) + 1;
+        ALOGV("%s: starting eos handling, entries:%u, frameDelta:%u",
+            __FUNCTION__, m_pParent->m_inputDataTracker.GetNumEntries(), m_reportedFrameDelta);
+    }
+
+    if ( m_eosHandlingStarted )
+    {
+        reportRenderedFrame = false;
+        if ( ++m_numRenderedAfterEos % m_reportedFrameDelta == 0 )
+        {
+           reportRenderedFrame = true;
+        }
+    }
+
+    if ( reportRenderedFrame || isEos )
+    {
+        ALOGV("%s: rendering event, frame with ts:%lld, eos:%d", __FUNCTION__, timestamp, isEos);
+        renderEvent.nSystemTimeNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        renderEvent.nMediaTimeUs = timestamp;
+        (void)m_pParent->m_callbacks.EventHandler((OMX_HANDLETYPE)m_pParent->m_pComponentType,
+            m_pParent->m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+    }
+}
+
+void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::Reset()
+{
+    m_eosHandlingStarted = false;
 }
