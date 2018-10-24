@@ -22,19 +22,22 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libnexus \
                           libnexusir \
                           libnxclient \
-                          libsrai
-LOCAL_SHARED_LIBRARIES += \
+                          \
                           libhidlbase \
                           libhidltransport \
                           libhwbinder \
                           bcm.hardware.nexus@1.0
 
+ifeq ($(SAGE_SUPPORT),y)
+LOCAL_SHARED_LIBRARIES += libsrai
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
+LOCAL_CFLAGS += -DSRAI_PRESENT
+endif
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
