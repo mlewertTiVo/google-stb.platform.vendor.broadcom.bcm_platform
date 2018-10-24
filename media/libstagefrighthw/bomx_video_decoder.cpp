@@ -1470,6 +1470,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     NEXUS_ClientConfiguration clientConfig;
     char value[PROPERTY_VALUE_MAX];
     bool uhdDisplay = false;
+    int row = 0, roh = 0;
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -1865,6 +1866,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
           }
        }
     }
+    else
+    {
+       // redux mode may have further window limitation due to rts, capture that here.
+       NEXUS_DisplayCapabilities dc;
+       NEXUS_GetDisplayCapabilities(&dc);
+       if (dc.display[0].window[1].maxWidthPercentage != 100) {
+          row = m_outputWidth;
+          m_outputWidth *= dc.display[0].window[1].maxWidthPercentage;
+          m_outputWidth /= 100;
+       }
+       if (dc.display[0].window[1].maxHeightPercentage != 100) {
+          roh = m_outputHeight;
+          if (!row) row = m_outputWidth;
+          m_outputHeight *= dc.display[0].window[1].maxHeightPercentage;
+          m_outputHeight /= 100;
+       }
+    }
 
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
@@ -1927,10 +1945,17 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
     NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &videoClientSettings);
-    videoClientSettings.composition.virtualDisplay.width =
-       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_HEIGHT_HIGHRES : m_outputWidth;
-    videoClientSettings.composition.virtualDisplay.height =
-       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_WIDTH_HIGHRES : m_outputHeight;
+    if (m_redux && row && roh) {
+       // preserve the full screen ratio for the video client inside the surface
+       // client parent.
+       videoClientSettings.composition.virtualDisplay.width = row;
+       videoClientSettings.composition.virtualDisplay.height = roh;
+    } else {
+       videoClientSettings.composition.virtualDisplay.width =
+          (m_virtual && uhdDisplay) ? B_DATA_BUFFER_HEIGHT_HIGHRES : m_outputWidth;
+       videoClientSettings.composition.virtualDisplay.height =
+          (m_virtual && uhdDisplay) ? B_DATA_BUFFER_WIDTH_HIGHRES : m_outputHeight;
+    }
     videoClientSettings.composition.position.x = 0;
     videoClientSettings.composition.position.y = 0;
     videoClientSettings.composition.position.width = m_outputWidth;
