@@ -1463,6 +1463,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_virtual(false),
     m_forcePortResetOnHwTex(true),
     m_sdbGeomCb(NULL),
+    m_forceScanMode1080p(false),
     m_renderedFrameHandler(this)
 {
     unsigned i;
@@ -1484,6 +1485,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
     m_forcePortResetOnHwTex = property_get_bool(BCM_DYN_MEDIA_PORT_RESET_ON_HWTEX, 1);
+    m_forceScanMode1080p = property_get_bool(BCM_RO_MEDIA_FORCE_SCAN_MODE_1080P, 0);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -3491,6 +3493,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             vdecSettings.fifoEmpty.callback = BOMX_VideoDecoder_EventCallback;
             vdecSettings.fifoEmpty.context = (void *)m_hFifoEmptyEvent;
             vdecSettings.fifoEmpty.param = (int)BOMX_VideoDecoderEventType_eFifoEmpty;
+            if (m_forceScanMode1080p)
+            {
+               vdecSettings.scanMode = NEXUS_VideoDecoderScanMode_e1080p;
+            }
             NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
 
             NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
