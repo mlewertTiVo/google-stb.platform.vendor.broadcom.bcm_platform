@@ -1750,6 +1750,7 @@ int main(void)
         setenv("audio_uart_file", "/data/vendor/nxmedia/audio_uart", 1);
         setenv("audio_debug_file", "/data/vendor/nxmedia/audio_debug", 1);
         setenv("audio_core_file", "/data/vendor/nxmedia/audio_core", 1);
+        setenv("audio_target_print_file", "/data/vendor/nxmedia/audio_target_print", 1);
     }
 
     char modules[PROPERTY_VALUE_MAX];
