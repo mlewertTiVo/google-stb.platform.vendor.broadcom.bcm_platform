@@ -1538,6 +1538,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_forcePortResetOnHwTex(true),
     m_sdbGeomCb(NULL),
     m_forceScanMode1080p(false),
+    m_progressiveOverrideMode(0),
     m_vidPeekState(VideoPeekState_eDisabled),
     m_vndExtNrdpVidPeek(-1),
     m_renderedFrameHandler(this)
@@ -1562,6 +1563,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     m_forcePortResetOnHwTex = property_get_bool(BCM_DYN_MEDIA_PORT_RESET_ON_HWTEX, 1);
     m_forceScanMode1080p = property_get_bool(BCM_RO_MEDIA_FORCE_SCAN_MODE_1080P, 0);
+    m_progressiveOverrideMode = property_get_int32(BCM_RO_MEDIA_PROG_OVERRIDE_MODE, 0);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -3782,6 +3784,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
+                if (m_progressiveOverrideMode > 0) // only override if not default.
+                {
+                   vdecStartSettings.settings.progressiveOverrideMode = (NEXUS_VideoDecoderProgressiveOverrideMode) m_progressiveOverrideMode;
+                }
                 // setting up hdr from framework; currently only for vp9 (offlined from extractor), but we reserve the right to
                 // possibly do this for other codecs too...
                 if ( m_hdrInfoFinal.bValid )

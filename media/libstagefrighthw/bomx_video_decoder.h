@@ -472,6 +472,7 @@ protected:
     bool m_forcePortResetOnHwTex;
     sp<SdbGeomCb> m_sdbGeomCb;
     bool m_forceScanMode1080p;
+    int m_progressiveOverrideMode;
 
     enum VideoPeekState
     {
