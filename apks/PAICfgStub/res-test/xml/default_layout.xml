@@ -19,6 +19,16 @@
 	    requiredPreload="false"
             installByDefault="false"
             groupId="0" />
+        <!-- TV Launcher -->
+        <autoinstall
+            className="com.google.android.tvlauncher.HomeScreen"
+            packageName="com.google.android.tvlauncher"
+            container="hotseat"
+            requiredPreload="true"
+            installBeforeSetupComplete="true"
+            groupId="0"
+            rank="1" />
+
     </folder>
 
 </workspace>
