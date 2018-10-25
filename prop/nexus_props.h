@@ -148,6 +148,7 @@
 #define BCM_RO_NX_TRIM_D0HD                           "ro.nx.trim.d0hd"
 #define BCM_RO_NX_TRIM_DEINT                          "ro.nx.trim.deint"
 #define BCM_RO_NX_TRIM_CAP                            "ro.nx.trim.disp.cap"
+#define BCM_RO_NX_TRIM_MP3                            "ro.nx.trim.mp3"
 
 #define BCM_DYN_NX_HD_OUT_HWC                         "dyn.nx.vidout.hwc"
 #define BCM_DYN_NX_HD_OUT_SET                         "dyn.nx.vidout.set"

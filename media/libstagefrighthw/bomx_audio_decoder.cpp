@@ -297,6 +297,12 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
         }
     }
 
+    if (property_get_int32(BCM_RO_NX_TRIM_MP3, 0))
+    {
+        ALOGW("MP3 hardware support is available but disabled");
+        goto error;
+    }
+
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
                                           pNxWrap,
                                           false, BOMX_AUDIO_GET_ROLE_COUNT(g_mp3Role), g_mp3Role,
