@@ -85,7 +85,7 @@
 #include <linux/brcmstb/proc_info_proxy.h>
 
 #define NX_CLIENT_USAGE_LOG            0
-#define NX_CLIENT_EVM_LOG              1
+#define NX_CLIENT_EVM_LOG              0
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
