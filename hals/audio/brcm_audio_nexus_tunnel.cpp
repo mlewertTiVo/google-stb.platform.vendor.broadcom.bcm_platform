@@ -177,6 +177,39 @@ private:
     uint8_t hdr_buffer[HW_AV_SYNC_HDR_LEN_MAX];
 } av_header;
 
+struct current_buff_t {
+    current_buff_t() {
+        bytes_written = 0;
+    }
+    void set_av_header(struct av_header_t av_hdr) {
+        this->av_hdr = av_hdr;
+        bytes_written = 0;
+    }
+    bool is_valid() {
+        return av_hdr.is_complete();
+    }
+    size_t bytes_pending() {
+        size_t frameBytes = frame_len();
+        return (frameBytes > bytes_written) ? frameBytes - bytes_written : 0;
+    }
+    size_t frame_len() {
+        if (!is_valid()) return 0;
+        void *pts_buffer = av_hdr.buffer();
+        return B_MEDIA_LOAD_UINT32_BE(pts_buffer, sizeof(uint32_t));
+    }
+    void add_bytes(size_t bytes) {
+        bytes_written += bytes;
+        if (bytes_written >= frame_len())
+            reset();
+    }
+    void reset() {
+        bytes_written = 0;
+        av_hdr.reset();
+    }
+private:
+    struct av_header_t av_hdr;
+    size_t bytes_written;
+} current_buff;
 /*
  * Operation Functions
  */
@@ -610,6 +643,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     }
 
     av_header.reset();
+    current_buff.reset();
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
@@ -957,26 +991,74 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         }
 
         ALOG_ASSERT(av_header.is_empty() || av_header.is_complete());
-        // Search for next packet header
+        // Search for next frame header
         if (av_header.is_complete()) {
             pts_buffer = av_header.buffer();
             split_header = true;
         } else {
-            pts_buffer = memmem(buffer, bytes, av_sync_marker, sizeof(av_sync_marker));
-            if ((pts_buffer != NULL) && (av_header.version() != 0)) {
-                // Assume that marker and version are not fragmented across two
-                // different buffers
-                size_t min_bytes_for_sync = HW_AV_SYNC_HDR_VER_LEN + sizeof(av_sync_marker);
-                if (bytes < min_bytes_for_sync)
-                    pts_buffer = NULL;
-                else {
+            uint8_t *buffer_ptr = (uint8_t*)buffer;
+            size_t offset = 0;
+            size_t min_bytes_for_sync = HW_AV_SYNC_HDR_VER_LEN + sizeof(av_sync_marker);
+            bool header_found = false;
+
+            // if we're in the middle of writing a frame, try to find the next marker immediately
+            // after the current frame boundary
+            if (current_buff.is_valid() && (current_buff.bytes_pending() > 0) &&
+               (current_buff.bytes_pending() + min_bytes_for_sync) <= bytes ) {
+                offset = current_buff.bytes_pending();
+                ALOGVV("%s: frame writing in progress, bytes_pending:%zu", __FUNCTION__, offset);
+                pts_buffer = memmem(buffer_ptr + offset, bytes - offset, av_sync_marker, sizeof(av_sync_marker));
+
+                // if there's a marker at the expected location, check if version matches
+                if (pts_buffer == (void*)(buffer_ptr + offset) && (av_header.version() != 0)) {
                     uint8_t *pts_buffer_u8 = (uint8_t*)pts_buffer;
                     unsigned hdr_version = pts_buffer_u8[2] << 8 | pts_buffer_u8[3];
                     if (hdr_version != av_header.version()) {
-                        // we found data which looks like an av_sync header but it isn't
-                        pts_buffer = NULL;
-                        bytes_segment = (pts_buffer_u8 - (uint8_t*)buffer) + sizeof(av_sync_marker);
+                        // This pattern looks like an av_sync header but it is not.
+                        ALOGW("spurious marker at expected location, hdr_version:0x%02X,0x%02X",
+                            pts_buffer_u8[2], pts_buffer_u8[3]);
+                    } else {
+                        ALOGVV("%s: found header at expected offset:%d, bytes:%zu",
+                        __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
+                        header_found = true;
                     }
+                } else {
+                    ALOGW("%s: not header marker found at expected location:%zu", __FUNCTION__, offset);
+                }
+            }
+            if (!header_found) {
+                buffer_ptr = (uint8_t*)buffer;
+                offset = 0;
+            }
+
+            // If no marker found with method above, do a blind search
+            while (!header_found) {
+                pts_buffer = memmem(buffer_ptr + offset, bytes - offset, av_sync_marker, sizeof(av_sync_marker));
+                if ((pts_buffer != NULL) && (av_header.version() != 0)) {
+                    ALOGVV("%s: marker at offset:%zu, bytes:%zu",
+                        __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
+                    if (bytes < min_bytes_for_sync) {
+                        // We can't verify if this is a valid header as we can't even see the version.
+                        // Stop processing the header and wait for the framework to send us a full one
+                        // on the next buffer
+                        ALOGV("%s: found apparent header marker at end of buffer", __FUNCTION__);
+                        pts_buffer = NULL;
+                        bytes_segment = bytes = 0;
+                        break;
+                    } else {
+                        uint8_t *pts_buffer_u8 = (uint8_t*)pts_buffer;
+                        unsigned hdr_version = pts_buffer_u8[2] << 8 | pts_buffer_u8[3];
+                        if (hdr_version != av_header.version()) {
+                            // we found data which looks like an av_sync header but it isn't
+                            ALOGV("spurious header, hdr_version:0x%02X,0x%02X", pts_buffer_u8[2], pts_buffer_u8[3]);
+                            // Ignore the first byte of the false marker and resume the search
+                            offset = pts_buffer_u8 - buffer_ptr + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    break;
                 }
             }
         }
@@ -1019,7 +1101,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                     }
                     if (!av_header.is_complete() || (bytes == av_header.len())) {
                         // Incomplete header or complete header at the end of the buffer (no payload).
-                        ALOGV("hdr_bytes_needed:%zu, av_hdr_len:%zu, bytes:%zu", av_header.bytes_hdr_needed(), av_header.len(), bytes);
+                        ALOGVV("hdr_bytes_needed:%zu, av_hdr_len:%zu, bytes:%zu", av_header.bytes_hdr_needed(), av_header.len(), bytes);
                         bytes_written += bytes;
                         bytes = 0;
                         break;
@@ -1027,6 +1109,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 }
 
                 // frame header is at payload start, write the header
+                current_buff.set_av_header(av_header);
                 writeHeader = true;
                 frameBytes = B_MEDIA_LOAD_UINT32_BE(pts_buffer, sizeof(uint32_t));
                 uint64_t timestamp = B_MEDIA_LOAD_UINT32_BE(pts_buffer, 2*sizeof(uint32_t));
@@ -1155,6 +1238,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 }
                 else {
                     bytes_written += frameBytes;
+                    current_buff.add_bytes(frameBytes);
                     if ( writeHeader ) {
                         writeHeader = false;
                         if (!split_header) {
@@ -1483,6 +1567,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
     av_header.reset();
+    current_buff.reset();
 
     if (property_get_int32(BCM_RO_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
         time_t rawtime;
