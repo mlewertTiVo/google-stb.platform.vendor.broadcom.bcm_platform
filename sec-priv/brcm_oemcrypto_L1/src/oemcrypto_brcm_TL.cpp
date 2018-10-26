@@ -1595,3 +1595,62 @@ OEMCryptoResult OEMCrypto_LoadKeys(
 
     return OEMCrypto_SUCCESS;
 }
+
+OEMCryptoResult OEMCrypto_LoadCasECMKeys(OEMCrypto_SESSION session,
+                                         uint16_t program_id,
+                                         const OEMCrypto_EntitledContentKeyObject* even_key,
+                                         const OEMCrypto_EntitledContentKeyObject* odd_key)
+{
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    if(DRM_WVOemCrypto_LoadCasECMKeys(session,
+                                      program_id,
+                                      (void *)even_key,
+                                      (void *)odd_key,
+                                      (int*)&wvRc) != Drm_Success)
+    {
+        ALOGE("[DRM_WVOemCrypto_LoadCasECMKeys(SID=%08X): failed]", session);
+    }
+
+    return wvRc;
+}
+
+OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
+                                     const uint8_t *data_addr,
+                                     size_t data_length,
+                                     bool is_encrypted,
+                                     const uint8_t *iv,
+                                     size_t block_offset,
+                                     OEMCrypto_DestBufferDesc* out_buffer,
+                                     const OEMCrypto_CENCEncryptPatternDesc* pattern,
+                                     uint8_t subsample_flags)
+{
+    Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+    uint8_t* destination = NULL;
+    uint32_t out_sz;
+    size_t max_length = 0;
+    OEMCryptoResult sts = OEMCrypto_SUCCESS;
+
+    sts = SetDestination(out_buffer, data_length, &destination,
+                                       &max_length,&buffer_type);
+    if (sts != OEMCrypto_SUCCESS)
+    {
+        ALOGE("%s:SetDestination() returned error \n",__FUNCTION__);
+        return sts;
+    }
+
+    dump_hex((const char*)"enc data:", data_addr, data_length);
+
+    if (DRM_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
+        is_encrypted, buffer_type, iv, block_offset, destination, &out_sz,
+        (void *)pattern, subsample_flags, (int*)&wvRc) != Drm_Success)
+    {
+        ALOGV("[OEMCrypto_DecryptCAS(SID=%08X): failed]", session);
+        return wvRc;
+    }
+
+    dump_hex((const char*)"out_buffer->buffer.clear.address", out_buffer->buffer.clear.address, 256);
+
+    return wvRc;
+}
