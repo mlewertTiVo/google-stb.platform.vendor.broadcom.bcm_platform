@@ -219,6 +219,10 @@ LOCAL_CFLAGS += -DHW_HVD_REDUX
 endif
 endif
 
+ifneq ($(HW_MP3_DECODER_SUPPORT),n)
+LOCAL_CFLAGS += -DMP3_DECODER_ON
+endif
+
 LOCAL_MODULE := libstagefrighthw
 
 LOCAL_PROPRIETARY_MODULE := true
