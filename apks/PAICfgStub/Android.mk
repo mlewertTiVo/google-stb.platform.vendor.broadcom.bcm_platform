@@ -1,7 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-BCM_PAI_BUILD_FROM_SOURCE := n
+BCM_PAI_BUILD_FROM_SOURCE := y
 
 ifeq ($(BCM_PAI_BUILD_FROM_SOURCE),n)
 
