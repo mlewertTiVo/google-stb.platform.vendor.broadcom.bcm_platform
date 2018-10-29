@@ -14,7 +14,7 @@
 
 LOCAL_PATH := $(call my-dir)
 
-ifneq ($(ANDROID_SUPPORTS_MEDIACAS),n)
+ifeq ($(ANDROID_SUPPORTS_MEDIACAS),y)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
 
