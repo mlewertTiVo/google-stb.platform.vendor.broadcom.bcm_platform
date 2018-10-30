@@ -178,6 +178,9 @@ LOCAL_CFLAGS += -DBGRCPKT_PLANES_$(LOCAL_DEVICE_BGRCPKT_PLANES)
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+# Suppress warnings until they are fixed in hwcomposer.cpp
+LOCAL_CFLAGS += -Wno-error=implicit-fallthrough
+
 LOCAL_SRC_FILES := hwcomposer.cpp
 LOCAL_SRC_FILES += hwcsync.c
 LOCAL_MODULE_TAGS := optional

@@ -31,6 +31,9 @@ endif
 ifdef WIFI_HIDL_FEATURE_DISABLE_AP
 LOCAL_CPPFLAGS += -DWIFI_HIDL_FEATURE_DISABLE_AP
 endif
+# Suppress warnings until they are fixed in wifi_legacy_hal.cpp
+LOCAL_CFLAGS += -Wno-error=implicit-fallthrough
+
 LOCAL_SRC_FILES := \
     hidl_struct_util.cpp \
     ${WIFI_HAL_ROOT}/hidl_sync_util.cpp \

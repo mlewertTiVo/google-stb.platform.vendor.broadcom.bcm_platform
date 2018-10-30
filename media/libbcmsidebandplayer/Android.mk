@@ -40,6 +40,8 @@ LOCAL_CFLAGS += -Werror
 # *** TODO: fix refsw.
 LOCAL_CFLAGS += -Wno-strict-aliasing
 LOCAL_CFLAGS += -Wno-unused-parameter
+# Suppress warnings until they are fixed in bcmsidebandfileplayer.cpp
+LOCAL_CFLAGS += -Wno-error=implicit-fallthrough
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus libnxclient
 
