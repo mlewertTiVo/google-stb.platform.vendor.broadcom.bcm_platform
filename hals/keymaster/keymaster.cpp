@@ -290,7 +290,7 @@ static int km_berr_2_interr(
 #define OTP_MSP0_VALUE_ZS (0x02)
 #define OTP_MSP1_VALUE_ZS (0x02)
 #if (NEXUS_SECURITY_API_VERSION == 1)
-static bool km_chip_zb(void) {
+static bool km_chip_prod(void) {
    NEXUS_ReadMspParms readMspParms;
    NEXUS_ReadMspIO readMsp0;
    NEXUS_ReadMspIO readMsp1;
@@ -311,7 +311,7 @@ done:
    return true;
 }
 #else
-static bool km_chip_zb(void) {
+static bool km_chip_prod(void) {
    NEXUS_OtpMspRead readMsp0;
    NEXUS_OtpMspRead readMsp1;
    uint32_t Msp0Data;
@@ -337,17 +337,24 @@ static bool km_chip_zb(void) {
 }
 #endif
 
-#define KM_ZD_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zd.bin"
-#define KM_ZB_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zb.bin"
+#define KM_GEN_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zx.bin"
+#define KM_CUS_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.xx.cus.bin"
 static BERR_Code km_fallback(struct bcm_km *km_hdl) {
    BERR_Code km_err = BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND;
    FILE *f = NULL;
    size_t km_size, c;
    int rc, v, s;
    uint8_t *d;
-   char *key_path = (char *)((km_chip_zb() == true) ? KM_ZB_PROV_FALLBACK_PATH : KM_ZD_PROV_FALLBACK_PATH);
+   char *key_path = NULL;
 
-   if (access(key_path, R_OK)) {
+   if ((km_chip_prod() == true) &&
+       !access(KM_CUS_PROV_FALLBACK_PATH, R_OK)) {
+      key_path = (char *)KM_CUS_PROV_FALLBACK_PATH;
+   } else {
+      key_path = (char *)KM_GEN_PROV_FALLBACK_PATH;
+   }
+
+   if ((key_path == NULL) || access(key_path, R_OK)) {
       ALOGE("km_fallback: no key accessible @%s, aborting.", key_path);
       goto out;
    }
