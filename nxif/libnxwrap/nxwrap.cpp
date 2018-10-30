@@ -410,6 +410,10 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
       if (!client) {
          nx->join();
          client = nx->client();
+         if ((client == 0) &&
+             (nxi() == NULL)) {
+            client = (uint64_t)(intptr_t)nx;
+         }
       }
    }
 
