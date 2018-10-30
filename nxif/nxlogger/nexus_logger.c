@@ -58,12 +58,13 @@
 #include <sched.h>
 #include <cutils/properties.h>
 
+// TODO: pass in the vendor props to nexus build.
+//#include "vendor_bcm_props.h"
+#define BCM_RO_NX_LOG_UNKNOWN_AS_INFO                 "ro.nx.logger.u2i"
+#define BCM_RO_NX_LOG_LOG_AS_DEBUG                    "ro.nx.logger.l2d"
+#define BCM_RO_NX_LOG_PRIORITY                        "ro.nx.logger.pri"
+
 BDBG_FILE_MODULE(logger);
-
-#define PROP_LOGGER_PRIORITY        "sys.nx.logger_priority"
-
-#define PROP_LOGGER_UNKNOWN_AS_INFO "ro.nx.logger.u2i"
-#define PROP_LOGGER_LOG_AS_DEBUG    "ro.nx.logger.l2d"
 
 static bool log_u2i = false;
 static bool log_l2d = false;
@@ -268,10 +269,10 @@ int main(int argc, const char *argv[])
     rc = BDBG_Init();
     BDBG_ASSERT(rc==BERR_SUCCESS);
 
-    log_u2i = property_get_bool(PROP_LOGGER_UNKNOWN_AS_INFO, 0);
-    log_l2d = property_get_bool(PROP_LOGGER_LOG_AS_DEBUG, 0);
+    log_u2i = property_get_bool(BCM_RO_NX_LOG_UNKNOWN_AS_INFO, 0);
+    log_l2d = property_get_bool(BCM_RO_NX_LOG_LOG_AS_DEBUG, 0);
 
-    priority = property_get_int32(PROP_LOGGER_PRIORITY, 0);
+    priority = property_get_int32(BCM_RO_NX_LOG_PRIORITY, 0);
     if ( priority > 0 )
     {
         struct sched_param pri;
@@ -382,7 +383,7 @@ int main(int argc, const char *argv[])
         if ( acc_timeout > PRIORITY_REFRESH_INTERVAL )
         {
             /* Check latest logger priority */
-            new_priority = property_get_int32(PROP_LOGGER_PRIORITY, 0);
+            new_priority = property_get_int32(BCM_RO_NX_LOG_PRIORITY, 0);
             if ( new_priority > 0 && new_priority != priority )
             {
                 struct sched_param pri;

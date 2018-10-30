@@ -94,6 +94,9 @@
 #define BCM_RO_NX_PBAND                               "ro.nx.trpt.pband"
 #define BCM_RO_NX_PPUMP                               "ro.nx.trpt.ppump"
 #define BCM_RO_NX_EV_MAXCLI                           "ro.nx.ev.maxcli"
+#define BCM_RO_NX_LOG_UNKNOWN_AS_INFO                 "ro.nx.logger.u2i"
+#define BCM_RO_NX_LOG_LOG_AS_DEBUG                    "ro.nx.logger.l2d"
+#define BCM_RO_NX_LOG_PRIORITY                        "ro.nx.logger.pri"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
 #define BCM_SYS_RECOVERY_NX_STATE                     "sys.recov.nx.state"
