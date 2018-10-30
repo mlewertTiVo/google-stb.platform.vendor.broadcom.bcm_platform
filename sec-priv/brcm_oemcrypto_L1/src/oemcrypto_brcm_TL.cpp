@@ -260,6 +260,12 @@ OEMCryptoResult OEMCrypto_GenerateSignature(
     ALOGV("%s entered", __FUNCTION__);
     ALOGV("message length is %d",message_length);
 
+    if(!signature_length)
+    {
+        ALOGE("[OEMCrypto_GenerateSignature(): OEMCrypto_ERROR_INVALID_CONTEXT]");
+        return OEMCrypto_ERROR_INVALID_CONTEXT;
+    }
+
     if (*signature_length < SHA256_DIGEST_LENGTH)
     {
         *signature_length = SHA256_DIGEST_LENGTH;
@@ -701,6 +707,12 @@ OEMCryptoResult OEMCrypto_Generic_Sign(OEMCrypto_SESSION session,
     uint8_t* signature, size_t* signature_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    if(!signature_length)
+    {
+        ALOGE("[OEMCrypto_Generic_Sign(): OEMCrypto_ERROR_INVALID_CONTEXT]");
+        return OEMCrypto_ERROR_INVALID_CONTEXT;
+    }
 
     if (*signature_length < SHA256_DIGEST_LENGTH)
     {
