@@ -99,7 +99,7 @@ const uint8_t *nexus_find_eac3_independent_frame(const uint8_t *data, size_t len
             (substreamid == substream)) {
             if (nexus_parse_eac3_frame_hdr(syncframe, len - (syncframe - data), info))
                 return syncframe;
-            ALOGV("%s: Error parsing EAC3 sync frame", __FUNCTION__);
+            ALOGE("%s: Error parsing EAC3 sync frame", __FUNCTION__);
         }
 
         // Not found, skip over just the sync word and look for next one
