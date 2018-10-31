@@ -627,6 +627,7 @@ static keymaster_error_t km_generate_key(
    uint64_t km_secid;
    uint32_t km_timeout;
    bool insert_no_auth = false;
+   uint32_t km_ksb;
    memset(&km_key, 0, sizeof(km_key));
 
    AuthorizationSet set;
@@ -642,6 +643,9 @@ static keymaster_error_t km_generate_key(
       return KM_ERROR_INVALID_ARGUMENT;
    }
    ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_ALGORITHM, value: %u", km_algo);
+   if (set.GetTagValue(TAG_KEY_SIZE, &km_ksb)) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_KEY_SIZE, value: %u bits", km_ksb);
+   }
    // mandatory: KM_TAG_PURPOSE (one or more)
    ix = 0;
    do {
