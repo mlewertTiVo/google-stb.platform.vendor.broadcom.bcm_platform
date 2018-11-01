@@ -95,9 +95,6 @@
     <!-- If supported and enabled, are dreams activated when asleep and charging? (by default) -->
     <bool name="config_dreamsActivatedOnSleepByDefault">true</bool>
 
-    <!-- ComponentName of the default dream (Settings.Secure.DEFAULT_SCREENSAVER_COMPONENT) -->
-    <string name="config_dreamsDefaultComponent">com.android.deskclock/com.android.deskclock.Screensaver</string>
-
     <!-- Indicate whether closing the lid causes the device to go to sleep and opening
          it causes the device to wake up.
          The default is false. -->
