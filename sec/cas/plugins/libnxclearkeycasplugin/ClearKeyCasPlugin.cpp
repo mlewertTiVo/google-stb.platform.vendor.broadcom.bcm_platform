@@ -294,9 +294,9 @@ status_t ClearKeyCasSession::initSession()
     NEXUS_KeySlotAllocateSettings keySettings;
     NEXUS_KeySlotSettings keyslotSettings;
     NEXUS_KeySlotEntrySettings keyslotEntrySettings;
-    NEXUS_KeySlot_GetDefaultAllocateSettings(&keySettings);
     NEXUS_KeySlotIv slotIv;
 
+    NEXUS_KeySlot_GetDefaultAllocateSettings(&keySettings);
     keySettings.useWithDma = true;
     hKeySlot = NEXUS_KeySlot_Allocate(&keySettings);
     if(!hKeySlot) {
@@ -616,36 +616,46 @@ typedef struct pes_packet_s {
     uint8_t    pes_header_length;
 } pes_packet_t;
 
-size_t ClearKeyCasSession::create_pes_packet(void * dstPtr, const void *buffer, unsigned size)
+void ClearKeyCasSession::parse_itb_buffer(void * dstPtr, const void *buffer, unsigned size, int *ts_header_size)
+{
+    const struct scd *scd;
+    pes_packet_t *pes_packet = (pes_packet_t *) dstPtr;
+    uint8_t *pts = (uint8_t *) dstPtr + sizeof (pes_packet_t);
+    ALOG_ASSERT(size % sizeof(*scd) == 0); /* always process whole SCT's */
+
+    for (scd = (const struct scd *) buffer; size; size -= sizeof(*scd), scd++) {
+        if ((scd->sc_value >= 0xC0) && (scd->sc_value <= 0xEF)) {
+            pes_packet->start_code.id = scd->sc_value;
+            *ts_header_size = scd->sc_packet_offset;
+        } else if (scd->sc_value == 0xFE) { /* PTS */
+            pts[0] = (scd->sc_record_msbits >> 4) | (0x21);
+            pts[1] = (scd->sc_record_msbits << 3) | (scd->sc_es_byte_1[2] >> 5);
+            pts[2] = (scd->sc_es_byte_1[2] << 3) | (scd->sc_es_byte_1[1] >> 5) | (0x01);
+            pts[3] = (scd->sc_es_byte_1[1] << 2) | (scd->sc_es_byte_1[0] >> 6);
+            pts[4] = (scd->sc_es_byte_1[0] << 2) | (0x01);
+            pes_packet->pts_dts_indicator |= 0x2;
+            pes_packet->pes_header_length = 5;
+        } else { /* ES */
+            ALOG_ASSERT(*ts_header_size);
+            pes_packet->pes_header_length = scd->sc_packet_offset - *ts_header_size - 9; /* Subtract PES Packet Header (9) */
+            break;
+        }
+    }
+}
+
+size_t ClearKeyCasSession::create_pes_packet(void * dstPtr, const void *buffer, unsigned size, const void *wrap_buffer, unsigned wrap_size)
 {
     int ts_header_size = 0;
     pes_packet_t *pes_packet = (pes_packet_t *) dstPtr;
-    const struct scd *scd;
-    uint8_t *pts = (uint8_t *) dstPtr + sizeof (pes_packet_t);
-    ALOG_ASSERT(size % sizeof(*scd) == 0); /* always process whole SCT's */
 
     /* Init PES packet */
     BKNI_Memset((void *)pes_packet, 0x00, sizeof(*pes_packet));
     pes_packet->start_code.sync[2] = 0x01;
     pes_packet->marker_bits = 0x2;
 
-    for (scd = (const struct scd *) buffer; size; size -= sizeof(*scd), scd++) {
-        if ((scd->sc_value >= 0xC0) && (scd->sc_value <= 0xEF)) {
-            pes_packet->start_code.id = scd->sc_value;
-            ts_header_size = scd->sc_packet_offset;
-        } else if (scd->sc_value == 0xFE) { /* PTS */
-            pts[4] = (scd->sc_es_byte_1[0] << 2) | (0x01);
-            pts[3] = (scd->sc_es_byte_1[1] << 2) | (scd->sc_es_byte_1[0] >> 6); // inc , dec
-            pts[2] = ((scd->sc_es_byte_1[2] & 0x1f) << 3) | ((scd->sc_es_byte_1[1] & 0xC0) >> 5) | (0x01);
-            pts[1] = ((scd->sc_record_msbits & 0x1f) << 3) | ((scd->sc_es_byte_1[2] & 0x07) >> 5);
-            pts[0] = ((scd->sc_record_msbits & 0xe0) >> 4) | (0x21);
-            pes_packet->pts_dts_indicator |= 0x2;
-            pes_packet->pes_header_length = 5;
-        } else { /* ES */
-            ALOG_ASSERT(ts_header_size);
-            pes_packet->pes_header_length = scd->sc_packet_offset - ts_header_size - 9; /* Subtract PES Packet Header (9) */
-            break;
-        }
+    parse_itb_buffer(dstPtr, buffer, size, &ts_header_size);
+    if (wrap_buffer) {
+        parse_itb_buffer(dstPtr, wrap_buffer, wrap_size, &ts_header_size);
     }
 
     pes_packet->packet_length[0] = 0;
@@ -836,8 +846,8 @@ ssize_t ClearKeyCasSession::decrypt(
 
 
     if (numParseBytes) {
-        const void *data_buffer, *index_buffer;
-        size_t data_buffer_size, index_buffer_size, numConsumed;
+        const void *data_buffer, *index_buffer, *index_wrap_buffer;
+        size_t data_buffer_size, index_buffer_size, index_wrap_buffer_size, numConsumed;
         size_t dummy_bytes = (PAYLOAD_SIZE - ((parseBufferPtr - parseBuffer) % PAYLOAD_SIZE)) % PAYLOAD_SIZE;
 
         desc.length = numParseBytes + dummy_bytes;
@@ -850,12 +860,12 @@ ssize_t ClearKeyCasSession::decrypt(
         if (rc == BERR_TIMEOUT) {
             ALOGE("No index data captured!");
         } else {
-            rc = NEXUS_Recpump_GetIndexBuffer(recpump, &index_buffer, &index_buffer_size);
+            rc = NEXUS_Recpump_GetIndexBufferWithWrap(recpump, &index_buffer, &index_buffer_size, &index_wrap_buffer, &index_wrap_buffer_size);
             ALOG_ASSERT(!rc);
             ALOG_ASSERT(index_buffer_size);
-            numBytesDecrypted = create_pes_packet(dstPtr, index_buffer, index_buffer_size);
+            numBytesDecrypted = create_pes_packet(dstPtr, index_buffer, index_buffer_size, index_wrap_buffer, index_wrap_buffer_size);
 
-            rc = NEXUS_Recpump_IndexReadComplete(recpump, index_buffer_size);
+            rc = NEXUS_Recpump_IndexReadComplete(recpump, index_buffer_size + index_wrap_buffer_size);
             ALOG_ASSERT(!rc);
         }
 

@@ -96,8 +96,8 @@ private:
     CasPlugin* getPlugin() const { return mPlugin; }
     status_t decryptPayload(
             const char* key, size_t length, size_t offset, char* buffer) const;
-
-    size_t create_pes_packet(void * dstPtr, const void *buffer, unsigned size);
+    void parse_itb_buffer(void * dstPtr, const void *buffer, unsigned size, int *ts_header_size);
+    size_t create_pes_packet(void * dstPtr, const void *buffer, unsigned size, const void *wrap_buffer, unsigned wrap_size);
     void setDmaJobBlockSettings(NEXUS_DmaJobBlockSettings *blockSettings, uint8_t *destination, uint8_t *source, size_t num, bool scrambled);
     NEXUS_Error dmaProcessBlocks(NEXUS_DmaJobBlockSettings *blockSettings, int numBlocks, bool scrambled);
 
