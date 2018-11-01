@@ -50,6 +50,8 @@ LOCAL_CFLAGS := -DLOG_TAG=\"bcm-audio\"
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+# Suppress warnings until they are fixed in brcm_audio_nexus_tunnel.cpp
+LOCAL_CFLAGS += -Wno-error=implicit-fallthrough
 
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/media

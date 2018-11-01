@@ -168,6 +168,8 @@ LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+# Suppress warnings until they are fixed in bomx_video_decoder.cpp
+LOCAL_CFLAGS += -Wno-error=implicit-fallthrough
 
 LOCAL_SHARED_LIBRARIES :=         \
         libbomx_util              \
