@@ -36,7 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-
 #include "brcm_audio.h"
 #include "brcm_audio_nexus_hdmi.h"
 #include "brcm_audio_nexus_parser.h"
@@ -615,6 +614,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
 
     nexus_tunnel_bout_debounce_reset(bout);
     bout->nexus.tunnel.last_write_time = 0;
+    bout->nexus.tunnel.last_written_ts = UINT64_MAX;
 
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
@@ -897,6 +897,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     NEXUS_AudioDecoderTrickState trickState;
     BKNI_EventHandle event = bout->nexus.event;
     bool init_stc = false;
+    uint64_t last_written_ts = UINT64_MAX;
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
@@ -1116,6 +1117,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 timestamp <<= 32;
                 timestamp |= B_MEDIA_LOAD_UINT32_BE(pts_buffer, 3*sizeof(uint32_t));
                 timestamp /= 1000; // Convert ns -> us
+                last_written_ts = timestamp;
                 pts = BOMX_TickToPts((OMX_TICKS *)&timestamp);
                 ALOGV("%s: av-sync header, ts=%" PRIu64 " ver=%u, pts=%" PRIu32 ", size=%zu, av_header.len()=%zu payload=%zu",
                     __FUNCTION__, timestamp, av_header.version(), pts, frameBytes, av_header.len(), bytes);
@@ -1326,9 +1328,14 @@ done:
                 nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
                 int32_t deltaMs = toMillisecondTimeoutDelay(bout->nexus.tunnel.last_write_time, now);
 
+                if (bout->nexus.tunnel.last_written_ts == UINT64_MAX)
+                    bout->nexus.tunnel.last_written_ts = last_written_ts;
+                uint64_t deltaTs = (last_written_ts != UINT64_MAX) && (last_written_ts > bout->nexus.tunnel.last_written_ts) ?
+                                    last_written_ts - bout->nexus.tunnel.last_written_ts : 0;
                 bout->nexus.tunnel.last_bytes_written += bytes_written;
 
-                if (deltaMs >= BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS ||
+                if (deltaTs >= (BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS * 1000) ||
+                    deltaMs >= BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS ||
                     bout->nexus.tunnel.last_bytes_written >= bout->buffer_size * BRCM_AUDIO_TUNNEL_COMP_EST_BYTE_MUL) {
 
                     uint32_t expectedBytes = bout->nexus.tunnel.bitrate * 128 * (uint32_t)deltaMs / 1000;
@@ -1350,12 +1357,14 @@ done:
                             ALOGV("%s: low depth %d", __FUNCTION__, fifoDepth);
                             bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
                             bout->nexus.tunnel.last_bytes_written = 0;
+                            bout->nexus.tunnel.last_written_ts = UINT64_MAX;
                         }
                     }
                     else {
                         ALOGV("%s: delta %dms written %u(%d)", __FUNCTION__, deltaMs, bout->nexus.tunnel.last_bytes_written, expectedBytes);
                         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
                         bout->nexus.tunnel.last_bytes_written = 0;
+                        bout->nexus.tunnel.last_written_ts = UINT64_MAX;
                     }
                 }
                 else {
@@ -1366,6 +1375,7 @@ done:
         else {
             bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
             bout->nexus.tunnel.last_bytes_written = 0;
+            bout->nexus.tunnel.last_written_ts = last_written_ts;
         }
         ALOGV("%s: prime %d rate %d wr %d", __FUNCTION__, bout->nexus.tunnel.priming, trickState.rate, bytes_written);
     }
