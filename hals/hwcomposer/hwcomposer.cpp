@@ -688,6 +688,17 @@ static void hwc2_cfg_collect(
          dsp->sfb = true;
       }
    }
+
+   /* always setup the default final framebuffer to the size of the framebuffer that
+    * android will compose in.
+    */
+   if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL && dsp->aCfg) {
+      if ((dsp->u.ext.rfbw != dsp->aCfg->w) ||
+          (dsp->u.ext.rfbh != dsp->aCfg->h))
+         dsp->u.ext.rfbw = dsp->aCfg->w;
+         dsp->u.ext.rfbh = dsp->aCfg->h;
+         dsp->u.ext.rfb = true;
+   }
 }
 
 static void hwc2_hdmi_collect(
@@ -886,7 +897,8 @@ static void hwc2_ext_fbs(
 
    NEXUS_Platform_GetClientConfiguration(&cCli);
 
-   if (hwc2->ext->u.ext.cb != cb) {
+   if ((hwc2->ext->u.ext.cb != cb) ||
+       hwc2->ext->u.ext.rfb) {
       if (hwc2->ext->u.ext.bfb) {
          hwc2->ext->u.ext.bfb = false;
          if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
@@ -918,8 +930,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = false;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = hwc2->ext->u.ext.rfbw;
+      scs.height      = hwc2->ext->u.ext.rfbh;
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
@@ -947,13 +959,27 @@ static void hwc2_ext_fbs(
    }
    hwc2->ext->u.ext.bfb = true;
 
-   if (hwc2_enabled(hwc2_tweak_fb_compressed) && (hwc2->ext->u.ext.yvi.s == NULL)) {
+   if (hwc2->ext->u.ext.rfb) {
+      if (hwc2->ext->u.ext.yvi.s != NULL) {
+         close(hwc2->ext->u.ext.yvi.fd);
+         NEXUS_Surface_Destroy(hwc2->ext->u.ext.yvi.s);
+         hwc2->ext->u.ext.yvi.s = NULL;
+      }
+      if (hwc2->ext->u.ext.icb.s != NULL) {
+         close(hwc2->ext->u.ext.icb.fd);
+         NEXUS_Surface_Destroy(hwc2->ext->u.ext.icb.s);
+         hwc2->ext->u.ext.icb.s = NULL;
+      }
+   }
+
+   if (hwc2_enabled(hwc2_tweak_fb_compressed) &&
+       (hwc2->ext->u.ext.yvi.s == NULL)) {
       NEXUS_SurfaceCreateSettings scs;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = hwc2->ext->u.ext.rfbw;
+      scs.height      = hwc2->ext->u.ext.rfbh;
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -975,8 +1001,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
-      scs.height      = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+      scs.width       = hwc2->ext->u.ext.rfbw;
+      scs.height      = hwc2->ext->u.ext.rfbh;
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -6093,17 +6119,26 @@ static void hwc2_ext_cmp_frame(
    f->tk_f = hwc2_tick();
    f->tk_w = 0;
    f->tk_c = 0;
-   if (hwc2->ext->u.ext.cbs) {
+   if (hwc2->ext->u.ext.cbs || hwc2->ext->u.ext.rfb) {
       enum hwc2_cbs_e wcb = hwc2->ext->u.ext.cb;
-      if (wcb == cbs_e_none || wcb == cbs_e_nscfb) {
-         wcb = cbs_e_bypass;
-      } else {
-         wcb = cbs_e_nscfb;
+      if (hwc2->ext->u.ext.cbs) {
+         if (wcb == cbs_e_none || wcb == cbs_e_nscfb) {
+            wcb = cbs_e_bypass;
+         } else {
+            wcb = cbs_e_nscfb;
+         }
       }
       hwc2_ext_fbs(hwc2, wcb);
-      hwc2->ext->u.ext.cbs = false;
-      ALOGI("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":switching into '%s' mode\n",
-            dsp->pres, dsp->post, (wcb==cbs_e_bypass)?"bypass":"ncsfb");
+      if (hwc2->ext->u.ext.cbs) {
+         ALOGI("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":switching into '%s' mode\n",
+               dsp->pres, dsp->post, (wcb==cbs_e_bypass)?"bypass":"ncsfb");
+         hwc2->ext->u.ext.cbs = false;
+      }
+      if (hwc2->ext->u.ext.rfb) {
+         ALOGI("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":resizing final fb: %ux%u\n",
+               dsp->pres, dsp->post, hwc2->ext->u.ext.rfbw, hwc2->ext->u.ext.rfbh);
+         hwc2->ext->u.ext.rfb = false;
+      }
    }
    fb = hwc2_ext_fb_get(hwc2);
    f->tk_f = hwc2_tick() - f->tk_f;;
@@ -6787,6 +6822,9 @@ static void hwc2_setup_ext(
     */
    NxClient_GetDisplaySettings(&settings);
    enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
+   hwc2->ext->u.ext.rfbw = property_get_int32(BCM_RO_HWC2_EXT_NFB_W, hwc2->ext->gfbwxl);
+   hwc2->ext->u.ext.rfbh = property_get_int32(BCM_RO_HWC2_EXT_NFB_H, hwc2->ext->gfbhxl);
+   hwc2->ext->u.ext.rfb = false;
    hwc2_ext_fbs(hwc2, wcb);
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
    if (hdmi) {

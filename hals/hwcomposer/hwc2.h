@@ -294,6 +294,9 @@ struct hwc2_ext_t {
    struct hwc2_fb_t                    icb;
    int64_t                             lvst;
    int64_t                             lpst;
+   bool                                rfb;
+   uint32_t                            rfbw;
+   uint32_t                            rfbh;
 };
 
 enum hwc2_record_dump_e {
