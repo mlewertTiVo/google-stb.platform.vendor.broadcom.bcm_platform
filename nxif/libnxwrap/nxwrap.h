@@ -59,8 +59,8 @@ typedef void (*DcNtfyCb)(void *ctx);
 //
 class NxWrap {
 public:
-   NxWrap();
-   NxWrap(const char *name);
+   NxWrap(bool w_nxi = true);
+   NxWrap(const char *name, bool w_nxi = true);
    virtual ~NxWrap() {};
 
    // connect to middleware, optionally instantiating a standby monitor process.
