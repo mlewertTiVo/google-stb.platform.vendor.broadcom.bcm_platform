@@ -75,8 +75,8 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-#define ATTEMPT_PAUSE_USEC 500000
-#define MAX_ATTEMPT_COUNT  4
+#define ATTEMPT_PAUSE_USEC 100000
+#define MAX_ATTEMPT_COUNT  2
 static const sp<INexus> nxi(void) {
    sp<INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
@@ -95,16 +95,26 @@ static const sp<INexus> nxi(void) {
    return NULL;
 }
 
-NxWrap::NxWrap() {
+NxWrap::NxWrap(bool w_nxi) {
    snprintf(mName, NXWRAP_NAME_MAX, "nxwrap-%d", getpid());
-   gNxiHpd = new NxWrapHpd(this);
-   gNxiDsp = new NxWrapDsp(this);
+   if (w_nxi) {
+      gNxiHpd = new NxWrapHpd(this);
+      gNxiDsp = new NxWrapDsp(this);
+   } else {
+      gNxiHpd = NULL;
+      gNxiDsp = NULL;
+   }
 }
 
-NxWrap::NxWrap(const char *name) {
+NxWrap::NxWrap(const char *name, bool w_nxi) {
    snprintf(mName, NXWRAP_NAME_MAX, "%s", name);
-   gNxiHpd = new NxWrapHpd(this);
-   gNxiDsp = new NxWrapDsp(this);
+   if (w_nxi) {
+      gNxiHpd = new NxWrapHpd(this);
+      gNxiDsp = new NxWrapDsp(this);
+   } else {
+      gNxiHpd = NULL;
+      gNxiDsp = NULL;
+   }
 }
 
 void NxWrap::actHp(bool connected) {
@@ -402,7 +412,7 @@ void NxWrap::sraiClient() {
 extern "C" void* nxwrap_create_client(void **nxwrap) {
 
    uint64_t client = 0;
-   NxWrap *nx = new NxWrap();
+   NxWrap *nx = new NxWrap(false);
 
    if (nx != NULL) {
       *nxwrap = nx;
@@ -423,7 +433,7 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
 extern "C" void* nxwrap_create_verified_client(void **nxwrap) {
 
    uint64_t client = 0;
-   NxWrap *nx = new NxWrap();
+   NxWrap *nx = new NxWrap(false);
 
    if (nx != NULL) {
       *nxwrap = nx;

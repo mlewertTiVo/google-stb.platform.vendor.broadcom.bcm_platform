@@ -674,6 +674,7 @@ static keymaster_error_t km_generate_key(
    uint32_t km_timeout;
    bool insert_no_auth = false;
    uint32_t km_ksb;
+   uint64_t km_exp;
    memset(&km_key, 0, sizeof(km_key));
 
    AuthorizationSet set;
@@ -691,6 +692,10 @@ static keymaster_error_t km_generate_key(
    ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_ALGORITHM, value: %u", km_algo);
    if (set.GetTagValue(TAG_KEY_SIZE, &km_ksb)) {
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_KEY_SIZE, value: %u bits", km_ksb);
+   }
+   if ((km_algo == KM_ALGORITHM_RSA) &&
+       set.GetTagValue(TAG_RSA_PUBLIC_EXPONENT, &km_exp)) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: KM_TAG_RSA_PUBLIC_EXPONENT, value: %" PRIx64 "", km_exp);
    }
    if (km_gen_busy(km_algo, km_ksb)) {
       return KM_ERROR_SECURE_HW_BUSY;
