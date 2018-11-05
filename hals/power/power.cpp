@@ -143,14 +143,10 @@ static NxWrap *gNxWrap = NULL;
 // Global Power HAL Mutex
 Mutex gLock("PowerHAL Lock");
 
-// Global Power HAL Condition variable
-Condition gCondition(android::Condition::WAKE_UP_ONE);
-
 // Prototype declarations...
 static status_t power_set_pmlibservice_state(nxwrap_pwr_state state);
 static status_t power_create_thread(const char *name, void *(*pthread_function)(void*));
 static void *power_event_monitor_thread(void *arg);
-static void *power_s5_shutdown(void *arg);
 
 
 static void acquireWakeLock()
@@ -555,11 +551,6 @@ static void power_init(struct power_module *module __unused)
     if (power_create_thread("power event monitor", power_event_monitor_thread) != NO_ERROR) {
         goto power_init_fail;
     }
-
-    // Spawn the S5 shutdown thread...
-    if (power_create_thread("S5 shutdown", power_s5_shutdown) != NO_ERROR) {
-        goto power_init_fail;
-    }
     return;
 
 power_init_fail:
@@ -736,23 +727,14 @@ static status_t power_set_state_s2_s3(nxwrap_pwr_state toState)
     return status;
 }
 
-static void *power_s5_shutdown(void *arg __unused)
-{
-    {
-        Mutex::Autolock autoLock(gLock);
-        gCondition.wait(gLock);
-        shutdownStarted = true;
-    }
-    system("/system/bin/svc power shutdown");
-    return NULL;
-}
-
 static status_t power_set_state_s5()
 {
-    // When offstate is S5, we wait until the kernel starts to suspend before
-    // invoking the shutdown. Prevent us from suspending by taking a wakelock.
-    acquireWakeLock();
-    return NO_ERROR;
+    status_t status = NO_ERROR;
+
+    if (gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S5);
+    }
+    return status;
 }
 
 static status_t power_set_state(nxwrap_pwr_state toState)
@@ -821,8 +803,7 @@ static status_t power_set_doze_state(int timeout)
     nxwrap_pwr_state powerOffState = power_get_off_state();
 
     if (powerOffState != ePowerState_S2 &&
-        powerOffState != ePowerState_S3 &&
-        powerOffState != ePowerState_S5) {
+        powerOffState != ePowerState_S3) {
        // Kernel suspend is not enabled, so doze forever
        timeout = -1;
     }
@@ -865,18 +846,11 @@ static status_t power_exit_suspend_state()
     status_t status = NO_ERROR;
     nxwrap_pwr_state powerOffState = power_get_off_state();
 
-    if (powerOffState == ePowerState_S5) {
-        // Signal to the S5 shutdown thread to begin
-        Mutex::Autolock autoLock(gLock);
-        ALOGV("%s: Signalling to wake-up S5 shutdown thread...", __FUNCTION__);
-        gCondition.signal();
-    }
-    else {
-        int wakeTimeout = property_get_int32(BCM_PERSIST_POWER_SYS_WAKE_TIMEOUT,
+    int wakeTimeout = property_get_int32(BCM_PERSIST_POWER_SYS_WAKE_TIMEOUT,
                                              DEFAULT_WAKE_TIMEOUT);
-        // Suspend complete, back to doze
-        status = power_set_doze_state(wakeTimeout);
-    }
+    // Suspend complete, back to doze
+    status = power_set_doze_state(wakeTimeout);
+
     return status;
 }
 
@@ -1065,9 +1039,8 @@ static void *power_event_monitor_thread(void *arg __unused)
                                     }
                                 }
                                 else if (event == DROID_PM_EVENT_SHUTDOWN) {
-                                    if (gNexusPower.get()) {
-                                        ret = gNexusPower->setPowerState(ePowerState_S5);
-                                    }
+                                    shutdownStarted = true;
+                                    ret = power_set_state_s5();
                                     if (ret != NO_ERROR)
                                         ALOGE("%s: Error trying to enter S5!!!", __FUNCTION__);
                                     else

@@ -2896,6 +2896,27 @@ static int32_t hwc2_dspcSupp(
    return ret;
 }
 
+static int32_t hwc2_trSupp(
+   hwc_transform_t tr) {
+
+   hwc2_error_t ret = HWC2_ERROR_NONE;
+
+   switch(tr) {
+   case HWC_TRANSFORM_FLIP_H:
+   case HWC_TRANSFORM_FLIP_V:
+   case HWC_TRANSFORM_ROT_90:
+   case HWC_TRANSFORM_ROT_180:
+   case HWC_TRANSFORM_ROT_270:
+   case HWC_TRANSFORM_FLIP_H_ROT_90:
+   case HWC_TRANSFORM_FLIP_V_ROT_90:
+      ret = HWC2_ERROR_UNSUPPORTED;
+   break;
+   default:
+   break;
+   }
+   return ret;
+}
+
 static int32_t hwc2_bufSupp(
    struct hwc2_bcm_device_t *hwc2,
    buffer_handle_t buf) {
@@ -3923,7 +3944,8 @@ static int32_t hwc2_lyrTrans(
 
    lyr->tr = (hwc_transform_t)transform;
    if (lyr->tr) {
-      ALOGV("[%s]:[xform]:%" PRIu64 ":%s",
+      ALOGI_IF((dsp->lm & LOG_ROT_DEBUG),
+            "[%s]:[xform]:%" PRIu64 ":%s",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
             lyr->hdl, getTransformName(lyr->tr));
    }
@@ -4519,6 +4541,7 @@ static uint32_t hwc2_comp_validate(
 
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t cnt = 0;
+   int vid;
    bool cgles = false;
 
    lyr = dsp->lyr;
@@ -4527,7 +4550,6 @@ static uint32_t hwc2_comp_validate(
       if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
          if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
              dsp->u.ext.gles) {
-            int vid;
             if (!hwc2_is_video(hwc2, lyr, &vid)) {
                lyr->cDev = HWC2_COMPOSITION_CLIENT;
             }
@@ -4547,6 +4569,15 @@ static uint32_t hwc2_comp_validate(
             if (ret != HWC2_ERROR_NONE) {
                ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
                   "lyr[%" PRIu64 "]:%s->%s (buffer format not supported)",
+                  lyr->hdl,
+                  getCompositionName(HWC2_COMPOSITION_DEVICE),
+                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+               lyr->cDev = HWC2_COMPOSITION_CLIENT;
+            }
+            ret = (hwc2_error_t)hwc2_trSupp(lyr->tr);
+            if (ret != HWC2_ERROR_NONE) {
+               ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG)||(hwc2->lm & LOG_ROT_DEBUG),
+                  "lyr[%" PRIu64 "]:%s->%s (layer transform not supported)",
                   lyr->hdl,
                   getCompositionName(HWC2_COMPOSITION_DEVICE),
                   getCompositionName(HWC2_COMPOSITION_CLIENT));

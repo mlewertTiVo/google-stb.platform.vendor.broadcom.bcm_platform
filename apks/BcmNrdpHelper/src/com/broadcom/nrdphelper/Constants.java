@@ -39,32 +39,10 @@
  *  WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY
  *  FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  ******************************************************************************/
-package com.broadcom.customizer;
+package com.broadcom.nrdphelper;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.util.Log;
-
-import static com.broadcom.customizer.Constants.DEBUG;
-import static com.broadcom.customizer.Constants.TAG_BCM_CUSTOMIZER;
-import static com.broadcom.customizer.Constants.TAG_WITH_CLASS_NAME;
-
-/**
- * Boot completed receiver for BcmCustomizer app.
- *
- * It's used to notify the {@link SplashScreenManager} that the event has
- * already happened.
- */
-public class BootCompletedReceiver extends BroadcastReceiver {
-    private static final String TAG = TAG_WITH_CLASS_NAME ?
-            "BootCompletedReceiver" : TAG_BCM_CUSTOMIZER;
-
-    private SplashScreenManager mSplashScreenManager = SplashScreenManager.getInstance();
-
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        if (DEBUG) Log.d(TAG, "boot completed " + intent);
-        mSplashScreenManager.bootCompleted();
-    }
+final class Constants {
+    static final String TAG_BCM_NRDPHELPER = "BcmNrdpHelper";
+    static final boolean TAG_WITH_CLASS_NAME = false;
+    static final boolean DEBUG = false;
 }

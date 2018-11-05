@@ -54,6 +54,7 @@ extern "C" {
 #include "nexus_security.h"
 }
 #include "nxwrap.h"
+#include "nx_ashmem.h"
 
 #define KM_OUT_DATA_SZ (4*4096)
 
@@ -89,6 +90,23 @@ struct km_op_s {
    uint8_t                *bb;
    int32_t                bs;
 };
+
+static int km_open_nxa(void) {
+   int fd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(device, 0, sizeof(device));
+   memset(name, 0, sizeof(name));
+
+   property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
+   if (strlen(device)) {
+      strcpy(name, "/dev/");
+      strcat(name, device);
+      fd = open(name, O_RDWR, 0);
+   }
+   return fd;
+}
 
 static NEXUS_KeySlotHandle km_ks_alloc(
    void) {
@@ -290,7 +308,7 @@ static int km_berr_2_interr(
 #define OTP_MSP0_VALUE_ZS (0x02)
 #define OTP_MSP1_VALUE_ZS (0x02)
 #if (NEXUS_SECURITY_API_VERSION == 1)
-static bool km_chip_zb(void) {
+static bool km_chip_prod(void) {
    NEXUS_ReadMspParms readMspParms;
    NEXUS_ReadMspIO readMsp0;
    NEXUS_ReadMspIO readMsp1;
@@ -311,7 +329,7 @@ done:
    return true;
 }
 #else
-static bool km_chip_zb(void) {
+static bool km_chip_prod(void) {
    NEXUS_OtpMspRead readMsp0;
    NEXUS_OtpMspRead readMsp1;
    uint32_t Msp0Data;
@@ -337,17 +355,24 @@ static bool km_chip_zb(void) {
 }
 #endif
 
-#define KM_ZD_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zd.bin"
-#define KM_ZB_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zb.bin"
+#define KM_GEN_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.zx.bin"
+#define KM_CUS_PROV_FALLBACK_PATH "/vendor/usr/kmgk/km.xx.cus.bin"
 static BERR_Code km_fallback(struct bcm_km *km_hdl) {
    BERR_Code km_err = BSAGE_ERR_BFM_DRM_TYPE_NOT_FOUND;
    FILE *f = NULL;
    size_t km_size, c;
    int rc, v, s;
    uint8_t *d;
-   char *key_path = (char *)((km_chip_zb() == true) ? KM_ZB_PROV_FALLBACK_PATH : KM_ZD_PROV_FALLBACK_PATH);
+   char *key_path = NULL;
 
-   if (access(key_path, R_OK)) {
+   if ((km_chip_prod() == true) &&
+       !access(KM_CUS_PROV_FALLBACK_PATH, R_OK)) {
+      key_path = (char *)KM_CUS_PROV_FALLBACK_PATH;
+   } else {
+      key_path = (char *)KM_GEN_PROV_FALLBACK_PATH;
+   }
+
+   if ((key_path == NULL) || access(key_path, R_OK)) {
       ALOGE("km_fallback: no key accessible @%s, aborting.", key_path);
       goto out;
    }
@@ -586,6 +611,34 @@ static keymaster_error_t km_add_rng_entropy(
    return KM_ERROR_OK;
 }
 
+static bool km_gen_busy(
+   keymaster_algorithm_t a,
+   uint32_t b) {
+
+   int ret, fd = km_open_nxa();
+   unsigned s = 0;
+   if (fd < 0) {
+      goto out;
+   }
+   ret = ioctl(fd, NX_ASHMEM_CHK_SEC, &s);
+   close(fd);
+   if (s == 0) {
+      goto out;
+   }
+   // limit use of the km resources if we know we have a secure session
+   // (playback) ongoing.  this limitation should be very strict to not
+   // abuse the system.
+   if (
+       ((a == KM_ALGORITHM_RSA) && (b >= 1024)) /* case: rsa keys >1K. */
+      ) {
+      ALOGW("km_gen_busy: algo(%d), size(%u): rejecting hw-busy due to secure playback",
+         a, b);
+      return true;
+   }
+out:
+   return false;
+}
+
 static keymaster_error_t km_generate_key(
    const struct keymaster2_device* dev,
    const keymaster_key_param_set_t* params,
@@ -620,6 +673,7 @@ static keymaster_error_t km_generate_key(
    uint64_t km_secid;
    uint32_t km_timeout;
    bool insert_no_auth = false;
+   uint32_t km_ksb;
    memset(&km_key, 0, sizeof(km_key));
 
    AuthorizationSet set;
@@ -635,6 +689,12 @@ static keymaster_error_t km_generate_key(
       return KM_ERROR_INVALID_ARGUMENT;
    }
    ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_ALGORITHM, value: %u", km_algo);
+   if (set.GetTagValue(TAG_KEY_SIZE, &km_ksb)) {
+      ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: TAG_KEY_SIZE, value: %u bits", km_ksb);
+   }
+   if (km_gen_busy(km_algo, km_ksb)) {
+      return KM_ERROR_SECURE_HW_BUSY;
+   }
    // mandatory: KM_TAG_PURPOSE (one or more)
    ix = 0;
    do {
@@ -2098,6 +2158,7 @@ static int km_open(
       return -EINVAL;
    }
    km_hdl->nxwrap->join_v(km_stdby, (void *)km_hdl);
+   km_hdl->nxwrap->sraiClient();
    NxClient_GetDefaultCallbackThreadSettings(&cts);
    cts.standbyStateChanged.callback  = km_stdcg;
    cts.standbyStateChanged.context   = (void *)km_hdl;

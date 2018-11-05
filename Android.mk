@@ -37,6 +37,9 @@ endif
 include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmFwksRro/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
+ifneq (${LOCAL_DEVICE_NRDP_MODEL_GROUP},)
+include ${BCM_APPS_PATH}/BcmNrdpHelper/Android.mk
+endif
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 #include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk

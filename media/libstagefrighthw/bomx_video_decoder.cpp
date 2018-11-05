@@ -401,6 +401,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     {
         ALOGV("Creating persistent nxclient connection");
         g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxWrap.sraiClient();
         g_persistNxClientOn = true;
     }
     g_persistNxWrapLock.unlock();
@@ -414,6 +415,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     {
         // Check if the platform supports VP9
         pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -1461,6 +1463,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_virtual(false),
     m_forcePortResetOnHwTex(true),
     m_sdbGeomCb(NULL),
+    m_forceScanMode1080p(false),
     m_renderedFrameHandler(this)
 {
     unsigned i;
@@ -1468,6 +1471,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     NEXUS_ClientConfiguration clientConfig;
     char value[PROPERTY_VALUE_MAX];
     bool uhdDisplay = false;
+    int row = 0, roh = 0;
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -1481,6 +1485,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
     m_forcePortResetOnHwTex = property_get_bool(BCM_DYN_MEDIA_PORT_RESET_ON_HWTEX, 1);
+    m_forceScanMode1080p = property_get_bool(BCM_RO_MEDIA_FORCE_SCAN_MODE_1080P, 0);
 
     if (strstr(pName, "redux") != NULL)
     {
@@ -1733,6 +1738,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
         ALOGV("Creating persistent nxclient connection");
         g_persistNxWrap.join(BOMX_VideoDecoder_StandbyMon, NULL);
+        g_persistNxWrap.sraiClient();
         g_persistNxClientOn = true;
     }
     g_persistNxWrapLock.unlock();
@@ -1749,6 +1755,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         else
         {
             m_pNxWrap->join(BOMX_VideoDecoder_StandbyMon, NULL);
+            m_pNxWrap->sraiClient();
         }
     }
     m_nexusClient = m_pNxWrap->client();
@@ -1861,6 +1868,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
           }
        }
     }
+    else
+    {
+       // redux mode may have further window limitation due to rts, capture that here.
+       NEXUS_DisplayCapabilities dc;
+       NEXUS_GetDisplayCapabilities(&dc);
+       if (dc.display[0].window[1].maxWidthPercentage != 100) {
+          row = m_outputWidth;
+          m_outputWidth *= dc.display[0].window[1].maxWidthPercentage;
+          m_outputWidth /= 100;
+       }
+       if (dc.display[0].window[1].maxHeightPercentage != 100) {
+          roh = m_outputHeight;
+          if (!row) row = m_outputWidth;
+          m_outputHeight *= dc.display[0].window[1].maxHeightPercentage;
+          m_outputHeight /= 100;
+       }
+    }
 
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
@@ -1923,10 +1947,17 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
     NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &videoClientSettings);
-    videoClientSettings.composition.virtualDisplay.width =
-       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_HEIGHT_HIGHRES : m_outputWidth;
-    videoClientSettings.composition.virtualDisplay.height =
-       (m_virtual && uhdDisplay) ? B_DATA_BUFFER_WIDTH_HIGHRES : m_outputHeight;
+    if (m_redux && row && roh) {
+       // preserve the full screen ratio for the video client inside the surface
+       // client parent.
+       videoClientSettings.composition.virtualDisplay.width = row;
+       videoClientSettings.composition.virtualDisplay.height = roh;
+    } else {
+       videoClientSettings.composition.virtualDisplay.width =
+          (m_virtual && uhdDisplay) ? B_DATA_BUFFER_HEIGHT_HIGHRES : m_outputWidth;
+       videoClientSettings.composition.virtualDisplay.height =
+          (m_virtual && uhdDisplay) ? B_DATA_BUFFER_WIDTH_HIGHRES : m_outputHeight;
+    }
     videoClientSettings.composition.position.x = 0;
     videoClientSettings.composition.position.y = 0;
     videoClientSettings.composition.position.width = m_outputWidth;
@@ -3462,6 +3493,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             vdecSettings.fifoEmpty.callback = BOMX_VideoDecoder_EventCallback;
             vdecSettings.fifoEmpty.context = (void *)m_hFifoEmptyEvent;
             vdecSettings.fifoEmpty.param = (int)BOMX_VideoDecoderEventType_eFifoEmpty;
+            if (m_forceScanMode1080p)
+            {
+               vdecSettings.scanMode = NEXUS_VideoDecoderScanMode_e1080p;
+            }
             NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
 
             NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
