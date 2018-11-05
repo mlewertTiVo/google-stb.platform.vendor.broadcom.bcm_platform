@@ -75,8 +75,8 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-#define ATTEMPT_PAUSE_USEC 500000
-#define MAX_ATTEMPT_COUNT  4
+#define ATTEMPT_PAUSE_USEC 100000
+#define MAX_ATTEMPT_COUNT  2
 static const sp<INexus> nxi(void) {
    sp<INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
