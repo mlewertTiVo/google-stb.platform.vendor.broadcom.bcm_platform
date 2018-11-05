@@ -67,6 +67,8 @@
 #include <bcm/hardware/dpthak/1.0/IDptHak.h>
 #include "vendor_bcm_props.h"
 
+extern "C" void nxwrap_rmlmk(void *w);
+
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::dpthak::V1_0;
@@ -3868,7 +3870,22 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
-                    return BOMX_BERR_TRACE(errCode);
+                    if ( errCode == BERR_OUT_OF_DEVICE_MEMORY )
+                    {
+                        /* give another try after attempting a round of rmlmk, if
+                         * rmlmk fails (e.g. not enough memory could be freed up),
+                         * that's game over.
+                         */
+                        ALOGW("decoder start: running rmlmk to free up memory");
+                        nxwrap_rmlmk(m_pNxWrap);
+                        BKNI_Sleep(5); /* give settling time for rmlmk. */
+                        errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
+                    }
+
+                    if ( errCode )
+                    {
+                        return BOMX_BERR_TRACE(errCode);
+                    }
                 }
                 if (!property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
                 {
