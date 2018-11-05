@@ -93,6 +93,8 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 #define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
+#define B_OUTSTANDING_FRAMES_WATERMARK (6)
+#define B_OUTSTANDING_FRAME_MAX_AGE (4)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -1446,6 +1448,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_displayThreadStop(false),
     m_hDisplayThread(0),
     m_lastReturnedSerial(0),
+    m_lastDisplayedSerial(0),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
     m_maxConsecDroppedFrames(0),
@@ -3436,6 +3439,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
             m_texturedFrames = 0;
             m_lastReturnedSerial = 0;
+            m_lastDisplayedSerial = 0;
             m_formatChangeState = FCState_eNone;
             CancelTimerId(m_inputBuffersTimerId);
             CancelTimerId(m_formatChangeTimerId);
@@ -7506,6 +7510,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     unsigned numFrames = 0, numRecycle = 0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
     NEXUS_VideoDecoderStatus status;
+    unsigned outstandingFrames = 0;
 
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
@@ -7553,6 +7558,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             switch ( pBuffer->state )
             {
             case BOMX_VideoDecoderFrameBufferState_eDelivered:
+                ++outstandingFrames;
             case BOMX_VideoDecoderFrameBufferState_eReturned:
                 pEnd = pBuffer;
                break;
@@ -7561,6 +7567,38 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             }
         }
     }
+
+    // Attempt to force release of the LRU frames
+    if ( !m_outputFlushing && (m_texturedFrames == 0)
+         && (outstandingFrames >= B_OUTSTANDING_FRAMES_WATERMARK) )
+    {
+        BOMX_VideoDecoderFrameBuffer *pEndRange = pEnd;
+        pEndRange = BLST_Q_NEXT(pEndRange, node);
+        pBuffer = pStart;
+        unsigned forced = 0;
+
+        while ( pBuffer != pEndRange )
+        {
+            BOMX_VideoDecoderFrameBuffer *pNext = BLST_Q_NEXT(pBuffer, node);
+            if ( (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered)
+                 && UNSIGNED_LESS_THAN(pBuffer->frameStatus.serialNumber, m_lastDisplayedSerial) )
+            {
+                unsigned bufferAge = m_lastDisplayedSerial - pBuffer->frameStatus.serialNumber;
+                if ( bufferAge >= B_OUTSTANDING_FRAME_MAX_AGE )
+                {
+                    // Force the recycling of this video frame
+                    pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
+                    ALOGV("Force the recycling of serial:%u, age:%u",
+                           pBuffer->frameStatus.serialNumber, bufferAge);
+                    ++forced;
+                }
+            }
+            pBuffer = pNext;
+        }
+        if (forced > 0)
+            ALOGV("Outstanding frames:%u, forced recycled:%u", outstandingFrames, forced);
+    }
+
 
     // Deal with the frames we found
     if ( NULL != pEnd )
@@ -8063,6 +8101,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
         {
             // Mark buffer as ready to display
             pFrameBuffer->display = true;
+            m_lastDisplayedSerial = serialNumber;
             // Return frames to nexus decoder
             ReturnDecodedFrames();
             // We just returned something to nexus, kick off the output frame thread
