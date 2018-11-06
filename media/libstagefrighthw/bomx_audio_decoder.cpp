@@ -159,6 +159,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     else
     {
         pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -222,6 +223,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     else
     {
         pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -285,6 +287,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
     else
     {
         pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMp3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMpeg].decode )
@@ -292,6 +295,12 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
             ALOGW("MP3 hardware support is not available");
             goto error;
         }
+    }
+
+    if (property_get_int32(BCM_RO_NX_TRIM_MP3, 0))
+    {
+        ALOGW("MP3 hardware support is available but disabled");
+        goto error;
     }
 
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
@@ -348,6 +357,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
     else
     {
         pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
+        pNxWrap->sraiClient();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
@@ -790,6 +800,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         else
         {
             m_pNxWrap->join(BOMX_AudioDecoder_StandbyMon, NULL);
+            m_pNxWrap->sraiClient();
         }
     }
 

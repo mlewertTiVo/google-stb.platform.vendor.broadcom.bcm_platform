@@ -48,6 +48,9 @@
 #include <nxwrap.h>
 #include "nexus_platform.h"
 #include <bcm/hardware/nexus/1.0/INexus.h>
+#if defined(SRAI_PRESENT)
+#include "sage_srai.h"
+#endif
 
 using namespace android;
 using namespace android::hardware;
@@ -72,8 +75,8 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-#define ATTEMPT_PAUSE_USEC 500000
-#define MAX_ATTEMPT_COUNT  4
+#define ATTEMPT_PAUSE_USEC 100000
+#define MAX_ATTEMPT_COUNT  2
 static const sp<INexus> nxi(void) {
    sp<INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
@@ -92,16 +95,26 @@ static const sp<INexus> nxi(void) {
    return NULL;
 }
 
-NxWrap::NxWrap() {
+NxWrap::NxWrap(bool w_nxi) {
    snprintf(mName, NXWRAP_NAME_MAX, "nxwrap-%d", getpid());
-   gNxiHpd = new NxWrapHpd(this);
-   gNxiDsp = new NxWrapDsp(this);
+   if (w_nxi) {
+      gNxiHpd = new NxWrapHpd(this);
+      gNxiDsp = new NxWrapDsp(this);
+   } else {
+      gNxiHpd = NULL;
+      gNxiDsp = NULL;
+   }
 }
 
-NxWrap::NxWrap(const char *name) {
+NxWrap::NxWrap(const char *name, bool w_nxi) {
    snprintf(mName, NXWRAP_NAME_MAX, "%s", name);
-   gNxiHpd = new NxWrapHpd(this);
-   gNxiDsp = new NxWrapDsp(this);
+   if (w_nxi) {
+      gNxiHpd = new NxWrapHpd(this);
+      gNxiDsp = new NxWrapDsp(this);
+   } else {
+      gNxiHpd = NULL;
+      gNxiDsp = NULL;
+   }
 }
 
 void NxWrap::actHp(bool connected) {
@@ -378,13 +391,28 @@ int NxWrap::releaseWL() {
    return -EAGAIN;
 }
 
+void NxWrap::sraiClient() {
+#if defined(SRAI_PRESENT)
+   SRAI_Settings ss;
+   SRAI_GetSettings(&ss);
+   ss.generalHeapIndex     = NXCLIENT_FULL_HEAP;
+   ss.videoSecureHeapIndex = NXCLIENT_VIDEO_SECURE_HEAP;
+   ss.exportHeapIndex      = NXCLIENT_EXPORT_HEAP;
+   SRAI_SetSettings(&ss);
+   return;
+#else
+   // no-op.
+   return;
+#endif
+}
+
 // helper functions for easy hook up.  creates the middleware client and returns a
 // reference to it, no standby activation in place since simple client.
 //
 extern "C" void* nxwrap_create_client(void **nxwrap) {
 
    uint64_t client = 0;
-   NxWrap *nx = new NxWrap();
+   NxWrap *nx = new NxWrap(false);
 
    if (nx != NULL) {
       *nxwrap = nx;
@@ -392,6 +420,10 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
       if (!client) {
          nx->join();
          client = nx->client();
+         if ((client == 0) &&
+             (nxi() == NULL)) {
+            client = (uint64_t)(intptr_t)nx;
+         }
       }
    }
 
@@ -401,7 +433,7 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
 extern "C" void* nxwrap_create_verified_client(void **nxwrap) {
 
    uint64_t client = 0;
-   NxWrap *nx = new NxWrap();
+   NxWrap *nx = new NxWrap(false);
 
    if (nx != NULL) {
       *nxwrap = nx;

@@ -49,6 +49,7 @@
 #define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
 #define LOG_ICB_DEBUG       (1<<6)  /* use of intermediate composition buffer for blit ops. */
 #define LOG_COMP_TICK_DEBUG (1<<7)  /* timekeeper information during frame composition. */
+#define LOG_ROT_DEBUG       (1<<8)  /* rotation. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
@@ -293,6 +294,9 @@ struct hwc2_ext_t {
    struct hwc2_fb_t                    icb;
    int64_t                             lvst;
    int64_t                             lpst;
+   bool                                rfb;
+   uint32_t                            rfbw;
+   uint32_t                            rfbh;
 };
 
 enum hwc2_record_dump_e {

@@ -541,6 +541,8 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
+    ALOGV("%s, %p", __FUNCTION__, bout);
+
     if (bout->nexus.direct.playpump_mode && playpump) {
         if (!bout->nexus.direct.priming) {
             NEXUS_AudioDecoderTrickState trickState;
@@ -576,6 +578,8 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
+
+    ALOGV("%s, %p", __FUNCTION__, bout);
 
     if (bout->nexus.direct.playpump_mode && playpump) {
         /* Prime again only if not yet resumed */
@@ -632,15 +636,16 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
     ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
         nexus_direct_bout_stop(bout);
-        nexus_direct_bout_start(bout);
+        bout->started = false;
+        bout->framesPlayedTotal = 0;
+    } else {
+        bout->framesPlayed = 0;
+        bout->framesPlayedTotal = 0;
+        bout->nexus.direct.lastCount = 0;
+        bout->nexus.direct.bitrate = 0;
+        bout->nexus.direct.eac3.syncframe_len = 0;
+        bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     }
-
-    bout->framesPlayed = 0;
-    bout->framesPlayedTotal = 0;
-    bout->nexus.direct.lastCount = 0;
-    bout->nexus.direct.bitrate = 0;
-    bout->nexus.direct.eac3.syncframe_len = 0;
-    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
 
     return 0;
 }
@@ -713,9 +718,9 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 bytes_to_copy = (NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE - bout->nexus.direct.eac3.syncframe_len);
             }
             ALOGVV("%s: Copy %u bytes from %p to %p:%u %p", __FUNCTION__,
-            bytes_to_copy, syncframe,
-            bout->nexus.direct.eac3.syncframe, bout->nexus.direct.eac3.syncframe_len,
-            bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len);
+                bytes_to_copy, syncframe,
+                bout->nexus.direct.eac3.syncframe, bout->nexus.direct.eac3.syncframe_len,
+                bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len);
             memcpy(bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len, syncframe, bytes_to_copy);
             bout->nexus.direct.eac3.syncframe_len += bytes_to_copy;
             bytes_written += bytes_to_copy;
@@ -842,6 +847,39 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 playpumpStatus.fifoDepth,
                 playpumpStatus.fifoSize,
                 trickState.rate);
+
+            if (bout->config.format == AUDIO_FORMAT_AC3) {
+                // For AC3, get bitrate from the header
+                const uint8_t *syncframe;
+                eac3_frame_hdr_info info;
+
+                syncframe = nexus_find_ac3_sync_frame((uint8_t *)buffer, bytes, &info);
+                if (syncframe && (info.bitrate != bout->nexus.direct.bitrate)) {
+                    ALOGW("%s: AC3 adaptive bitrate %u -> %u", __FUNCTION__,
+                        bout->nexus.direct.bitrate, info.bitrate);
+                    bout->nexus.direct.bitrate = info.bitrate;
+                }
+            } else if (bout->config.format == AUDIO_FORMAT_E_AC3) {
+                // Look for next syncframe of independent substream 0 to determine frameszie
+                const uint8_t *syncframe1 = NULL;
+                const uint8_t *syncframe2 = NULL;
+                eac3_frame_hdr_info info;
+                syncframe1 = nexus_find_eac3_independent_frame((uint8_t *)buffer, bytes, 0, &info);
+                if (syncframe1) {
+                    syncframe2 = nexus_find_eac3_independent_frame(syncframe1 + 2,
+                        bytes - (syncframe1 - (uint8_t *)buffer) - 2, 0, &info);
+                }
+                if (syncframe1 && syncframe2) {
+                    size_t frame_size = syncframe2 - syncframe1;
+                    unsigned bitrate;
+                    bitrate = (frame_size * 8 * info.sample_rate) / (info.num_audio_blks * 256 * 1000);
+                    if (bitrate > bout->nexus.direct.bitrate) {
+                        ALOGW("%s: EAC3 adaptive bitrate %u -> %u", __FUNCTION__,
+                            bout->nexus.direct.bitrate, bitrate);
+                        bout->nexus.direct.bitrate = bitrate;
+                    }
+                }
+            }
 
             if ( !bout->nexus.direct.priming && trickState.rate ) {
                 /* If not priming nor paused, do not buffer too much data */

@@ -85,7 +85,7 @@
 #include <linux/brcmstb/proc_info_proxy.h>
 
 #define NX_CLIENT_USAGE_LOG            0
-#define NX_CLIENT_EVM_LOG              1
+#define NX_CLIENT_EVM_LOG              0
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
@@ -1750,6 +1750,7 @@ int main(void)
         setenv("audio_uart_file", "/data/vendor/nxmedia/audio_uart", 1);
         setenv("audio_debug_file", "/data/vendor/nxmedia/audio_debug", 1);
         setenv("audio_core_file", "/data/vendor/nxmedia/audio_core", 1);
+        setenv("audio_target_print_file", "/data/vendor/nxmedia/audio_target_print", 1);
     }
 
     char modules[PROPERTY_VALUE_MAX];

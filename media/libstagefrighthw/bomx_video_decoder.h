@@ -459,6 +459,7 @@ protected:
     bool m_virtual;
     bool m_forcePortResetOnHwTex;
     sp<SdbGeomCb> m_sdbGeomCb;
+    bool m_forceScanMode1080p;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
