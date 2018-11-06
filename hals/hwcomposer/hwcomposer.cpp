@@ -694,10 +694,11 @@ static void hwc2_cfg_collect(
     */
    if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL && dsp->aCfg) {
       if ((dsp->u.ext.rfbw != dsp->aCfg->w) ||
-          (dsp->u.ext.rfbh != dsp->aCfg->h))
+          (dsp->u.ext.rfbh != dsp->aCfg->h)) {
          dsp->u.ext.rfbw = dsp->aCfg->w;
          dsp->u.ext.rfbh = dsp->aCfg->h;
          dsp->u.ext.rfb = true;
+      }
    }
 }
 
