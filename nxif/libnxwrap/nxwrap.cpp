@@ -75,23 +75,15 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-#define ATTEMPT_PAUSE_USEC 100000
-#define MAX_ATTEMPT_COUNT  2
 static const sp<INexus> nxi(void) {
    sp<INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
-   int c = 0;
 
-   do {
-      inx = INexus::getService();
-      if (inx != NULL) {
-         return inx;
-      }
-      usleep(ATTEMPT_PAUSE_USEC);
-      c++;
+   inx = INexus::getService();
+   if (inx != NULL) {
+      return inx;
    }
-   while(c < MAX_ATTEMPT_COUNT);
-   // can't get interface, caller will probably die...
+
    return NULL;
 }
 
@@ -419,10 +411,10 @@ extern "C" void* nxwrap_create_client(void **nxwrap) {
       client = nx->client();
       if (!client) {
          nx->join();
-         client = nx->client();
-         if ((client == 0) &&
-             (nxi() == NULL)) {
+         if (nxi() == NULL) {
             client = (uint64_t)(intptr_t)nx;
+         } else {
+            client = nx->client();
          }
       }
    }
@@ -440,7 +432,11 @@ extern "C" void* nxwrap_create_verified_client(void **nxwrap) {
       client = nx->client();
       if (!client) {
          nx->join_v();
-         client = nx->client();
+         if (nxi() == NULL) {
+            client = (uint64_t)(intptr_t)nx;
+         } else {
+            client = nx->client();
+         }
       }
    }
 
