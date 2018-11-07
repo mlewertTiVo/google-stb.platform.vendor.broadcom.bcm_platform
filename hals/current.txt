@@ -1,0 +1,48 @@
+# nexus
+#  middleware baseline.
+281868f6faef00eca9482888e787745a7cfb0d73f9344d66d02964007d11603d bcm.hardware.nexus@1.0::types
+07bf089f9a22acc2f9a11948c745746cf54878460aecd6f794a8c9104b4329f1 bcm.hardware.nexus@1.0::INexus
+717689ffc05e6365b96905ba65f9acc9adad9922a007e8d781d0a1d1012a6a63 bcm.hardware.nexus@1.0::INexusDspCb
+9c5b5225a8d133e9d63ef031776af06bc1c4ba523c8ee18d3ddb03cb952d7d3b bcm.hardware.nexus@1.0::INexusHpdCb
+
+# dspsvcext
+#  display service extensions
+#  geometry callbacks from hwc into bomx, sideband, etc...
+103461503a90a54a62560b6a220c04c3144a9a44bfd42fe2e7134f57802d29d0 bcm.hardware.dspsvcext@1.0::types
+80fbcebf809bcc7dd2752de7024169960be690723915035825813d8689b58c92 bcm.hardware.dspsvcext@1.0::IDspSvcExt
+7ec3e9f7e7d5ecf6887e0be120aecf187d0977f03ada8bcaf11316b21d44c0fc bcm.hardware.dspsvcext@1.0::IDspSvcExtSdbGeomCb
+
+# bp3
+#  license provisioning - not fully working
+#  use command line instead for now.
+81ddaa9beb842c05c55a9690fbe28d5bfcbc93ece6caaaa290a0e19af0c073ee bcm.hardware.bp3@1.0::Ibp3
+
+# sdbhak
+#   sideband hackery - lives on it seems
+0f6b041d5a1c2c0a9464ba3ca2feee4e9d8b1c31dc1f64e2217b6ee5518a3e1c bcm.hardware.sdbhak@1.0::ISdbHak
+
+# sfhak
+#  stagefright hackery
+#  required for passing keyslot information in cas use case between bomx and cas.
+99276be90699bd894038b90df694fb3e3a214dae4eb2d91fda6337497fe511e5 bcm.hardware.sfhak@1.0::types
+593ee358891ec2bd91b9eba86ba68ca484dede7b2fcdab1a057a73e9abd0f63b bcm.hardware.sfhak@1.0::ISfHak
+
+# dpthak
+#  device performance tuning hackery
+#  network coalescence and thread priority bumps for high frame rate 4K
+adbc00be4cf83d83e27e7083a80560e7e287bf1ff6ffc504ef0c0ca10b071136 bcm.hardware.dpthak@1.0::types
+4fd1805ee19420576ebddaa3815701844cc3f66d5426a9774508b42acf00d148 bcm.hardware.dpthak@1.0::IDptHak
+
+# casproxy
+#  cas proxy hackery
+#  for allowing some level of networking support in the otherwise not net aware cas.
+#  bound to be eliminated, though we said the same thing about sdbhak (sigh)
+# cd86fde53a64e23e25fee46de9e74e0a67a3261e78eb1765e2a875ce525cc555 bcm.hardware.casproxy@1.0::IMediaCasProxyService
+
+# tvisvcext
+#  extension for tv-service (input) support with hardware tuner.
+#  NOT COMPLETE (real need is tbd).
+# 3cb59e062eaa73d0b736d2d041a5aec80c183e15caaae2f8c48149a310957c0d bcm.hardware.tvisvcext@1.0::types
+# 6a5d254924618495faabd2f8c22c799efefb1cd4483c8ea561686db9a68be664 bcm.hardware.tvisvcext@1.0::ITviSvcExt
+
+
