@@ -607,6 +607,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    void *pMemory;
    struct nx_ashmem_alloc ashmem_alloc;
    struct nx_ashmem_getmem ashmem_getmem;
+   bool skip_alloc = false;
 
    private_handle_t *hnd = NULL;
    (void)dev;
@@ -714,10 +715,15 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.align = gralloc_default_align;
       if ((fmt_set & GR_YV12) == GR_YV12) {
-         ashmem_alloc.size = size;
+         if ((w <= DATA_PLANE_MAX_WIDTH &&
+              h <= DATA_PLANE_MAX_HEIGHT)) {
+            ashmem_alloc.size = size;
+         } else {
+            ashmem_alloc.size = 0;
+            skip_alloc = true;
+         }
          if (usage & GRALLOC_USAGE_HW_TEXTURE) {
-            if ((w <= DATA_PLANE_MAX_WIDTH &&
-                 h <= DATA_PLANE_MAX_HEIGHT)) {
+            if (!skip_alloc) {
                fmt_set |= GR_HWTEX;
             }
          }
@@ -726,25 +732,27 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          pSharedData->container.stride = hnd->oglStride;
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
-      ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret >= 0) {
-         memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
-         ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
-         if (ret < 0) {
-            /* give another try after asking to trim some existing memory, if trim
-             * fails, or if not enough memory could be freed up, that's game over.
-             */
-            if (nexus_client && dyn_EGL_nexus_trim_cma) {
-               dyn_EGL_nexus_trim_cma(nexus_client); // TODO: pass in how much is needed?
-               BKNI_Sleep(5); /* give settling time for memory killing. */
-               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+      if (ashmem_alloc.size > 0) {
+         ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret >= 0) {
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               /* give another try after asking to trim some existing memory, if trim
+                * fails, or if not enough memory could be freed up, that's game over.
+                */
+               if (nexus_client && dyn_EGL_nexus_trim_cma) {
+                  dyn_EGL_nexus_trim_cma(nexus_client); // TODO: pass in how much is needed?
+                  BKNI_Sleep(5); /* give settling time for memory killing. */
+                  ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+               }
             }
-         }
-         if (ret < 0) {
-            err = -ENOMEM;
-            goto alloc_failed;
-         } else {
-            pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            if (ret < 0) {
+               err = -ENOMEM;
+               goto alloc_failed;
+            } else {
+               pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            }
          }
       }
    }
@@ -785,9 +793,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.block == 0) {
-      ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      err = -ENOMEM;
-      goto alloc_failed;
+      if (skip_alloc) {
+         ALOGW("%s: dropped allocation (%d,%d)", __FUNCTION__, w, h);
+      } else {
+         ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+         err = -ENOMEM;
+         goto alloc_failed;
+      }
    } else if (pSharedData->container.block) {
        gralloc_bzero(pSharedData);
    }
