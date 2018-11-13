@@ -54,6 +54,7 @@ extern "C" {
 #include "nexus_security.h"
 }
 #include "nxwrap.h"
+#include "nx_ashmem.h"
 
 #define KM_OUT_DATA_SZ (4*4096)
 
@@ -89,6 +90,23 @@ struct km_op_s {
    uint8_t                *bb;
    int32_t                bs;
 };
+
+static int km_open_nxa(void) {
+   int fd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(device, 0, sizeof(device));
+   memset(name, 0, sizeof(name));
+
+   property_get(BCM_RO_NX_DEV_ASHMEM, device, NULL);
+   if (strlen(device)) {
+      strcpy(name, "/dev/");
+      strcat(name, device);
+      fd = open(name, O_RDWR, 0);
+   }
+   return fd;
+}
 
 static NEXUS_KeySlotHandle km_ks_alloc(
    void) {
@@ -593,6 +611,34 @@ static keymaster_error_t km_add_rng_entropy(
    return KM_ERROR_OK;
 }
 
+static bool km_gen_busy(
+   keymaster_algorithm_t a,
+   uint32_t b) {
+
+   int ret, fd = km_open_nxa();
+   unsigned s = 0;
+   if (fd < 0) {
+      goto out;
+   }
+   ret = ioctl(fd, NX_ASHMEM_CHK_SEC, &s);
+   close(fd);
+   if (s == 0) {
+      goto out;
+   }
+   // limit use of the km resources if we know we have a secure session
+   // (playback) ongoing.  this limitation should be very strict to not
+   // abuse the system.
+   if (
+       ((a == KM_ALGORITHM_RSA) && (b >= 1024)) /* case: rsa keys >1K. */
+      ) {
+      ALOGW("km_gen_busy: algo(%d), size(%u): rejecting hw-busy due to secure playback",
+         a, b);
+      return true;
+   }
+out:
+   return false;
+}
+
 static keymaster_error_t km_generate_key(
    const struct keymaster2_device* dev,
    const keymaster_key_param_set_t* params,
@@ -650,6 +696,9 @@ static keymaster_error_t km_generate_key(
    if ((km_algo == KM_ALGORITHM_RSA) &&
        set.GetTagValue(TAG_RSA_PUBLIC_EXPONENT, &km_exp)) {
       ALOGI_IF(KM_LOG_ALL_IN, "km_generate_key: tag: KM_TAG_RSA_PUBLIC_EXPONENT, value: %" PRIx64 "", km_exp);
+   }
+   if (km_gen_busy(km_algo, km_ksb)) {
+      return KM_ERROR_SECURE_HW_BUSY;
    }
    // mandatory: KM_TAG_PURPOSE (one or more)
    ix = 0;
