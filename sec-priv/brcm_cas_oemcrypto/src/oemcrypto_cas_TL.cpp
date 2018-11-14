@@ -127,6 +127,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
     WvOemCryptoParamSettings.api_version = OEMCRYPTO_API_VERSION;
+    WvOemCryptoParamSettings.config_flags = DRM_WVOEMCRYPTO_INIT_OPTION_CAS;
     DRM_WVOemCrypto_SetParamSettings(&WvOemCryptoParamSettings);
 
     if ((DRM_WVOemCrypto_Initialize(&WvOemCryptoParamSettings, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
