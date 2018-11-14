@@ -269,21 +269,17 @@ std::pair<WifiStatus, uint32_t> WifiStaIface::getCapabilitiesInternal() {
     uint32_t legacy_feature_set;
     std::tie(legacy_status, legacy_feature_set) =
         legacy_hal_.lock()->getSupportedFeatureSet(ifname_);
-    if (legacy_status != legacy_hal::WIFI_SUCCESS) {
-        // Assume basic capabilities
-        legacy_feature_set = WIFI_FEATURE_INFRA_5G;
-    }
     uint32_t legacy_logger_feature_set;
     std::tie(legacy_status, legacy_logger_feature_set) =
         legacy_hal_.lock()->getLoggerSupportedFeatureSet(ifname_);
-    if (legacy_status != legacy_hal::WIFI_SUCCESS) {
-        // some devices don't support querying logger feature set
-        legacy_logger_feature_set = 0;
-    }
     uint32_t hidl_caps;
     if (!hidl_struct_util::convertLegacyFeaturesToHidlStaCapabilities(
             legacy_feature_set, legacy_logger_feature_set, &hidl_caps)) {
         return {createWifiStatus(WifiStatusCode::ERROR_UNKNOWN), 0};
+    }
+    if (hidl_caps == 0) {
+        // Assume basic capabilities
+        hidl_caps = (uint32_t) IWifiStaIface::StaIfaceCapabilityMask::STA_5G;
     }
     return {createWifiStatus(WifiStatusCode::SUCCESS), hidl_caps};
 }
