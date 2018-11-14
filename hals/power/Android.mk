@@ -33,7 +33,10 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libhdmiext \
                           libhdmicec \
                           libnxwrap
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0 \
+                          bcm.hardware.dpthak@1.0 \
+                          libhidlbase \
+                          libhidltransport
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
