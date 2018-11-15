@@ -3021,7 +3021,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 }
 
                 NEXUS_VideoCodec currentCodec = GetNexusCodec();
-                if ((currentCodec == NEXUS_VideoCodec_eH265 || currentCodec == NEXUS_VideoCodec_eVp9) &&
+                if ((currentCodec == NEXUS_VideoCodec_eH264 ||
+                     currentCodec == NEXUS_VideoCodec_eH265 ||
+                     currentCodec == NEXUS_VideoCodec_eVp9) &&
                     (m_maxDecoderWidth >= B_DATA_BUFFER_WIDTH_HIGHRES ||
                      m_maxDecoderHeight >= B_DATA_BUFFER_HEIGHT_HIGHRES))
                 {
