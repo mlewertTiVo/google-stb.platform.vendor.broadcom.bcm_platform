@@ -6288,7 +6288,11 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
     B_Mutex_Unlock(m_hDisplayMutex);
     Lock();
     SetVideoGeometry_locked(&framePosition, &frameClip, frameSerial, frameWidth, frameHeight, framezOrder, true);
-    DisplayFrame_locked(frameSerial);
+    if (m_frameSerial != m_lastReturnedSerial) {
+        DisplayFrame_locked(frameSerial);
+    } else {
+        ALOGV("%s: frame (%u) already displayed", __FUNCTION__, m_frameSerial);
+    }
     Unlock();
 }
 
