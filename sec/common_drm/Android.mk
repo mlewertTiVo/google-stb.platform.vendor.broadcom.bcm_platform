@@ -59,6 +59,39 @@ endif
 
 ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 #-------------
+# libprdyhttp.so
+#-------------
+include $(CLEAR_VARS)
+LOCAL_MODULE :=  libprdyhttp
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_SUFFIX := .so
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/thirdparty/playready/http
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
+include $(LOCAL_PATH)/prdyhttp.inc
+LOCAL_SRC_FILES := src/prdy_http.c
+LOCAL_C_INCLUDES := \
+    $(TOP)/system/core/libcutils/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/sec/bdbg2alog \
+    ${REFSW_BASE_DIR}/nexus/nxclient/include
+LOCAL_C_INCLUDES += ${PRDY_HTTP_INCLUDES}
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
+ifeq ($(TARGET_BUILD_VARIANT),user)
+# Disable warning logs for user build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
+endif
+LOCAL_SHARED_LIBRARIES := liblog libnexus libcmndrm_tl
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+include $(BUILD_SHARED_LIBRARY)
+
+#-------------
 # libcmndrmprdy.so
 #-------------
 include $(CLEAR_VARS)
