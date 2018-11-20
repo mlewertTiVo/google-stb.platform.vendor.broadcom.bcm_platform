@@ -461,6 +461,7 @@ enum hwc2_tweaks_e {
    hwc2_tweak_forced_eotf,
    hwc2_tweak_hdp0,
    hwc2_tweak_odv_alpha_hole,
+   hwc2_tweak_one_cfg,
    /* settings. */
    hwc2_tweak_eotf,
    hwc2_tweak_dump_this,
