@@ -79,7 +79,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_MEMC_ROT   0 /* m2mc supports flip, but no 90-rot. */
 #define HWC2_OPQ        0xFF000000
 #define HWC2_TRS        0x00000000
-#define HWC2_PAH        1
+#define HWC2_PAH        0
 #define HWC2_PAH_DIV    2
 #define HWC2_SYNC_TO    3500 /* slightly more than android timeout. */
 #define HWC2_ODV        1
