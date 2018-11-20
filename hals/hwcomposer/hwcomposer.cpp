@@ -377,6 +377,7 @@ static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
    int32_t wanted) {
 
+   NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_DisplaySettings s;
    int32_t eotf = HWC2_INVALID;
 
@@ -401,8 +402,9 @@ static void hwc2_eotf(
       return;
    }
    if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      NxClient_GetDisplaySettings(&s);
-      switch (eotf) {
+      do {
+         NxClient_GetDisplaySettings(&s);
+         switch (eotf) {
          case HWC2_EOTF_HDR10:
             ALOGI("[eotf]: hdr10.");
             s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
@@ -424,8 +426,9 @@ static void hwc2_eotf(
             ALOGI("[eotf]: non-specific.");
             s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
          break;
-      }
-      NxClient_SetDisplaySettings(&s);
+         }
+         rc = NxClient_SetDisplaySettings(&s);
+      } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
@@ -1449,9 +1452,8 @@ static int hwc2_vsync2igrp(
 static void hwc2_set_acfg(
    struct hwc2_dsp_t *dsp) {
    NxClient_DisplaySettings settings;
-
+   NEXUS_Error rc = NEXUS_SUCCESS;
    NEXUS_VideoFormat fmt = NEXUS_VideoFormat_eUnknown;
-   NxClient_GetDisplaySettings(&settings);
 
    NEXUS_VideoFormat ordered_720_grp[] = {
       NEXUS_VideoFormat_e720p,
@@ -1502,21 +1504,24 @@ static void hwc2_set_acfg(
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 
-   if (fmt != NEXUS_VideoFormat_eUnknown && settings.format != fmt) {
-      char fmt_str[32];
-      ALOGI("[%s]:display-format::%d->%d",
-         (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-         settings.format, fmt);
-      settings.format = fmt;
-      /* prevent automatic selection of 'better' display resolution.
-       */
-      sprintf(fmt_str, "%d", fmt);
-      property_set(BCM_DYN_HWC2_VIDOUT_FMT, fmt_str);
-      NxClient_SetDisplaySettings(&settings);
-      /* the resulting display change callback should take care of updating
-       * the composition mode.
-       */
-   }
+   do {
+      NxClient_GetDisplaySettings(&settings);
+      if (fmt != NEXUS_VideoFormat_eUnknown && settings.format != fmt) {
+         char fmt_str[32];
+         ALOGI("[%s]:display-format::%d->%d",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            settings.format, fmt);
+         settings.format = fmt;
+         /* prevent automatic selection of 'better' display resolution.
+          */
+         sprintf(fmt_str, "%d", fmt);
+         property_set(BCM_DYN_HWC2_VIDOUT_FMT, fmt_str);
+         rc = NxClient_SetDisplaySettings(&settings);
+         /* the resulting display change callback should take care of updating
+          * the composition mode.
+          */
+      }
+   } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 }
 
 static int32_t hwc2_regCb(
