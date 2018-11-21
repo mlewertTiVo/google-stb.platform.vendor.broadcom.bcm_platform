@@ -4933,6 +4933,7 @@ static int32_t hwc2_preDsp(
                NEXUS_MemoryBlockHandle bh = NULL;
                NEXUS_Rect c, p;
                struct hwc_position fr, cl;
+               bool gm_upd = false;
                int z = 0;
                PSHARED_DATA shared = NULL;
                void *map = NULL;
@@ -4969,11 +4970,12 @@ static int32_t hwc2_preDsp(
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
                      z = dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z + 1;
                      hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-HWC2_VID_MAGIC, fr, cl, z, 1);
+                     gm_upd = true;
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}, @%u\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h, z);
                   }
-                  if (lyr->lpf != shared->videoFrame.status.serialNumber) {
+                  if (lyr->lpf != shared->videoFrame.status.serialNumber || gm_upd) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
                      hwc2->hb->setframe(vid, lyr->lpf);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),

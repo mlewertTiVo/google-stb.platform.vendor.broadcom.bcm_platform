@@ -222,6 +222,9 @@ endif
 ifneq ($(HW_MP3_DECODER_SUPPORT),n)
 LOCAL_CFLAGS += -DMP3_DECODER_ON
 endif
+ifeq ($(LOCAL_DOLBY_SUPPORT),y)
+LOCAL_CFLAGS += -DXAC3_DECODER_ON
+endif
 
 LOCAL_MODULE := libstagefrighthw
 

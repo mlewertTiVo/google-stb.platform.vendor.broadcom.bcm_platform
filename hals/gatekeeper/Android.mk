@@ -3,9 +3,10 @@ include $(CLEAR_VARS)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 ifeq ($(ANDROID_SUPPORTS_KEYMASTER),y)
-ifeq ($(SAGE_SUPPORT),y)
-
 LOCAL_SRC_FILES := gk.cpp
+else
+LOCAL_SRC_FILES := gk.null.cpp
+endif
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gk\"
@@ -35,9 +36,12 @@ LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_SHARED_LIBRARIES := libcutils libutils liblog libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+
+ifeq ($(SAGE_SUPPORT),y)
 LOCAL_SHARED_LIBRARIES += libmfgtl
 LOCAL_SHARED_LIBRARIES += libkmtl
 LOCAL_SHARED_LIBRARIES += libsrai
+endif
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true
@@ -46,7 +50,4 @@ LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_MODULE := gatekeeper.$(TARGET_BOARD_PLATFORM)
 
 include $(BUILD_SHARED_LIBRARY)
-
-endif
-endif
 

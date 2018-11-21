@@ -3021,7 +3021,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 }
 
                 NEXUS_VideoCodec currentCodec = GetNexusCodec();
-                if ((currentCodec == NEXUS_VideoCodec_eH265 || currentCodec == NEXUS_VideoCodec_eVp9) &&
+                if ((currentCodec == NEXUS_VideoCodec_eH264 ||
+                     currentCodec == NEXUS_VideoCodec_eH265 ||
+                     currentCodec == NEXUS_VideoCodec_eVp9) &&
                     (m_maxDecoderWidth >= B_DATA_BUFFER_WIDTH_HIGHRES ||
                      m_maxDecoderHeight >= B_DATA_BUFFER_HEIGHT_HIGHRES))
                 {
@@ -6286,7 +6288,11 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
     B_Mutex_Unlock(m_hDisplayMutex);
     Lock();
     SetVideoGeometry_locked(&framePosition, &frameClip, frameSerial, frameWidth, frameHeight, framezOrder, true);
-    DisplayFrame_locked(frameSerial);
+    if (m_frameSerial != m_lastReturnedSerial) {
+        DisplayFrame_locked(frameSerial);
+    } else {
+        ALOGV("%s: frame (%u) already displayed", __FUNCTION__, m_frameSerial);
+    }
     Unlock();
 }
 

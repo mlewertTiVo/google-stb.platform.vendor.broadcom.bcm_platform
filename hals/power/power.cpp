@@ -40,6 +40,11 @@
 #include <inttypes.h>
 #include <arpa/inet.h>
 #include "vendor_bcm_props.h"
+#include <bcm/hardware/dpthak/1.0/IDptHak.h>
+
+using namespace android;
+using namespace android::hardware;
+using namespace bcm::hardware::dpthak::V1_0;
 
 // Keep the CPU alive wakelock
 static const char *WAKE_LOCK_ID = "PowerHAL";
@@ -872,6 +877,21 @@ static status_t power_set_interactivity_state(bool on)
     return status;
 }
 
+Mutex idptLock;
+static const sp<IDptHak> power_idpt(void) {
+   static sp<IDptHak> idpt = NULL;
+   Mutex::Autolock _l(idptLock);
+   if (idpt != NULL) {
+      return idpt;
+   }
+
+   idpt = IDptHak::getService();
+   if (idpt != NULL) {
+      return idpt;
+   }
+   return NULL;
+}
+
 static status_t power_finish_set_no_interactive()
 {
     status_t status = NO_ERROR;
@@ -884,6 +904,11 @@ static status_t power_finish_set_no_interactive()
     // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
     // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
     acquireWakeLock();
+
+    if (power_idpt() != NULL) {
+       power_idpt()->hfrvideo(DptHakHfrMode::TUNNEL_DEFAULT);
+       power_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
+    }
 
     if (gNexusPower.get()) {
         gNexusPower->setVideoOutputsState(dozeState);

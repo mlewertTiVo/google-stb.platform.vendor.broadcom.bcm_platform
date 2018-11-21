@@ -75,7 +75,7 @@
 #define NX_HEAP_VIDEO_SECURE       1
 #define NX_HEAP_VIDEO_SECURE_VALUE "64m"
 #define NX_HEAP_MAIN               1
-#define NX_HEAP_MAIN_VALUE         "48m"
+#define NX_HEAP_MAIN_VALUE         "64m"
 #define NX_HEAP_GFX                1
 #define NX_HEAP_GFX_VALUE          "64m"
 #define NX_HEAP_GFX2               0
