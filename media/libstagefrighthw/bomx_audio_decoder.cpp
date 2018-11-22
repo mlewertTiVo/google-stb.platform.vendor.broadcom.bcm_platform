@@ -81,6 +81,10 @@
 #define B_MAX_AUDIO_DECODERS (2)
 #define B_MAX_SECURE_AUDIO_DECODERS (1)
 
+#ifndef HW_RAAGA_ALIGNMENT
+#define HW_RAAGA_ALIGNMENT 32
+#endif
+
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -2731,7 +2735,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddOutputPortBuffer(
     pInfo->pClientMemory = pBuffer;
     pInfo->hMemoryBlock = NEXUS_MemoryBlock_Allocate(
        !clientConfig.heap[NXCLIENT_FULL_HEAP] ? clientConfig.heap[NXCLIENT_DEFAULT_HEAP] : clientConfig.heap[NXCLIENT_FULL_HEAP],
-       nSizeBytes, 0, NULL);
+       nSizeBytes, HW_RAAGA_ALIGNMENT, NULL);
     if ( NULL == pInfo->hMemoryBlock )
     {
         delete pInfo;
