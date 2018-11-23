@@ -3727,7 +3727,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                    }
                 }
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
-                if (m_tunnelMode)
+                if (m_tunnelMode && m_tunnelStcChannel)
                 {
                     if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0))
                     {
@@ -6981,7 +6981,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if (!m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 m_stcSyncValue = stcSync;
                 ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
