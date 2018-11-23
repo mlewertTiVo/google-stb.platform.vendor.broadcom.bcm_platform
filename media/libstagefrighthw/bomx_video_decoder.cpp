@@ -2566,7 +2566,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             // Much of this structure is not relevant.  Zero everything except for allowed picture types, profile, level.
-            memset(pMpeg4, 0, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+            memset(pMpeg4, 0, sizeof(OMX_VIDEO_PARAM_MPEG4TYPE));
             BOMX_STRUCT_INIT(pMpeg4);
             pMpeg4->nPortIndex = m_videoPortBase;
             pMpeg4->eProfile = OMX_VIDEO_MPEG4ProfileSimple;
