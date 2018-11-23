@@ -26,7 +26,8 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libhidlbase \
                           libhidltransport \
                           libhwbinder \
-                          bcm.hardware.nexus@1.0
+                          bcm.hardware.nexus@1.0 \
+                          bcm.hardware.nexus@1.1
 
 ifeq ($(SAGE_SUPPORT),y)
 LOCAL_SHARED_LIBRARIES += libsrai
@@ -36,7 +37,6 @@ endif
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 

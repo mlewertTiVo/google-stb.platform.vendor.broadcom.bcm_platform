@@ -397,6 +397,11 @@ Return<NexusStatus> NexusImpl::releaseWL() {
    return NexusStatus::SUCCESS;
 }
 
+Return<NexusStatus> NexusImpl::forcedPCM(uint8_t e) {
+   (void) e;
+   return NexusStatus::SUCCESS;
+}
+
 void NexusImpl::start_middleware() {
    init_hdmi_out();
    init_ir();

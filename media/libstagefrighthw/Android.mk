@@ -153,7 +153,6 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES += \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcevt/1.0
 
@@ -188,7 +187,7 @@ LOCAL_SHARED_LIBRARIES :=         \
         libbinder
 
 LOCAL_SHARED_LIBRARIES += \
-        bcm.hardware.nexus@1.0 \
+        bcm.hardware.nexus@1.1 \
         bcm.hardware.dspsvcext@1.0 \
         bcm.hardware.dpthak@1.0 \
         libhidlbase \

@@ -14,13 +14,12 @@ LOCAL_SRC_FILES += TviSvcExt.cpp
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SHARED_LIBRARIES := \
     bcm.hardware.tvisvcext@1.0 \
-    bcm.hardware.nexus@1.0 \
+    bcm.hardware.nexus@1.1 \
     libhidlbase \
     libhidltransport \
     libbase \

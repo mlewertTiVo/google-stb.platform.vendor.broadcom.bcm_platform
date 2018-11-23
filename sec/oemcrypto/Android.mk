@@ -92,7 +92,6 @@ LOCAL_C_INCLUDES := \
     $(NXCLIENT_INCLUDES)
 
 LOCAL_C_INCLUDES += \
-    ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
     ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
@@ -107,7 +106,7 @@ LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 LOCAL_SHARED_LIBRARIES += libnxwrap
 
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.1
 
 include $(BUILD_SHARED_LIBRARY)
 endif

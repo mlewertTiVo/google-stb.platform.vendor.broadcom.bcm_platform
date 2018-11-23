@@ -1,0 +1,12 @@
+package bcm.hardware.nexus@1.1;
+
+import bcm.hardware.nexus@1.0::INexus;
+import bcm.hardware.nexus@1.0::NexusStatus;
+
+interface INexus extends @1.0::INexus {
+  /**
+   * forced control over pcm mode.
+   *
+   */
+   forcedPCM(uint8_t e) generates (NexusStatus s);
+};

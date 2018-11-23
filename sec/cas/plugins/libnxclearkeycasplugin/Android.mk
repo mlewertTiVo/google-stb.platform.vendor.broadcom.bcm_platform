@@ -50,7 +50,7 @@ LOCAL_SHARED_LIBRARIES := \
     libnxwrap \
     libbomx_secbuff
 
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.1
 
 LOCAL_HEADER_LIBRARIES := \
     media_plugin_headers
@@ -76,8 +76,7 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
-                    ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 

@@ -47,7 +47,7 @@
 #include "cutils/properties.h"
 #include <nxwrap.h>
 #include "nexus_platform.h"
-#include <bcm/hardware/nexus/1.0/INexus.h>
+#include <bcm/hardware/nexus/1.1/INexus.h>
 #if defined(SRAI_PRESENT)
 #include "sage_srai.h"
 #endif
@@ -55,6 +55,7 @@
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::nexus::V1_0;
+using namespace bcm::hardware::nexus::V1_1;
 
 Mutex NxWrap::mLck("NxWrap-Lock");
 static struct pmlib_state_t gPm;
@@ -75,11 +76,11 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-static const sp<INexus> nxi(void) {
-   sp<INexus> inx = NULL;
+static const sp<::bcm::hardware::nexus::V1_1::INexus> nxi(void) {
+   sp<::bcm::hardware::nexus::V1_1::INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
 
-   inx = INexus::getService();
+   inx = ::bcm::hardware::nexus::V1_1::INexus::getService();
    if (inx != NULL) {
       return inx;
    }

@@ -41,7 +41,7 @@
 
 #include <utils/Mutex.h>
 #include <utils/ThreadDefs.h>
-#include <bcm/hardware/nexus/1.0/INexus.h>
+#include <bcm/hardware/nexus/1.1/INexus.h>
 #include "nxwrap_common.h"
 #include "nexusirhandler.h"
 #include <linux/brcmstb/hdmi_hpd_switch.h>
@@ -55,6 +55,7 @@
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::nexus::V1_0;
+using namespace bcm::hardware::nexus::V1_1;
 
 typedef void (*rmlmk)(uint64_t client);
 
@@ -68,10 +69,10 @@ struct DspCb {
    sp<INexusDspCb> cb;
 };
 
-class NexusImpl : public INexus, public hidl_death_recipient {
+class NexusImpl : public ::bcm::hardware::nexus::V1_1::INexus, public hidl_death_recipient {
 public:
 
-   // INexus server interface.
+   // INexus 1.0 server interface.
    Return<uint64_t> client(int32_t pid);
    Return<NexusStatus> registerHpdCb(uint64_t cId, const ::android::sp<INexusHpdCb>& cb);
    Return<NexusStatus> registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb);
@@ -81,6 +82,8 @@ public:
    Return<NexusStatus> setWoL(const hidl_string& ifc);
    Return<NexusStatus> acquireWL();
    Return<NexusStatus> releaseWL();
+   // INexus 1.1 server interface.
+   Return<NexusStatus> forcedPCM(uint8_t e);
 
    // hidl_death_recipient
    virtual void serviceDied(uint64_t cookie, const wp<::android::hidl::base::V1_0::IBase>& who);

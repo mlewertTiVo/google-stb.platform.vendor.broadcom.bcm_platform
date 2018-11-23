@@ -26,14 +26,13 @@ LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SHARED_LIBRARIES := libcutils libutils liblog libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.1
 LOCAL_SHARED_LIBRARIES += libmfgtl
 LOCAL_SHARED_LIBRARIES += libkmtl
 LOCAL_SHARED_LIBRARIES += libssl
