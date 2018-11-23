@@ -118,6 +118,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
     if (oemCryptoNxWrap) {
        if (oemCryptoNxWrap->client() == 0) {
           oemCryptoNxWrap->join();
+          oemCryptoNxWrap->sraiClient();
           oemCryptoNxWrapJoined = 1;
        }
     } else {
