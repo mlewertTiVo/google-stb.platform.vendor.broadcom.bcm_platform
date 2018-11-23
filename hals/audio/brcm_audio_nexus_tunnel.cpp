@@ -225,18 +225,18 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
 
     if (left != right) {
-        ALOGV("%s: Left and Right volumes must be equal, cannot change volume", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: Left and Right volumes must be equal, cannot change volume", __FUNCTION__);
         return 0;
     }
     else if (left > 1.0) {
-        ALOGV("%s: Volume: %f exceeds max volume of 1.0", __FUNCTION__, left);
+        BA_LOG(TUN_DBG, "%s: Volume: %f exceeds max volume of 1.0", __FUNCTION__, left);
         return 0;
     }
 
     if (bout->nexus.tunnel.fadeLevel != (unsigned)(left * 100)) {
         bout->nexus.tunnel.fadeLevel = (unsigned)(left * 100);
 
-        ALOGV("%s: Volume: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
+        BA_LOG(TUN_DBG, "%s: Volume: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
         if (bout->started) {
             if (bout->nexus.tunnel.deferred_volume) {
                 struct timespec now;
@@ -341,6 +341,7 @@ static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, u
         *dsp_frames = 0;
     }
 
+    BA_LOG(TUN_POS, "Render pos:%u", *dsp_frames);
     return 0;
 }
 
@@ -377,9 +378,10 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
     else {
         *frames = 0;
     }
+
+    BA_LOG(TUN_POS, "Presentation pos:%" PRIu64 "", *frames);
     return 0;
 }
-
 
 static uint32_t nexus_tunnel_bout_get_latency(struct brcm_stream_out *bout)
 {
@@ -421,7 +423,7 @@ static int32_t nexus_tunnel_bout_get_fifo_depth(struct brcm_stream_out *bout)
         ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
     }
 
-    ALOGV("%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
+    BA_LOG(TUN_DBG, "%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
 
     return ppStatus.fifoDepth + decStatus.fifoDepth;
 }
@@ -430,7 +432,7 @@ static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
-    ALOGV("%s", __FUNCTION__);
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
 
     // Stop volume deferral as soon as paused
@@ -453,7 +455,7 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
-    ALOGV("%s, %p", __FUNCTION__, bout);
+    BA_LOG(TUN_STATE, "%s, %p", __FUNCTION__, bout);
 
     if (!nexus_common_is_paused(bout->nexus.tunnel.audio_decoder)) {
         // Not paused. Nothing to resume
@@ -473,7 +475,7 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
                                                                    PCM_DEBOUNCE_START_PLAY_TARGET)) ||
         (!bout->nexus.tunnel.pcm_format &&
           bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate))) {
-        ALOGV("%s: Resume without priming", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: Resume without priming", __FUNCTION__);
 
         if (bout->nexus.tunnel.deferred_volume) {
             if (bout->nexus.tunnel.deferred_volume_ms) {
@@ -519,11 +521,11 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
            ALOGE("%s: Error resuming %u", __FUNCTION__, res);
            return false;
         }
-        ALOGV("%s: Resume priming over", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: Resume priming over", __FUNCTION__);
         bout->nexus.tunnel.priming = false;
     }
     else {
-        ALOGV("%s: Resume with priming", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: Resume with priming", __FUNCTION__);
         bout->nexus.tunnel.priming = true;
     }
 
@@ -544,6 +546,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
 {
     UNUSED(bout);
 
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     /* Nothing to do here.  Handle the real start when the first valid PTS is detected */
     clock_gettime(CLOCK_MONOTONIC, &bout->nexus.tunnel.start_ts);
 
@@ -582,7 +585,8 @@ static int nexus_tunnel_bout_start_int(struct brcm_stream_out *bout)
         threshold = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
     }
     NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &settings);
-    ALOGV("Primary fifoThreshold %u->%u", settings.primary.fifoThreshold, threshold);
+    BA_LOG(TUN_DBG, "Primary fifoThreshold %u->%u",
+              settings.primary.fifoThreshold, threshold);
     settings.primary.fifoThreshold = threshold;
     NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &settings);
 
@@ -638,7 +642,8 @@ static int nexus_tunnel_bout_start_int(struct brcm_stream_out *bout)
         NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
         return -ENOSYS;
     }
-    ALOGV("%s: Audio decoder started (0x%x:%d)", __FUNCTION__, bout->config.format, start_settings.primary.codec);
+    BA_LOG(TUN_DBG, "%s: Audio decoder started (0x%x:%d)",
+                     __FUNCTION__, bout->config.format, start_settings.primary.codec);
 
     bout->nexus.tunnel.priming = false;
     ret = nexus_common_mute_and_pause(bout->bdev, audio_decoder, bout->nexus.tunnel.stc_channel, 0, 0);
@@ -665,16 +670,17 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
 {
     NEXUS_Error ret;
 
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     if (bout->nexus.tunnel.debounce) {
        // Wait for the debouncing thread to finish
-       ALOGV("%s: Waiting for debouncing to finish", __FUNCTION__);
+       BA_LOG(TUN_DBG, "%s: Waiting for debouncing to finish", __FUNCTION__);
        pthread_t thread = bout->nexus.tunnel.debounce_thread;
        bout->nexus.tunnel.debounce_stopping = true;
 
        pthread_mutex_unlock(&bout->lock);
        pthread_join(thread, NULL);
        pthread_mutex_lock(&bout->lock);
-       ALOGV("%s:      ... done", __FUNCTION__);
+       BA_LOG(TUN_DBG, "%s:      ... done", __FUNCTION__);
     }
 
     av_header.reset();
@@ -689,7 +695,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decoderStatus);
         NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
 
-        ALOGV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
+        BA_LOG(TUN_DBG, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
             decoderStatus.codecStatus.ac3.bitrate,
             decoderStatus.fifoDepth,
             decoderStatus.fifoSize,
@@ -732,7 +738,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
        return -ENOSYS;
     }
 
-    ALOGV("%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
+    BA_LOG(TUN_DBG, "%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     bout->nexus.tunnel.started = false;
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
@@ -749,7 +755,7 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
     nsecs_t now;
     int delta_ms;
 
-    ALOGV("%s: Debouncing started", __FUNCTION__);
+    BA_LOG(TUN_DBG, "%s: Debouncing started", __FUNCTION__);
 
     usleep(BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS * 1000);
 
@@ -760,7 +766,8 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
        now = systemTime(SYSTEM_TIME_MONOTONIC);
        delta_ms = BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS - toMillisecondTimeoutDelay(bout->nexus.tunnel.last_pause_time, now);
        if (delta_ms > 0 && delta_ms <= BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS) {
-          ALOGV("%s: Debouncing more for %d ms", __FUNCTION__, delta_ms);
+          BA_LOG(TUN_DBG, "%s: Debouncing more for %d ms",
+                    __FUNCTION__, delta_ms);
           pthread_mutex_unlock(&bout->lock);
           usleep(delta_ms * 1000);
           pthread_mutex_lock(&bout->lock);
@@ -771,11 +778,11 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
 
     if (!bout->nexus.tunnel.debounce_stopping) {
        if (bout->nexus.tunnel.debounce_pausing) {
-          ALOGV("%s: Pause after debouncing", __FUNCTION__);
+          BA_LOG(TUN_DBG, "%s: Pause after debouncing", __FUNCTION__);
           nexus_tunnel_bout_pause(bout);
        }
        else {
-          ALOGV("%s: Resume after debouncing", __FUNCTION__);
+          BA_LOG(TUN_DBG, "%s: Resume after debouncing", __FUNCTION__);
           nexus_tunnel_bout_resume(bout);
        }
 
@@ -786,7 +793,7 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
 
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGV("%s: Debouncing stopped", __FUNCTION__);
+    BA_LOG(TUN_DBG, "%s: Debouncing stopped", __FUNCTION__);
 
     return NULL;
 }
@@ -799,7 +806,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
-    ALOGV("%s", __FUNCTION__);
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     if (!bout->nexus.tunnel.no_debounce && !bout->nexus.tunnel.priming) {
         // Audio underruns can happen when the app is not feeding the audio frames fast enough
         // especially at the beginning of the playback or after seeking. We debounce the pause/resume
@@ -819,7 +826,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
 
         // No-op when debouncing
         if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
-           ALOGV("%s: No-op", __FUNCTION__);
+           BA_LOG(TUN_DBG, "%s: No-op", __FUNCTION__);
            if (!bout->nexus.tunnel.debounce_pausing) {
               bout->nexus.tunnel.debounce_more = true;
               bout->nexus.tunnel.last_pause_time = systemTime(SYSTEM_TIME_MONOTONIC);
@@ -835,10 +842,9 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
         }
     }
     else {
-        ALOGV("%s: Stop priming", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: Stop priming", __FUNCTION__);
         bout->nexus.tunnel.priming = false;
     }
-    ALOGV("%s", __FUNCTION__);
 
     return 0;
 }
@@ -851,19 +857,19 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     // No-op when debouncing
     if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
-       ALOGV("%s: No-op", __FUNCTION__);
+       BA_LOG(TUN_DBG, "%s: No-op", __FUNCTION__);
        bout->nexus.tunnel.debounce_pausing = false;
        bout->nexus.tunnel.debounce_more = false;
        return 0;
     }
 
     if (!bout->nexus.tunnel.priming) {
-        ALOGV("%s: priming decoder for resume", __FUNCTION__);
+        BA_LOG(TUN_DBG, "%s: priming decoder for resume", __FUNCTION__);
         bout->nexus.tunnel.priming = true;
     }
-    ALOGV("%s", __FUNCTION__);
 
     return 0;
 }
@@ -886,7 +892,7 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
         return -ENOENT;
     }
 
-    ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->nexus.tunnel.started?"true":"false");
+    BA_LOG(TUN_STATE, "%s, %p, started=%s", __FUNCTION__, bout, bout->nexus.tunnel.started?"true":"false");
     if (bout->started) {
         nexus_tunnel_bout_stop(bout);
         bout->started = false;
@@ -927,7 +933,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     }
 
     if (!av_header.is_empty() && !av_header.is_complete()) {
-        ALOGV("%s: av_header.len:%zu, bytes:%zu", __FUNCTION__, av_header.len(), bytes);
+        BA_LOG(TUN_WRITE, "%s: av_header.len:%zu, bytes:%zu",
+                __FUNCTION__, av_header.len(), bytes);
         size_t bytes_added = 0;
         if (av_header.bytes_hdr_needed() > 0) {
             bytes_added = av_header.bytes_hdr_needed() > bytes ?  bytes : av_header.bytes_hdr_needed();
@@ -1041,7 +1048,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             if (current_buff.is_valid() && (current_buff.bytes_pending() > 0) &&
                (current_buff.bytes_pending() + min_bytes_for_sync) <= bytes ) {
                 offset = current_buff.bytes_pending();
-                ALOGVV("%s: frame writing in progress, bytes_pending:%zu", __FUNCTION__, offset);
+                BA_LOG(VERB, "%s: frame writing in progress, bytes_pending:%zu", __FUNCTION__, offset);
                 pts_buffer = memmem(buffer_ptr + offset, bytes - offset, av_sync_marker, sizeof(av_sync_marker));
 
                 // if there's a marker at the expected location, check if version matches
@@ -1053,7 +1060,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         ALOGW("spurious marker at expected location, hdr_version:0x%02X,0x%02X",
                             pts_buffer_u8[2], pts_buffer_u8[3]);
                     } else {
-                        ALOGVV("%s: found header at expected offset:%d, bytes:%zu",
+                        BA_LOG(VERB, "%s: found header at expected offset:%d, bytes:%zu",
                         __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
                         header_found = true;
                     }
@@ -1070,13 +1077,13 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             while (!header_found) {
                 pts_buffer = memmem(buffer_ptr + offset, bytes - offset, av_sync_marker, sizeof(av_sync_marker));
                 if ((pts_buffer != NULL) && (av_header.version() != 0)) {
-                    ALOGVV("%s: marker at offset:%zu, bytes:%zu",
-                        __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
+                    BA_LOG(VERB, "%s: marker at offset:%zu, bytes:%zu",
+                           __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
                     if (bytes < min_bytes_for_sync) {
                         // We can't verify if this is a valid header as we can't even see the version.
                         // Stop processing the header and wait for the framework to send us a full one
                         // on the next buffer
-                        ALOGV("%s: found apparent header marker at end of buffer", __FUNCTION__);
+                        BA_LOG(TUN_WRITE, "%s: found apparent header marker at end of buffer", __FUNCTION__);
                         pts_buffer = NULL;
                         bytes_segment = bytes = 0;
                         break;
@@ -1085,7 +1092,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         unsigned hdr_version = pts_buffer_u8[2] << 8 | pts_buffer_u8[3];
                         if (hdr_version != av_header.version()) {
                             // we found data which looks like an av_sync header but it isn't
-                            ALOGV("spurious header, hdr_version:0x%02X,0x%02X", pts_buffer_u8[2], pts_buffer_u8[3]);
+                            BA_LOG(TUN_WRITE, "spurious header, hdr_version:0x%02X,0x%02X",
+                                      pts_buffer_u8[2], pts_buffer_u8[3]);
                             // Ignore the first byte of the false marker and resume the search
                             offset = pts_buffer_u8 - buffer_ptr + 1;
                         } else {
@@ -1114,7 +1122,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         if ((hdr_version != 1) && (hdr_version != 2)) {
                             // Very unlikely scenario but just to be on the safe side, ignore
                             // this marker
-                            ALOGI("%s: skipping malformed initial header, bytes:%zu, hdr_version:%u",
+                            ALOGW("%s: skipping malformed initial header, bytes:%zu, hdr_version:%u",
                                   __FUNCTION__, bytes, hdr_version);
                             bytes -= sizeof(av_sync_marker);
                             buffer = (uint8_t*)buffer + sizeof(av_sync_marker);
@@ -1136,7 +1144,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                     }
                     if (!av_header.is_complete() || (bytes == av_header.len())) {
                         // Incomplete header or complete header at the end of the buffer (no payload).
-                        ALOGVV("hdr_bytes_needed:%zu, av_hdr_len:%zu, bytes:%zu", av_header.bytes_hdr_needed(), av_header.len(), bytes);
+                        BA_LOG(VERB, "hdr_bytes_needed:%zu, av_hdr_len:%zu, bytes:%zu",
+                                      av_header.bytes_hdr_needed(), av_header.len(), bytes);
                         bytes_written += bytes;
                         bytes = 0;
                         break;
@@ -1152,8 +1161,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 timestamp |= B_MEDIA_LOAD_UINT32_BE(pts_buffer, 3*sizeof(uint32_t));
                 timestamp /= 1000; // Convert ns -> us
                 pts = BOMX_TickToPts((OMX_TICKS *)&timestamp);
-                ALOGV("%s: av-sync header, ts=%" PRIu64 " ver=%u, pts=%" PRIu32 ", size=%zu, av_header.len()=%zu payload=%zu",
-                    __FUNCTION__, timestamp, av_header.version(), pts, frameBytes, av_header.len(), bytes);
+                BA_LOG(TUN_WRITE, "%s: av-sync header, ts=%" PRIu64 " ver=%u, pts=%" PRIu32
+                                    ", size=%zu, av_header.len()=%zu payload=%zu",
+                                    __FUNCTION__, timestamp, av_header.version(), pts, frameBytes, av_header.len(), bytes);
                 if (!bout->nexus.tunnel.started) {
                     if ((bout->nexus.tunnel.last_written_ts == UINT64_MAX) ||
                         ((int64_t)timestamp - (int64_t)bout->nexus.tunnel.last_written_ts < 0) ||
@@ -1170,7 +1180,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         }
                         // init stc with the first audio timestamp
                         NEXUS_SimpleStcChannel_SetStc(bout->nexus.tunnel.stc_channel_sync, pts);
-                        ALOGV("%s: stc-sync initialized to:%u", __FUNCTION__, pts);
+                        BA_LOG(TUN_WRITE, "%s: stc-sync initialized to:%u", __FUNCTION__, pts);
                     }
                 } else {
                     bout->nexus.tunnel.last_written_ts = timestamp;
@@ -1198,7 +1208,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                                     }
                                 }
                                 else {
-                                    ALOGV("%s: Error parsing E-/AC3 sync frame", __FUNCTION__);
+                                    BA_LOG(TUN_WRITE, "%s: Error parsing E-/AC3 sync frame", __FUNCTION__);
                                 }
                             }
                         }
@@ -1209,7 +1219,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                                 bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
                             }
                         }
-                        ALOGI_IF(bout->nexus.tunnel.audioblocks_per_frame > 0, "%s: %u blocks detected, fmt:%x mpy:%u bkps:%u", __FUNCTION__, bout->nexus.tunnel.audioblocks_per_frame, bout->config.format, bout->nexus.tunnel.frame_multiplier, bout->nexus.tunnel.bitrate);
+                        ALOGI_IF(bout->nexus.tunnel.audioblocks_per_frame > 0 && BA_LOG_ON(TUN_WRITE),
+                            "%s: %u blocks detected, fmt:%x mpy:%u bkps:%u",
+                            __FUNCTION__, bout->nexus.tunnel.audioblocks_per_frame, bout->config.format, bout->nexus.tunnel.frame_multiplier, bout->nexus.tunnel.bitrate);
                     }
                 }
             }
@@ -1217,13 +1229,13 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             {
                 // frame header is later in the payload, write as many bytes as needed to get there
                 frameBytes = (uint8_t *)pts_buffer - (uint8_t *)buffer;
-                ALOGV("%s: later av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
+                BA_LOG(TUN_WRITE, "%s: later av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
             }
         }
         else
         {
             frameBytes = bytes_segment;
-            ALOGV("%s: no av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
+            BA_LOG(TUN_WRITE, "%s: no av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
         }
 
         // Throw away frame before starting
@@ -1232,7 +1244,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             if ( writeHeader ) {
                 av_header.reset();
             }
-            ALOGV("%s: %s av-sync header, %zu bytes before start", __FUNCTION__, writeHeader?"cleared":"no", bytes_written);
+            BA_LOG(TUN_WRITE, "%s: %s av-sync header, %zu bytes before start",
+                   __FUNCTION__, writeHeader?"cleared":"no", bytes_written);
             ret = 0;
             goto done;
         }
@@ -1381,7 +1394,7 @@ done:
         nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
         int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
         if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
-            ALOGV("%s: throttle %d us", __FUNCTION__, throttle_us);
+            BA_LOG(TUN_WRITE, "%s: pcm throttle %d us", __FUNCTION__, throttle_us);
             usleep(throttle_us);
         }
         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
@@ -1401,7 +1414,7 @@ static bool nexus_tunnel_bout_standby_monitor(void *context)
         standby = (bout->started == false);
         pthread_mutex_unlock(&bout->lock);
     }
-    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    BA_LOG(TUN_DBG, "%s: standby=%d", __FUNCTION__, standby);
     return standby;
 }
 
@@ -1427,6 +1440,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     int i, ret = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
 
+    BA_LOG_INIT();
     /* Check if sample rate is supported */
     for (i = 0; i < (int)NEXUS_OUT_SAMPLE_RATE_COUNT; i++) {
         if (config->sample_rate == nexus_out_sample_rates[i]) {
@@ -1462,7 +1476,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         bout->buffer_size = BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE;
     }
 
-    ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
+    BA_LOG(TUN_STATE, "%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
 
     /* Allocate simpleAudioPlayback */
@@ -1518,7 +1532,8 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
     NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
     fifoSize = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
-    ALOGV("Playpump fifo size %zu->%zu", playpumpOpenSettings.fifoSize, fifoSize);
+    BA_LOG(TUN_DBG,  "Playpump fifo size %zu->%zu",
+              playpumpOpenSettings.fifoSize, fifoSize);
     playpumpOpenSettings.fifoSize = fifoSize;
     bout->nexus.tunnel.playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
     if (!bout->nexus.tunnel.playpump) {
@@ -1570,7 +1585,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         wave_fmt->nBlockAlign = (wave_fmt->nChannels * wave_fmt->wBitsPerSample) / 8;
         wave_fmt->cbSize = 0;
         wave_fmt->nAvgBytesPerSec = (wave_fmt->wBitsPerSample * wave_fmt->nSamplesPerSec * wave_fmt->nChannels) / 8;
-        ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
+        BA_LOG(TUN_DBG, "%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
                 __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
                 wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
     }
@@ -1653,6 +1668,7 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
        return 0;
     }
 
+    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     // Force PCM mode for MS11
     if ((bout->bdev->dolby_ms == 11) && !bout->nexus.tunnel.pcm_format) {
         NxClient_AudioSettings audioSettings;
@@ -1746,7 +1762,7 @@ static char *nexus_tunnel_bout_get_parameters (struct brcm_stream_out *bout, con
     str_parms_destroy(query);
     str_parms_destroy(result);
 
-    ALOGV("%s: result = %s", __FUNCTION__, result_str);
+    BA_LOG(TUN_DBG, "%s: result = %s", __FUNCTION__, result_str);
 
     return result_str;
 }
@@ -1834,7 +1850,7 @@ NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
     channel_st_ptr->stc_channel_sync = NEXUS_SimpleStcChannel_Create(&stc_channel_settings);
     NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel_sync, true);
     NEXUS_SimpleStcChannel_SetStc(channel_st_ptr->stc_channel_sync, BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID);
-    ALOGV("%s: stc-channels: [%p %p]", __FUNCTION__,
+    BA_LOG(TUN_DBG, "%s: stc-channels: [%p %p]", __FUNCTION__,
             channel_st_ptr->stc_channel, channel_st_ptr->stc_channel_sync);
 
     *hdl = mem_block_hdl;

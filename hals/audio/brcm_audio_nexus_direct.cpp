@@ -144,11 +144,11 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
 
     if (left != right) {
-        ALOGV("%s: Left and Right volumes must be equal, cannot change volume", __FUNCTION__);
+        BA_LOG(DIR_DBG, "%s: Left and Right volumes must be equal, cannot change volume", __FUNCTION__);
         return 0;
     }
     if (left > 1.0) {
-        ALOGV("%s: Volume: %f exceeds max volume of 1.0", __FUNCTION__, left);
+        BA_LOG(DIR_DBG, "%s: Volume: %f exceeds max volume of 1.0", __FUNCTION__, left);
         return 0;
     }
 
@@ -157,7 +157,7 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
         if (bout->nexus.direct.fadeLevel != (unsigned)(left * 100)) {
             bout->nexus.direct.fadeLevel = (unsigned)(left * 100);
 
-            ALOGV("%s: Volume: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
+            BA_LOG(DIR_DBG, "%s: Volume: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
             if (bout->started) {
                 if (bout->nexus.direct.deferred_volume) {
                     struct timespec now;
@@ -269,6 +269,8 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
     } else {
        *dsp_frames = 0;
     }
+
+    BA_LOG(DIR_POS, "Render pos:%u", *dsp_frames);
     return 0;
 }
 
@@ -315,6 +317,8 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
     } else {
        *frames =0;
     }
+
+    BA_LOG(DIR_POS, "Presentation pos:%" PRIu64 "", *frames);
     return 0;
 }
 
@@ -360,7 +364,7 @@ static char *nexus_direct_bout_get_parameters (struct brcm_stream_out *bout, con
     str_parms_destroy(query);
     str_parms_destroy(result);
 
-    ALOGV("%s: result = %s", __FUNCTION__, result_str);
+    BA_LOG(DIR_DBG, "%s: result = %s", __FUNCTION__, result_str);
 
     return result_str;
 }
@@ -380,7 +384,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
-    ALOGV("%s, %p", __FUNCTION__, bout);
+    BA_LOG(DIR_STATE, "%s, %p", __FUNCTION__, bout);
 
     clock_gettime(CLOCK_MONOTONIC, &bout->nexus.direct.start_ts);
 
@@ -500,7 +504,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_Error res;
 
-        ALOGV("%s: pausing to prime decoder", __FUNCTION__);
+        BA_LOG(DIR_DBG, "%s: pausing to prime decoder", __FUNCTION__);
         res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.direct.simple_decoder, NULL, 0, 0);
 
         if (res == NEXUS_SUCCESS) {
@@ -540,7 +544,7 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
             bout->nexus.direct.lastCount = status.numBytesDecoded;
         }
         bout->framesPlayedTotal += bout->framesPlayed;
-        ALOGV("%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
+        BA_LOG(DIR_DBG, "%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
@@ -567,7 +571,7 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
-    ALOGV("%s, %p", __FUNCTION__, bout);
+    BA_LOG(DIR_STATE, "%s, %p", __FUNCTION__, bout);
     if (bout->nexus.direct.playpump_mode && playpump) {
         NEXUS_Error rc;
 
@@ -585,7 +589,7 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
             }
             ALOGV_FIFO_INFO(simple_decoder, playpump);
         } else {
-            ALOGV("%s, %p stop priming", __FUNCTION__, bout);
+            BA_LOG(DIR_DBG, "%s, %p stop priming", __FUNCTION__, bout);
             bout->nexus.direct.priming = false;
         }
         bout->nexus.direct.paused = true;
@@ -605,7 +609,7 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
-    ALOGV("%s, %p", __FUNCTION__, bout);
+    BA_LOG(DIR_STATE, "%s, %p", __FUNCTION__, bout);
 
     if (bout->nexus.direct.playpump_mode && playpump) {
         bout->nexus.direct.paused = false;
@@ -617,16 +621,16 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
             NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
             NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
 
-            ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
+            BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
                 decoderStatus.codecStatus.ac3.bitrate,
                 decoderStatus.fifoDepth,
                 decoderStatus.fifoSize,
                 playpumpStatus.fifoDepth,
                 playpumpStatus.fifoSize);
 
-            ALOGV("%s, %p", __FUNCTION__, bout);
+            BA_LOG(DIR_DBG, "%s, %p", __FUNCTION__, bout);
 
-            ALOGV("%s: priming decoder for resume", __FUNCTION__);
+            BA_LOG(DIR_DBG, "%s: priming decoder for resume", __FUNCTION__);
             bout->nexus.direct.priming = true;
         }
     }
@@ -636,7 +640,7 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
 static NEXUS_Error nexus_direct_finish_priming(struct brcm_stream_out *bout) {
     NEXUS_Error res;
 
-    ALOGV("%s, %p", __FUNCTION__, bout);
+    BA_LOG(DIR_DBG, "%s, %p", __FUNCTION__, bout);
 
     if (!bout->nexus.direct.playpump_mode || !bout->nexus.direct.playpump)
         return NEXUS_SUCCESS;
@@ -691,7 +695,7 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
-    ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
+    BA_LOG(DIR_STATE, "%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
         nexus_direct_bout_stop(bout);
         bout->started = false;
@@ -775,7 +779,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             if (bytes_to_copy > (NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE - bout->nexus.direct.eac3.syncframe_len)) {
                 bytes_to_copy = (NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE - bout->nexus.direct.eac3.syncframe_len);
             }
-            ALOGVV("%s: Copy %u bytes from %p to %p:%u %p", __FUNCTION__,
+            BA_LOG(VERB, "%s: Copy %u bytes from %p to %p:%u %p", __FUNCTION__,
                 bytes_to_copy, syncframe,
                 bout->nexus.direct.eac3.syncframe, bout->nexus.direct.eac3.syncframe_len,
                 bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len);
@@ -808,7 +812,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
                 NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
                 NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-                ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
                     decoderStatus.codecStatus.ac3.bitrate,
                     decoderStatus.fifoDepth,
                     decoderStatus.fifoSize,
@@ -824,9 +828,9 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     void *nexus_buffer;
                     size_t nexus_space;
 
-                    ALOGVV("%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
+                    BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
                     ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
-                    ALOGVV("%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+                    BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
                     if (ret) {
                         ALOGE("%s: at %d, get buffer failed, ret = %d",
                              __FUNCTION__, __LINE__, ret);
@@ -858,7 +862,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     !bout->nexus.direct.paused) {
                     NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
                     NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
-                    ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                    BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
                         decoderStatus.codecStatus.ac3.bitrate,
                         decoderStatus.fifoDepth,
                         decoderStatus.fifoSize,
@@ -870,7 +874,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                             BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                         NEXUS_Error res;
 
-                        ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                        BA_LOG(DIR_DBG, "%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
                         res = nexus_direct_finish_priming(bout);
                         if (res != NEXUS_SUCCESS) {
                             ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
@@ -896,7 +900,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
             NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
             NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-            ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+            BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
                 decoderStatus.codecStatus.ac3.bitrate,
                 decoderStatus.fifoDepth,
                 decoderStatus.fifoSize,
@@ -957,7 +961,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 if (bout->nexus.direct.bitrate &&
                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
                          BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
-                    ALOGVV("%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
+                    BA_LOG(VERB, "%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
                           (decoderStatus.fifoDepth + playpumpStatus.fifoDepth),
                            BITRATE_TO_BYTES_PER_250_MS(decoderStatus.codecStatus.ac3.bitrate));
                     pthread_mutex_unlock(&bout->lock);
@@ -971,7 +975,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     if (ret == BERR_TIMEOUT) {
                         return bytes_written;
                     } else {
-                        ALOGVV("%s: at %d, Check for more room.", __FUNCTION__, __LINE__);
+                        BA_LOG(VERB, "%s: at %d, Check for more room.", __FUNCTION__, __LINE__);
                         continue;
                     }
                 }
@@ -982,7 +986,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                          BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate) ) {
                     NEXUS_Error res;
 
-                    ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                    BA_LOG(DIR_WRITE, "%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
                     res = nexus_direct_finish_priming(bout);
                     if (res == NEXUS_SUCCESS) {
                         pthread_mutex_unlock(&bout->lock);
@@ -997,7 +1001,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         if (ret == BERR_TIMEOUT) {
                             return bytes_written;
                         } else {
-                            ALOGVV("%s: at %d, Check for more room.", __FUNCTION__, __LINE__);
+                            BA_LOG(VERB, "%s: at %d, Check for more room.", __FUNCTION__, __LINE__);
                             continue;
                         }
                     } else {
@@ -1006,14 +1010,14 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                  }
             }
 
-            ALOGVV("%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
+            BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
             ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
-            ALOGVV("%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+            BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
         } else {
-            ALOGVV("%s: at %d, getPassthroughBuffer", __FUNCTION__, __LINE__);
+            BA_LOG(VERB, "%s: at %d, getPassthroughBuffer", __FUNCTION__, __LINE__);
             ret = NEXUS_SimpleAudioDecoder_GetPassthroughBuffer(simple_decoder,
                                                       &nexus_buffer, &nexus_space);
-            ALOGVV("%s: at %d, getPassthroughBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+            BA_LOG(VERB, "%s: at %d, getPassthroughBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
         }
         if (ret) {
             ALOGE("%s: at %d, get buffer failed, ret = %d",
@@ -1052,7 +1056,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
                 NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
                 NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-                ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
                     decoderStatus.codecStatus.ac3.bitrate,
                     decoderStatus.fifoDepth,
                     decoderStatus.fifoSize,
@@ -1064,7 +1068,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                     NEXUS_Error res;
 
-                    ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                    BA_LOG(DIR_WRITE, "%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
                     res = nexus_direct_finish_priming(bout);
                     if (res == NEXUS_SUCCESS) {
                         continue;
@@ -1078,7 +1082,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming) {
                 NEXUS_Error res;
 
-                ALOGV("%s: finished priming decoder", __FUNCTION__);
+                BA_LOG(DIR_WRITE, "%s: finished priming decoder", __FUNCTION__);
                 res = nexus_direct_finish_priming(bout);
                 if (res == NEXUS_SUCCESS) {
                     continue;
@@ -1154,7 +1158,7 @@ static bool nexus_direct_bout_standby_monitor(void *context)
             standby = (started == false);
         }
     }
-    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    BA_LOG(DIR_DBG, "%s: standby=%d", __FUNCTION__, standby);
     return standby;
 }
 
@@ -1176,6 +1180,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     char config_rate_str[11];
     int i, ret = 0;
 
+    BA_LOG_INIT();
     if (config->sample_rate == 0)
         config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
     if (config->channel_mask == 0)
@@ -1187,6 +1192,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.direct.transcode_latency = 0;
     bout->nexus.direct.paused = false;
 
+    BA_LOG(DIR_STATE, "%s, format:%u", __FUNCTION__, config->format);
     switch (config->format) {
     case AUDIO_FORMAT_PCM_16_BIT:
         nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
@@ -1448,6 +1454,7 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 {
     BKNI_EventHandle event = bout->nexus.event;
 
+    BA_LOG(DIR_STATE, "%s", __FUNCTION__);
     if (bout->nexus.state == BRCM_NEXUS_STATE_DESTROYED) {
         return 0;
     }

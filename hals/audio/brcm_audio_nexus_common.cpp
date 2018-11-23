@@ -90,7 +90,7 @@ NEXUS_Error nexus_common_set_volume(struct brcm_device *bdev,
                 if (processorStatus.status.fade.level == level)
                     break;
 
-                ALOGVV("%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
+                BA_LOG(VERB, "%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
                            (unsigned long)processorStatus.status.fade.active,
                            (unsigned long)processorStatus.status.fade.remaining,
                            (int)processorStatus.status.fade.level);

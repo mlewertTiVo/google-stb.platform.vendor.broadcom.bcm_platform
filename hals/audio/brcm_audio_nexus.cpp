@@ -140,7 +140,7 @@ void brcm_audio_set_audio_volume(float leftVol, float rightVol)
     int32_t leftVolume;
     int32_t rightVolume;
 
-    ALOGV("nexus_nx_client %s:%d left=%f right=%f\n",__PRETTY_FUNCTION__,__LINE__,leftVol,rightVol);
+    BA_LOG(PRIM_DBG, "nexus_nx_client %s:%d left=%f right=%f\n",__FUNCTION__,__LINE__,leftVol,rightVol);
 
     leftVolume = leftVol*AUDIO_VOLUME_SETTING_MAX;
     rightVolume = rightVol*AUDIO_VOLUME_SETTING_MAX;
@@ -166,17 +166,17 @@ void brcm_audio_set_audio_volume(float leftVol, float rightVol)
 
 static int brcm_audio_lookup_db_ix(uint32_t volume, int index, int min, int max)
 {
-    ALOGV("%s: volume=%d index=%d min=%d max=%d", __FUNCTION__, volume, index, min, max);
+    BA_LOG(PRIM_DBG, "%s: volume=%d index=%d min=%d max=%d", __FUNCTION__, volume, index, min, max);
 
     if (index < min || index > max)
     {
-        ALOGV("%s: exceeded range!", __FUNCTION__);
+        BA_LOG(PRIM_DBG, "%s: exceeded range!", __FUNCTION__);
         return 0;
     }
 
     if (volume == Gemini_VolTable[index])
     {
-        ALOGV("%s: found volume at index=%d", __FUNCTION__, index);
+        BA_LOG(PRIM_DBG, "%s: found volume at index=%d", __FUNCTION__, index);
         return index;
     }
     else if (volume > Gemini_VolTable[index])
@@ -196,7 +196,7 @@ void brcm_audio_set_mute_state(bool mute)
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
 
-    ALOGV("nexus_nx_client %s:%d mute=%s\n",__PRETTY_FUNCTION__,__LINE__,mute ? "true":"false");
+    BA_LOG(PRIM_DBG, "nexus_nx_client %s:%d mute=%s\n",__FUNCTION__,__LINE__,mute ? "true":"false");
 
     do {
         NxClient_GetAudioSettings(&settings);
@@ -240,7 +240,7 @@ float brcm_audio_get_master_volume(void)
         master_volume = ((float)(AUDIO_VOLUME_SETTING_MAX - volume_index))/AUDIO_VOLUME_SETTING_MAX;
     }
 
-    ALOGV("%s: master_volume=%f", __FUNCTION__, master_volume);
+    BA_LOG(PRIM_DBG, "%s: master_volume=%f", __FUNCTION__, master_volume);
     return master_volume;
 }
 
@@ -264,7 +264,7 @@ void brcm_audio_set_audio_clock_accuracy(void)
     int32_t value;
     value = property_get_int32(BCM_RO_AUDIO_OUTPUT_CLOCK_ACCURACY, 0);
 
-    ALOGV("nexus_nx_client %s:%d clock_acc=%d\n",__PRETTY_FUNCTION__,__LINE__,value);
+    BA_LOG(PRIM_DBG, "nexus_nx_client %s:%d clock_acc=%d\n",__FUNCTION__,__LINE__,value);
 
     do {
         NxClient_GetAudioSettings(&settings);
@@ -311,6 +311,8 @@ static int nexus_bout_get_render_position(struct brcm_stream_out *bout, uint32_t
     else {
         *dsp_frames = 0;
     }
+
+    BA_LOG(PRIM_POS, "Render pos:%u", *dsp_frames);
     return 0;
 }
 
@@ -338,6 +340,8 @@ static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, ui
     else {
         *frames = 0;
     }
+
+    BA_LOG(PRIM_POS, "Presentation pos:%" PRIu64 "", *frames);
     return 0;
 }
 
@@ -396,7 +400,7 @@ static int nexus_bout_stop(struct brcm_stream_out *bout)
         bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
         bout->nexus.primary.lastPlayedBytes = status.playedBytes;
         bout->framesPlayedTotal += bout->framesPlayed;
-        ALOGV("%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
+        BA_LOG(PRIM_DBG, "%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     }
 
     bout->nexus.primary.lastPlayedBytes = 0;
@@ -505,7 +509,7 @@ static bool nexus_bout_standby_monitor(void *context)
             standby = (started == false);
         }
     }
-    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    BA_LOG(PRIM_DBG, "%s: standby=%d", __FUNCTION__, standby);
     return standby;
 }
 
@@ -522,6 +526,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     uint32_t audioPlaybackId;
     int i, ret = 0;
 
+    BA_LOG_INIT();
     /* Check if sample rate is supported */
     for (i = 0; i < (int)NEXUS_OUT_SAMPLE_RATE_COUNT; i++) {
         if (config->sample_rate == nexus_out_sample_rates[i]) {
@@ -696,7 +701,7 @@ static char *nexus_bout_get_parameters (struct brcm_stream_out *bout, const char
     }
 
     result_str = str_parms_to_str(result);
-    ALOGV("%s: result = %s", __FUNCTION__, result_str);
+    BA_LOG(PRIM_DBG, "%s: result = %s", __FUNCTION__, result_str);
     return result_str;
 }
 

@@ -50,12 +50,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* LOG_NDEBUG = 0 allows debug logs */
-//#define LOG_NDEBUG 0
-#ifdef LOG_TAG
-#undef LOG_TAG
-#endif
-#define LOG_TAG "bcm-audio"
 
 /* Android headers with "C" linkage */
 #include <log/log.h>
@@ -65,6 +59,7 @@ extern "C" {
 }
 #endif
 
+#include "brcm_audio_log.h"
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
 #include <utils/threads.h>
@@ -88,14 +83,6 @@ extern "C" {
 #include "nexus_playpump.h"
 #include "bmedia_util.h"
 
-/* VERY_VERBOSE = 1 allows additional debug logs */
-//#define VERY_VERBOSE 0
-
-#if VERY_VERBOSE
-#define ALOGVV ALOGV
-#else
-#define ALOGVV(...) ((void)0)
-#endif
 
 #ifndef UNUSED
 #define UNUSED(x) (void)(x)
@@ -443,7 +430,8 @@ private:
         NEXUS_SimpleAudioDecoder_GetStatus(decoder, &decoderStatus); \
         NEXUS_Playpump_GetStatus(playpump, &playpumpStatus); \
  \
-        ALOGV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__, \
+        BA_LOG((TUN_DBG | DIR_DBG), "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", \
+            __FUNCTION__, \
             decoderStatus.codecStatus.ac3.bitrate, \
             decoderStatus.fifoDepth, \
             decoderStatus.fifoSize, \
