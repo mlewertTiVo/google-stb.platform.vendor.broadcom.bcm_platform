@@ -6016,10 +6016,16 @@ int hwc2_blit_gpx(
    bs.dest.rect      = da;
    bs.output.surface = d;
    bs.output.rect    = oa;
-   bs.colorOp        = NEXUS_BlitColorOp_eUseBlendEquation;
-   bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
-   bs.colorBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_col_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_col_be[lyr->bm];
-   bs.alphaBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_al_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_al_be[lyr->bm];
+   if ((lyr->bm == HWC2_BLEND_MODE_INVALID) ||
+       (lyr->bm == HWC2_BLEND_MODE_NONE)) {
+      bs.colorOp        = NEXUS_BlitColorOp_eCopySource;
+      bs.alphaOp        = NEXUS_BlitAlphaOp_eCopySource;
+   } else {
+      bs.colorOp        = NEXUS_BlitColorOp_eUseBlendEquation;
+      bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
+      bs.colorBlend     = hwc2_a2n_col_be[lyr->bm];
+      bs.alphaBlend     = hwc2_a2n_al_be[lyr->bm];
+   }
    if (HWC2_MEMC_ROT) {
       if (lyr->tr == HWC_TRANSFORM_ROT_180 || lyr->tr == HWC_TRANSFORM_ROT_270) {
          bs.mirrorOutputVertically = true;
