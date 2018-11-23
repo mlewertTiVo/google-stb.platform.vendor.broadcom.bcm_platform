@@ -44,6 +44,11 @@
                 <action android:name="com.google.android.tvlauncher.action.PARTNER_CONFIGURATION" />
             </intent-filter>
         </receiver>
+        <service android:name=".HdmiAudioPlugService">
+            <intent-filter>
+                <action android:name="android.media.action.HDMI_AUDIO_PLUG" />
+            </intent-filter>
+        </service>
         <provider android:name=".ConfigurationProvider"
             android:authorities="tvlauncher.config"
             android:enabled="true"
