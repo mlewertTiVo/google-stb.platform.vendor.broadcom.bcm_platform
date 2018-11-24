@@ -276,21 +276,16 @@ static int bout_set_parameters(struct audio_stream *stream,
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
             int hw_sync_id = 0;
-            if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-                ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
-                ret = 0;
-            } else {
-                ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
-                if (!ret) {
-                    if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
-                        ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
-                              __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
-                        ret = -EINVAL;
-                    } else if (!bout->tunneled) {
-                        ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
-                              __FUNCTION__, hw_sync_id);
-                        ret = -EINVAL;
-                    }
+            ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
+            if (!ret) {
+                if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
+                    ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
+                          __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
+                    ret = -EINVAL;
+                } else if (!bout->tunneled) {
+                    ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
+                          __FUNCTION__, hw_sync_id);
+                    ret = -EINVAL;
                 }
             }
         }
@@ -950,20 +945,16 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
     if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC)) {
        int hw_sync_id = AUDIO_HW_SYNC_INVALID;
 
-       if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-          hw_sync_id = DUMMY_HW_SYNC;
+       if (bdev->stc_channel_mem_hdl == NULL) {
+          NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
+          if (err != NEXUS_SUCCESS) {
+             ALOGE("%s: error allocating stc hdl", __FUNCTION__);
+          }
+       }
+       if (bdev->stc_channel_mem_hdl == NULL) {
+          hw_sync_id = AUDIO_HW_SYNC_INVALID;
        } else {
-          if (bdev->stc_channel_mem_hdl == NULL) {
-             NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
-             if (err != NEXUS_SUCCESS) {
-                ALOGE("%s: error allocating stc hdl", __FUNCTION__);
-             }
-          }
-          if (bdev->stc_channel_mem_hdl == NULL) {
-             hw_sync_id = AUDIO_HW_SYNC_INVALID;
-          } else {
-             hw_sync_id = (int)(intptr_t)bdev->stc_channel_mem_hdl;
-          }
+          hw_sync_id = (int)(intptr_t)bdev->stc_channel_mem_hdl;
        }
 
        str_parms_add_int(result, AUDIO_PARAMETER_HW_AV_SYNC, hw_sync_id);

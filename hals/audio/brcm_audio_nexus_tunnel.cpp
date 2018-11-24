@@ -590,7 +590,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     ALOGV("%s: Audio decoder started (0x%x:%d)", __FUNCTION__, bout->config.format, start_settings.primary.codec);
 
     bout->nexus.tunnel.priming = false;
-    if (!bout->nexus.tunnel.pcm_format && bout->nexus.tunnel.stc_channel != NULL && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
+    if (!bout->nexus.tunnel.pcm_format && bout->nexus.tunnel.stc_channel != NULL) {
         NEXUS_AudioDecoderTrickState trickState;
         NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
         trickState.rate = 0;
@@ -746,8 +746,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
-    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
-            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
+    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel) {
        return -ENOENT;
     }
 
@@ -803,8 +802,7 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
-    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
-            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
+    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel) {
        return -ENOENT;
     }
 
@@ -1540,10 +1538,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
     bout->nexus.tunnel.pp_buffer_end = (uint8_t *)playpumpStatus.bufferBase + playpumpStatus.fifoDepth;
 
-    if (property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-       bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
-    }
-
     NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
     pidSettings.pidType = NEXUS_PidType_eAudio;
     bout->nexus.tunnel.pid_channel = NEXUS_Playpump_OpenPidChannel(bout->nexus.tunnel.playpump, BRCM_AUDIO_STREAM_ID, &pidSettings);
@@ -1553,10 +1547,8 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         goto err_pid;
     }
 
-    if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-       ALOG_ASSERT(bout->nexus.tunnel.stc_channel != NULL);
-       NEXUS_SimpleAudioDecoder_SetStcChannel(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel);
-    }
+    ALOG_ASSERT(bout->nexus.tunnel.stc_channel != NULL);
+    NEXUS_SimpleAudioDecoder_SetStcChannel(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel);
 
     if (bout->nexus.tunnel.pcm_format) {
         // Initialize WAV format parameters

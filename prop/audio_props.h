@@ -44,7 +44,6 @@
 #define BCM_RO_AUDIO_TUNNEL_PROPERTY_PES_DEBUG             "ro.nx.media.aout_t_pes_debug"
 #define BCM_RO_AUDIO_OUTPUT_DEBUG                          "ro.nx.media.aout_debug"
 #define BCM_RO_AUDIO_DISABLE_ATMOS                         "ro.nx.media.disable_atmos"
-#define BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE                   "ro.nx.media.hw_sync.fake"
 #define BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY             "ro.nx.eac3.trans_latency"
 #define BCM_RO_AUDIO_OUTPUT_CLOCK_ACCURACY                 "ro.nx.audio.clock_acc"
 #define BCM_RO_AUDIO_DIRECT_FORCE_PCM                      "ro.nx.media.direct_force_pcm"

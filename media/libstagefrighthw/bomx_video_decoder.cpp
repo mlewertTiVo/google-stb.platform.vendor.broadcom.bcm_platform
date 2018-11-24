@@ -3729,13 +3729,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
                 if (m_tunnelMode && m_tunnelStcChannel)
                 {
-                    if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0))
+                    errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
+                    if ( errCode )
                     {
-                        errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
-                        if ( errCode )
-                        {
-                            return BOMX_BERR_TRACE(errCode);
-                        }
+                        return BOMX_BERR_TRACE(errCode);
                     }
                 }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
