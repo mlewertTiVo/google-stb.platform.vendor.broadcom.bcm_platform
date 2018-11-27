@@ -1175,10 +1175,15 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     bout->framesPlayedTotal = 0;
     dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
-    bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
-                                                ((dolby_ms == 11) || (dolby_ms == 12)) ?
-                                                    NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
-                             * bout->config.sample_rate) / 1000;
+    if (bout->nexus.direct.playpump_mode) {
+        bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
+                                                    ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                        NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
+                                 * bout->config.sample_rate) / 1000;
+    } else {
+        bout->latencyEstimate = 0;
+    }
+
     bout->latencyPad = bout->latencyEstimate;
 
     if (config->format == AUDIO_FORMAT_PCM_16_BIT) {
