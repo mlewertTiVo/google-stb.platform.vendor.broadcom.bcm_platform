@@ -127,6 +127,12 @@ int NxWrap::join() {
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
 
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join(): client already registered, ignoring.");
+      }
+   }
+
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
    joinSettings.ignoreStandbyRequest = true;
@@ -146,6 +152,12 @@ int NxWrap::join_v() {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_v(): client already registered, ignoring.");
+      }
+   }
 
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
@@ -170,6 +182,12 @@ int NxWrap::join_once() {
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
 
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_once(): client already registered, ignoring.");
+      }
+   }
+
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
    joinSettings.ignoreStandbyRequest = true;
@@ -182,6 +200,12 @@ int NxWrap::join(StdbyMonCb cb, void *ctx) {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join(stbdy): client already registered, ignoring.");
+      }
+   }
 
    if (cb == NULL) {
       return join();
@@ -212,6 +236,12 @@ int NxWrap::join_v(StdbyMonCb cb, void *ctx) {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_v(stdby): client already registered, ignoring.");
+      }
+   }
 
    if (cb == NULL) {
       return join();
