@@ -292,7 +292,7 @@ OEMCryptoResult OEMCrypto_CloseSession(OEMCrypto_SESSION session)
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_CLOSE_SESSION_FAILED);
 
-    if (drm_WVOemCrypto_CloseSession(session, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_CloseSession(session, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_CloseSession(SID=%08X): failed]", session);
         return wvRc;
@@ -329,7 +329,7 @@ OEMCryptoResult OEMCrypto_GenerateNonce(OEMCrypto_SESSION session, uint32_t* non
         last_nonce_time = now;
     }
 
-    if (drm_WVOemCrypto_GenerateNonce(session, nonce, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_GenerateNonce(session, nonce, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("%s:nonce generation failed ",__FUNCTION__);
         return wvRc;
@@ -346,7 +346,7 @@ OEMCryptoResult OEMCrypto_GenerateDerivedKeys(OEMCrypto_SESSION session,
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_GenerateDerivedKeys(session, mac_key_context,
+    if (DRM_WVOemCrypto_GenerateDerivedKeys(session, mac_key_context,
         mac_key_context_length, enc_key_context, enc_key_context_length,
         (int*)&wvRc) != Drm_Success)
     {
@@ -389,7 +389,7 @@ OEMCryptoResult OEMCrypto_GenerateSignature(
     }
 
 
-    if (drm_WVOemCrypto_GenerateSignature(session, message, message_length,
+    if (DRM_WVOemCrypto_GenerateSignature(session, message, message_length,
         signature, signature_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_GenerateSignature(SID=%08X): failed]", session);
@@ -445,7 +445,7 @@ OEMCryptoResult OEMCrypto_RefreshKeys(OEMCrypto_SESSION session,
         }
     }
 
-    if (drm_WVOemCrypto_RefreshKeys(session, message, message_length, signature,
+    if (DRM_WVOemCrypto_RefreshKeys(session, message, message_length, signature,
         signature_length, num_keys, (void*)key_array, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_Refresh(SID=%08X): failed with error rc=%d]", session,wvRc);
@@ -537,7 +537,7 @@ OEMCryptoResult OEMCrypto_IsKeyboxValid(void)
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_IsKeyboxValid((int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_IsKeyboxValid((int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_IsKeyboxValid: failed]");
         return wvRc;
@@ -553,7 +553,7 @@ OEMCryptoResult OEMCrypto_GetDeviceID(uint8_t* deviceID, size_t* idLength)
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_GetDeviceID(deviceID, idLength, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_GetDeviceID(deviceID, idLength, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_GetDeviceID: failed]");
         return wvRc;
@@ -570,7 +570,7 @@ OEMCryptoResult OEMCrypto_GetKeyData(uint8_t* keyData, size_t* keyDataLength)
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_GetKeyData(keyData, keyDataLength, (int *)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_GetKeyData(keyData, keyDataLength, (int *)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_GetKeyData: failed]");
         return wvRc;
@@ -590,7 +590,7 @@ OEMCryptoResult OEMCrypto_GetRandom(uint8_t* randomData, size_t dataLength)
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
     }
 
-    if (drm_WVOemCrypto_GetRandom(randomData, dataLength) != Drm_Success)
+    if (DRM_WVOemCrypto_GetRandom(randomData, dataLength) != Drm_Success)
     {
         ALOGV("[OEMCrypto_GetRandom: failed]");
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
@@ -632,7 +632,7 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_IsKeyboxValid((int *)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_IsKeyboxValid((int *)&wvRc) != Drm_Success)
     {
         ALOGE("[OEMCrypto_RewrapDeviceRSAKey(): Invalid Key box !!]");
         return wvRc;
@@ -660,14 +660,14 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey(OEMCrypto_SESSION session,
     ALOGV("[OEMCrypto_RewrapDeviceRSAKey(): Range Check done");
     ALOGV("[OEMCrypto_RewrapDeviceRSAKey(): call thinlayer api......]");
 
-    if (drm_WVOemCrypto_RewrapDeviceRSAKey(session, message, message_length,
+    if (DRM_WVOemCrypto_RewrapDeviceRSAKey(session, message, message_length,
         signature, signature_length, nonce, enc_rsa_key, enc_rsa_key_length,
         enc_rsa_key_iv, wrapped_rsa_key, wrapped_rsa_key_length, (int *)&wvRc) != Drm_Success)
     {
         if (wvRc == OEMCrypto_ERROR_SHORT_BUFFER)
-            ALOGW("[OEMCrypto_RewrapDeviceRSAKey(): drm_WVOemCrypto_RewrapDeviceRSAKey returned SHORT_BUFFER");
+            ALOGW("[OEMCrypto_RewrapDeviceRSAKey(): DRM_WVOemCrypto_RewrapDeviceRSAKey returned SHORT_BUFFER");
         else
-            ALOGE("[OEMCrypto_RewrapDeviceRSAKey(): drm_WVOemCrypto_RewrapDeviceRSAKey error rc=%d]",wvRc);
+            ALOGE("[OEMCrypto_RewrapDeviceRSAKey(): DRM_WVOemCrypto_RewrapDeviceRSAKey error rc=%d]",wvRc);
 
         return wvRc;
     }
@@ -688,7 +688,7 @@ OEMCryptoResult OEMCrypto_LoadDeviceRSAKey(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_LoadDeviceRSAKey(session, wrapped_rsa_key,
+    if (DRM_WVOemCrypto_LoadDeviceRSAKey(session, wrapped_rsa_key,
         wrapped_rsa_key_length, (int *)&wvRc) != Drm_Success)
     {
         return wvRc;
@@ -712,7 +712,7 @@ OEMCryptoResult OEMCrypto_GenerateRSASignature(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_GenerateRSASignature(session, message, message_length,
+    if (DRM_WVOemCrypto_GenerateRSASignature(session, message, message_length,
        signature, signature_length, (WvOemCryptoRSA_Padding_Scheme)padding_scheme,
        (int *)&wvRc) != Drm_Success)
     {
@@ -738,12 +738,12 @@ OEMCryptoResult OEMCrypto_DeriveKeysFromSessionKey(
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_IsKeyboxValid((int *)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_IsKeyboxValid((int *)&wvRc) != Drm_Success)
     {
         return wvRc;
     }
 
-    if (drm_WVOemCrypto_DeriveKeysFromSessionKey(session, enc_session_key,
+    if (DRM_WVOemCrypto_DeriveKeysFromSessionKey(session, enc_session_key,
         enc_session_key_length, mac_key_context, mac_key_context_length,
         enc_key_context, enc_key_context_length, (int *)&wvRc) != Drm_Success)
     {
@@ -779,7 +779,7 @@ OEMCryptoResult OEMCrypto_GetHDCPCapability(OEMCrypto_HDCP_Capability *current,
     if (maximum == NULL)
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
 
-    if (drm_WVOemCrypto_GetHDCPCapability(&current_32, &maximum_32, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_GetHDCPCapability(&current_32, &maximum_32, (int*)&wvRc) != Drm_Success)
     {
         return  wvRc;
     }
@@ -806,7 +806,7 @@ OEMCryptoResult OEMCrypto_Generic_Encrypt(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_Generic_Encrypt(session, in_buffer, buffer_length,
+    if (DRM_WVOemCrypto_Generic_Encrypt(session, in_buffer, buffer_length,
         iv, (Drm_WVOemCryptoAlgorithm)algorithm,
         out_buffer, (int*)&wvRc) != Drm_Success)
     {
@@ -832,7 +832,7 @@ OEMCryptoResult OEMCrypto_Generic_Decrypt(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_Generic_Decrypt(session, in_buffer, buffer_length,
+    if (DRM_WVOemCrypto_Generic_Decrypt(session, in_buffer, buffer_length,
         iv, (Drm_WVOemCryptoAlgorithm)algorithm,
         out_buffer, (int*)&wvRc) != Drm_Success)
     {
@@ -870,7 +870,7 @@ OEMCryptoResult OEMCrypto_Generic_Sign(OEMCrypto_SESSION session,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    if (drm_WVOemCrypto_Generic_Sign(session, in_buffer, buffer_length,
+    if (DRM_WVOemCrypto_Generic_Sign(session, in_buffer, buffer_length,
         algorithm, signature, signature_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_Generic_Sign(): failed");
@@ -895,7 +895,7 @@ OEMCryptoResult OEMCrypto_Generic_Verify(OEMCrypto_SESSION session,
         ALOGE("[OEMCrypto_Generic_Verify(): OEMCrypto_ERROR_INVALID_CONTEXT]");
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
-    if (drm_WVOemCrypto_Generic_Verify(session, in_buffer, buffer_length,
+    if (DRM_WVOemCrypto_Generic_Verify(session, in_buffer, buffer_length,
         algorithm, signature, signature_length, (int*)&wvRc) != Drm_Success)
     {
         return wvRc;
@@ -1342,7 +1342,7 @@ OEMCryptoResult OEMCrypto_InstallKeybox(const uint8_t* keybox, size_t keyBoxLeng
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_InstallKeybox(keybox, keyBoxLength) != Drm_Success)
+    if (DRM_WVOemCrypto_InstallKeybox(keybox, keyBoxLength) != Drm_Success)
     {
         return OEMCrypto_ERROR_WRITE_KEYBOX;
     }
@@ -1423,7 +1423,7 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
 
     dump_hex((const char*)"enc data:", data_addr, data_length);
 
-    if (drm_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
+    if (DRM_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
         is_encrypted, buffer_type, iv, block_offset, destination, &out_sz,
         (void *)pattern, subsample_flags, (int*)&wvRc) != Drm_Success)
     {
@@ -1702,7 +1702,7 @@ OEMCryptoResult OEMCrypto_LoadTestKeybox(const uint8_t *buffer, size_t length)
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if(drm_WVOemCrypto_LoadTestKeybox((uint8_t *)buffer, (uint32_t)length, (int*)&wvRc) != Drm_Success)
+    if(DRM_WVOemCrypto_LoadTestKeybox((uint8_t *)buffer, (uint32_t)length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("%s: failed with error %d",__FUNCTION__, wvRc);
         return OEMCrypto_ERROR_WRITE_KEYBOX;
@@ -1737,7 +1737,7 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    if (drm_WVOemCrypto_SelectKey(session, content_key_id, content_key_id_length, cipher_mode, (int*)&wvRc) != Drm_Success)
+    if (DRM_WVOemCrypto_SelectKey(session, content_key_id, content_key_id_length, cipher_mode, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_SelectKey(SID=%08X): failed]", session);
         return wvRc;
@@ -1797,7 +1797,7 @@ OEMCryptoResult OEMCrypto_LoadKeys(
         }
     }
 
-    if (drm_WVOemCrypto_LoadKeys(session, message, message_length,
+    if (DRM_WVOemCrypto_LoadKeys(session, message, message_length,
         signature, signature_length, enc_mac_keys_iv, enc_mac_keys, num_keys,
         (void*)key_array, pst, pst_length, srm_requirement, license_type, (int *)&wvRc) != Drm_Success)
     {
@@ -1858,7 +1858,7 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
 
     dump_hex((const char*)"enc data:", data_addr, data_length);
 
-    if (drm_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
+    if (DRM_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
         is_encrypted, buffer_type, iv, block_offset, destination, &out_sz,
         (void *)pattern, subsample_flags, (int*)&wvRc) != Drm_Success)
     {
