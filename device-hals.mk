@@ -13,6 +13,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/keymaster/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/lights/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/memtrack/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/prdysc/1.0/default/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/sdbhak/1.0/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/thermal/Android.mk

@@ -1,0 +1,13 @@
+hidl_interface {
+    name: "bcm.hardware.prdysc@1.0",
+    owner: "broadcom",
+    root: "bcm.hardware",
+    srcs: [
+        "Iprdysc.hal",
+    ],
+    interfaces: [
+        "android.hidl.base@1.0",
+    ],
+    gen_java: false,
+}
+

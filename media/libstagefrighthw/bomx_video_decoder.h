@@ -429,6 +429,7 @@ protected:
     bool m_displayThreadStop;
     pthread_t m_hDisplayThread;
     unsigned m_lastReturnedSerial;
+    unsigned m_lastDisplayedSerial;
 
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;

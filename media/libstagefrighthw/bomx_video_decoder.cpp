@@ -93,6 +93,8 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 #define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
+#define B_OUTSTANDING_FRAMES_WATERMARK (6)
+#define B_OUTSTANDING_FRAME_MAX_AGE (4)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -1446,6 +1448,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_displayThreadStop(false),
     m_hDisplayThread(0),
     m_lastReturnedSerial(0),
+    m_lastDisplayedSerial(0),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
     m_maxConsecDroppedFrames(0),
@@ -2689,7 +2692,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                     return OMX_ErrorNoMore;
 
                 NEXUS_VideoDecoder_GetCodecCapabilities(NULL, NEXUS_VideoCodec_eH264, &videoCaps);
-                ALOGV("%s: max profile:%u, level:%u", __FUNCTION__, videoCaps.protocolProfile, videoCaps.protocolLevel);
+                ALOGV("%s: AVC max profile:%u, level:%u", __FUNCTION__, videoCaps.protocolProfile, videoCaps.protocolLevel);
                 pProfileLevel->eProfile = avcProfilesSupported[pProfileLevel->nProfileIndex];
                 pProfileLevel->eLevel = (OMX_U32)BOMX_AvcLevelFromNexus(videoCaps.protocolLevel);
                 break;
@@ -3436,6 +3439,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
             m_texturedFrames = 0;
             m_lastReturnedSerial = 0;
+            m_lastDisplayedSerial = 0;
             m_formatChangeState = FCState_eNone;
             CancelTimerId(m_inputBuffersTimerId);
             CancelTimerId(m_formatChangeTimerId);
@@ -5026,7 +5030,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
     bufferBytesRemaining = chunkLength;
 
-    ALOGV("Input Frame Offset %u, Length %u, PTS %#x first=%d", pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
+    ALOGVV("Input Frame Offset %u, Length %u, PTS %#x first=%d", pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
 
     if ( maxDescriptors < 4 )
     {
@@ -5553,21 +5557,24 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             pFrameBuffer = NULL;
         }
-        ALOGW_IF(pFrameBuffer == NULL, "Frame buffer not found for metadata %p", pInfo->typeInfo.metadata.pMetadata);
+        ALOGW_IF(pFrameBuffer == NULL && (m_logMask & B_LOG_VDEC_OUTPUT),
+                 "Frame buffer not found for metadata %p", pInfo->typeInfo.metadata.pMetadata);
     }
     else
     {
         pFrameBuffer = pInfo->pFrameBuffer;
     }
     pInfo->pFrameBuffer = NULL;
-    ALOGV("Fill Buffer, comp:%s ts %lld us serial %u pInfo %p HDR %p", GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
+    ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "FillBuffer, comp:%s ts %lld us serial %u pInfo %p HDR %p",
+              GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
-            ALOGV("Invalid FrameBuffer (%u) - Return to free list", pFrameBuffer->frameStatus.serialNumber);
+            ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Invalid FrameBuffer (%u) - Return to free list",
+                                  pFrameBuffer->frameStatus.serialNumber);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
             BOMX_VideoDecoder_StripedSurfaceDestroy(pFrameBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
@@ -5774,7 +5781,7 @@ void BOMX_VideoDecoder::ProcessFifoData(bool *pendingData)
             }
         }
 
-        ALOGV("%s: submitted:%u pfifo:%zu decoder fifo ts [%d %u %u], queued:%zu",
+        ALOGVV("%s: submitted:%u pfifo:%zu decoder fifo ts [%d %u %u], queued:%zu",
            __FUNCTION__, m_submittedDescriptors, playpumpStatus.descFifoDepth,
             fifoStatus.pts.valid, fifoStatus.pts.leastRecent, fifoStatus.pts.mostRecent,
             m_inputDataTracker.GetNumEntries());
@@ -5792,7 +5799,7 @@ void BOMX_VideoDecoder::PlaypumpEvent()
     ProcessFifoData(&pendingData);
     if ( pendingData )
     {
-        ALOGV("%s: Data still pending in RAVE.  Starting Timer.", __FUNCTION__);
+        ALOGVV("%s: Data still pending in RAVE.  Starting Timer.", __FUNCTION__);
         m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate),
             BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
     }
@@ -6947,7 +6954,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     m_eosDelivered = true;
                 }
             } else {
-                ALOGV("%s: status.pts:%u, m_tunnelCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
+                ALOGVV("%s: status.pts:%u, m_tunnelCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
             }
 
             if (newRenderedFrame) {
@@ -6965,6 +6972,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 {
                     (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventBufferFlag, m_videoPortBase+1, omxHeader.nFlags, NULL);
                     m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, true);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Reporting eos, ts=%lld pts=%u now=%" PRIu64 "",
+                            omxHeader.nTimeStamp, status.pts, now);
                 }
             } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
                 // when we're in the process of dropping frames to reach the start pts, return as many
@@ -6975,7 +6984,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 m_stcSyncValue = stcSync;
-                ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
             }
         }
 
@@ -7194,11 +7203,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 m_formatChangeSerial = pBuffer->frameStatus.serialNumber;
                                 CancelTimerId(m_formatChangeTimerId);
                                 m_formatChangeTimerId = StartTimer(B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS, BOMX_VideoDecoder_FormatChangeTimer, static_cast<void *>(this));
-                                ALOGV("Defer port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
-                                        m_formatChangeSerial, m_lastReturnedSerial);
+                                ALOGD_IF((m_logMask & B_LOG_VDEC_PORT_RECFG), "Defer port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
+                                          m_formatChangeSerial, m_lastReturnedSerial);
                             } else {
-                                ALOGV("Process port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
-                                        m_formatChangeSerial, m_lastReturnedSerial);
+                                ALOGD_IF((m_logMask & B_LOG_VDEC_PORT_RECFG), "Process port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
+                                          m_formatChangeSerial, m_lastReturnedSerial);
                                 m_pVideoPorts[1]->GetDefinition(&portDefs);
                                 portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
                                 portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
@@ -7506,6 +7515,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     unsigned numFrames = 0, numRecycle = 0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
     NEXUS_VideoDecoderStatus status;
+    unsigned outstandingFrames = 0;
 
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
@@ -7553,6 +7563,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             switch ( pBuffer->state )
             {
             case BOMX_VideoDecoderFrameBufferState_eDelivered:
+                ++outstandingFrames;
             case BOMX_VideoDecoderFrameBufferState_eReturned:
                 pEnd = pBuffer;
                break;
@@ -7561,6 +7572,39 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             }
         }
     }
+
+    // Attempt to force release of the LRU frames
+    if ( !m_outputFlushing && (m_texturedFrames == 0)
+         && (outstandingFrames >= B_OUTSTANDING_FRAMES_WATERMARK) )
+    {
+        BOMX_VideoDecoderFrameBuffer *pEndRange = pEnd;
+        pEndRange = BLST_Q_NEXT(pEndRange, node);
+        pBuffer = pStart;
+        unsigned forced = 0;
+
+        while ( pBuffer != pEndRange )
+        {
+            BOMX_VideoDecoderFrameBuffer *pNext = BLST_Q_NEXT(pBuffer, node);
+            if ( (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered)
+                 && UNSIGNED_LESS_THAN(pBuffer->frameStatus.serialNumber, m_lastDisplayedSerial) )
+            {
+                unsigned bufferAge = m_lastDisplayedSerial - pBuffer->frameStatus.serialNumber;
+                if ( bufferAge >= B_OUTSTANDING_FRAME_MAX_AGE )
+                {
+                    // Force the recycling of this video frame
+                    pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "Force the recycling of serial:%u, age:%u",
+                           pBuffer->frameStatus.serialNumber, bufferAge);
+                    ++forced;
+                }
+            }
+            pBuffer = pNext;
+        }
+        if (forced > 0)
+            ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "Outstanding frames:%u, forced recycled:%u",
+                                                          outstandingFrames, forced);
+    }
+
 
     // Deal with the frames we found
     if ( NULL != pEnd )
@@ -7661,12 +7705,13 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
                 if ( m_outputFlushing )
                 {
-                    ALOGV("Recycling outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "Recycling outstanding frame %u - flushing",
+                                          pBuffer->frameStatus.serialNumber);
                 }
                 else
                 {
-                    ALOGV("Recycling outstanding frame %u, state %d, display %d", pBuffer->frameStatus.serialNumber,
-                          pBuffer->state, pBuffer->display);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET),"Recycling outstanding frame %u, state %d, display %d",
+                                          pBuffer->frameStatus.serialNumber, pBuffer->state, pBuffer->display);
                     if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReturned )
                     {
                         if ( !pBuffer->display && !hwTex )
@@ -7677,12 +7722,14 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                             }
                             else
                             {
-                               ALOGV("Hw-texture skips outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                               ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET),
+                                   "Hw-texture skips outstanding frame %u", pBuffer->frameStatus.serialNumber);
                             }
                         }
                         else if ( hwTex )
                         {
-                            ALOGV("Returned hw-texture frame %u", pBuffer->frameStatus.serialNumber);
+                            ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "Returned hw-texture frame %u",
+                                                  pBuffer->frameStatus.serialNumber);
                         }
                     }
                 }
@@ -7746,7 +7793,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
             }
 
-            ALOGV("Returning %u frames (%u recycled) to nexus last=%u, lastSerial=%u", numFrames, numRecycle, pLast->frameStatus.serialNumber, m_lastReturnedSerial);
+            ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "Returning %u frames (%u recycled) to nexus last=%u, lastSerial=%u",
+                                    numFrames, numRecycle, pLast->frameStatus.serialNumber, m_lastReturnedSerial);
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {
@@ -7755,7 +7803,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             }
 
             if ((m_formatChangeState == FCState_eWaitForSerial) && (m_formatChangeSerial == (m_lastReturnedSerial + 1))) {
-                ALOGV("%s: processing format change, m_formatChangeSerial:%u", __FUNCTION__, m_formatChangeSerial);
+                ALOGD_IF((m_logMask & B_LOG_VDEC_PORT_RECFG), "%s: processing format change, m_formatChangeSerial:%u",
+                          __FUNCTION__, m_formatChangeSerial);
                 CancelTimerId(m_formatChangeTimerId);
                 m_formatChangeState = FCState_eProcessCallback;
                 OutputFrameEvent();
@@ -8054,7 +8103,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
 
-    ALOGV("DisplayFrame(%d)", serialNumber);
+    ALOGD_IF((m_logMask & B_LOG_VDEC_NEXUS_RET), "DisplayFrame(%d)", serialNumber);
 
     pFrameBuffer = FindFrameBuffer(serialNumber);
     if ( pFrameBuffer )
@@ -8063,6 +8112,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
         {
             // Mark buffer as ready to display
             pFrameBuffer->display = true;
+            m_lastDisplayedSerial = serialNumber;
             // Return frames to nexus decoder
             ReturnDecodedFrames();
             // We just returned something to nexus, kick off the output frame thread

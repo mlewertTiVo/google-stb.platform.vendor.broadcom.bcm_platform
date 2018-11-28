@@ -1,0 +1,11 @@
+package bcm.hardware.prdysc@1.0;
+
+interface Iprdysc {
+    /**
+     * challenge from secure clock server; returns "s" status (0 on success, otherwise
+     * an error); returns "l" for length of the provided response (valid only on "s" == 0).
+     *
+     */
+    challenge(memory in, memory out) generates (int32_t s, int32_t l);
+};
+

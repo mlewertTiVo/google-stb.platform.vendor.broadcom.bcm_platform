@@ -45,4 +45,6 @@ adbc00be4cf83d83e27e7083a80560e7e287bf1ff6ffc504ef0c0ca10b071136 bcm.hardware.dp
 # 3cb59e062eaa73d0b736d2d041a5aec80c183e15caaae2f8c48149a310957c0d bcm.hardware.tvisvcext@1.0::types
 # 6a5d254924618495faabd2f8c22c799efefb1cd4483c8ea561686db9a68be664 bcm.hardware.tvisvcext@1.0::ITviSvcExt
 
-
+# prdysc
+#  play ready 3.0 secure clock.
+80c2018161f8cd19eaacbc4e5a35ab7d89cfda044183d30cb9f49519072fedf8 bcm.hardware.prdysc@1.0::Iprdysc

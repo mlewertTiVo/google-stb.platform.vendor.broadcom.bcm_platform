@@ -11,6 +11,7 @@ optional_subdirs = [
     "hals/health/1.0",
     "hals/health/2.0",
     "hals/nexus/1.0",
+    "hals/prdysc/1.0",
     "hals/sdbhak/1.0",
     "hals/sfhak/1.0",
     "hals/tvisvcext/1.0",
