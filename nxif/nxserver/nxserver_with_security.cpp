@@ -82,96 +82,122 @@
 #define DHD_SECDMA_PARAMS_PATH         "/data/vendor/nexus/secdma"
 #define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
 
+pthread_t secdma_thread;
+
 static void wait_for_data_available(void)
 {
-   char prop[PROPERTY_VALUE_MAX];
-   int state = 0;
-
+   // very simple check here, we need to wait until we are told that
+   // the key has been written, which means the /data/vendor has been
+   // populated and is available.
    while (1) {
-      state = property_get("vold.decrypt", prop, NULL);
-      if (state) {
-         if ((strncmp(prop, "trigger_restart_min_framework", state) == 0) ||
-             (strncmp(prop, "trigger_restart_framework", state) == 0)) {
-            return;
-         }
-      } else {
-         state = property_get("ro.crypto.state", prop, NULL);
-         if (state) {
-            if (strncmp(prop, "unsupported", state) == 0) {
-               return;
-            }
-         }
+      if (!access(NEXUS_TRUSTED_DATA_PATH, R_OK)) {
+         return;
       }
+
       /* arbitrary wait... */
       BKNI_Sleep(100);
-      ALOGV("waiting 100 msecs for cryptfs sync...");
+      ALOGV("waiting 100 msecs for data available...");
    }
 }
 
-void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
+static void *alloc_secdma_task(void *argv)
 {
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    NEXUS_Addr secdmaPhysicalOffset = 0;
-    uint32_t secdmaMemSize;
-    char value[PROPERTY_VALUE_MAX];
-    char secdma_param_file[PROPERTY_VALUE_MAX];
-    FILE *pFile;
-    char nx_key[PROPERTY_VALUE_MAX];
-    int rci = 0;
+   NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+   bool exit = false;
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NEXUS_Addr secdmaPhysicalOffset = 0;
+   uint32_t secdmaMemSize = 0;
+   char value[PROPERTY_VALUE_MAX];
+   char secdma_param_file[PROPERTY_VALUE_MAX];
+   FILE *pFile;
+   char nx_key[PROPERTY_VALUE_MAX];
+   int rci = 0;
 
-    memset (value, 0, sizeof(value));
+   memset (value, 0, sizeof(value));
+   prctl(PR_SET_NAME, "nxserer.secdma");
 
-    if (property_get(BCM_RO_NX_DHD_SECDMA, value, NULL)) {
-        /* wait for data (re)mount, trigger nexus authentication. */
-        wait_for_data_available();
-        sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-        rci = nxserver_parse_password_file(server, nx_key);
-        if (rci) {
-           ALOGE("refreshing auth. credentials ('%s'), FAILED: %d", nx_key, rci);
-        } else {
-           ALOGI("refreshed auth. credentials ('%s')", nx_key);
-        }
-        secdmaMemSize = strtoul(value, NULL, 0);
-        if (strlen(value) && (secdmaMemSize > 0)) {
-            sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
-            pFile = fopen(secdma_param_file, "w");
-            if (pFile == NULL) {
-                ALOGE("couldn't open %s", secdma_param_file);
-            } else {
-                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(
-                   NULL, /* use default (main) heap */
-                   secdmaMemSize,
-                   0x1000,
-                   NULL);
-                if (*hMemoryBlock == NULL) {
-                    ALOGE("NEXUS_MemoryBlock_Allocate failed");
-                    fclose(pFile);
-                    return;
-                }
-                rc = NEXUS_MemoryBlock_LockOffset(*hMemoryBlock, &secdmaPhysicalOffset);
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("NEXUS_MemoryBlock_LockOffset returned %d", rc);
-                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
-                    *hMemoryBlock = NULL;
-                    fclose(pFile);
-                    return;
-                }
-                ALOGI("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
-                rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
-                    NEXUS_MemoryBlock_Unlock(*hMemoryBlock);
-                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
-                    *hMemoryBlock = NULL;
-                    fclose(pFile);
-                    return;
-                }
-                fprintf(pFile, "secdma_cma_addr=0x%" PRIX64 " secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
-                fclose(pFile);
-            }
-        } else {
-            ALOGE("secdma size not set");
-        }
-    }
+   /* wait for data (re)mount. */
+   wait_for_data_available();
+
+   /* trigger nexus authentication re-init now that /data is there. */
+   sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+   rci = nxserver_parse_password_file(nx_server->server, nx_key);
+   if (rci) {
+      ALOGE("refreshing auth. credentials ('%s'), FAILED: %d", nx_key, rci);
+   } else {
+      ALOGI("refreshed auth. credentials ('%s')", nx_key);
+   }
+
+   /* allocate the secure dma region if possible. */
+   property_get(BCM_RO_NX_DHD_SECDMA, value, NULL);
+   if (strlen(value))
+      secdmaMemSize = strtoul(value, NULL, 0);
+   if (secdmaMemSize > 0) {
+      sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
+      pFile = fopen(secdma_param_file, "w");
+      if (pFile == NULL) {
+         ALOGE("couldn't open %s", secdma_param_file);
+      } else {
+         nx_server->sdmablk = NEXUS_MemoryBlock_Allocate(
+            NULL, /* use default (main) heap */
+            secdmaMemSize,
+            0x1000,
+            NULL);
+         if (nx_server->sdmablk == NULL) {
+            ALOGE("NEXUS_MemoryBlock_Allocate failed");
+            fclose(pFile);
+             goto done;
+         }
+         rc = NEXUS_MemoryBlock_LockOffset(nx_server->sdmablk, &secdmaPhysicalOffset);
+         if (rc != NEXUS_SUCCESS) {
+            ALOGE("NEXUS_MemoryBlock_LockOffset returned %d", rc);
+            NEXUS_MemoryBlock_Free(nx_server->sdmablk);
+            nx_server->sdmablk = NULL;
+            fclose(pFile);
+            goto done;
+         }
+         ALOGI("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
+         rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
+         if (rc != NEXUS_SUCCESS) {
+            ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
+            NEXUS_MemoryBlock_Unlock(nx_server->sdmablk);
+            NEXUS_MemoryBlock_Free(nx_server->sdmablk);
+            nx_server->sdmablk = NULL;
+            fclose(pFile);
+            goto done;
+         }
+         fprintf(pFile, "secdma_cma_addr=0x%" PRIX64 " secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+         fclose(pFile);
+      }
+   }
+
+done:
+    /* trigger waiter.  if secmda allocation failed while it was expected, things
+     * are likely to fail (no wifi) beyond this point, but at least we tried.
+     */
+    property_set(BCM_VDR_NX_WIFI_TRIGGER, "init");
+    return NULL;
+}
+
+void alloc_secdma(NX_SERVER_T *srv)
+{
+   char value[PROPERTY_VALUE_MAX];
+   memset (value, 0, sizeof(value));
+   property_set(BCM_VDR_NX_WIFI_TRIGGER, "null");
+   if (property_get(BCM_RO_NX_DHD_SECDMA, value, NULL)) {
+      /* async wait to allow the rest of the system to continue
+       * booting.
+       */
+      pthread_attr_t attr;
+      pthread_attr_init(&attr);
+      if (pthread_create(&secdma_thread, &attr,
+                         alloc_secdma_task, (void *)srv) != 0) {
+         ALOGE("secdma setup thread FAILED!");
+      }
+      pthread_attr_destroy(&attr);
+   } else {
+      /* nothing to wait on in particular, trigger now. */
+      property_set(BCM_VDR_NX_WIFI_TRIGGER, "init");
+   }
 }
 

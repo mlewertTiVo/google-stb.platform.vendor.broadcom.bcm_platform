@@ -77,123 +77,8 @@
 #include "nx_ashmem.h"
 #include "vendor_bcm_props.h"
 
-#include "nexus_base_mmap.h"
-#include "nexus_watchdog.h"
-
-#include "nxinexus.h"
 #include <hidl/HidlTransportSupport.h>
 #include <linux/brcmstb/proc_info_proxy.h>
-
-#define NX_CLIENT_USAGE_LOG            0
-#define NX_CLIENT_EVM_LOG              0
-
-#define NEXUS_TRUSTED_DATA_PATH        "/data/vendor/misc/nexus"
-#define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
-#define APP_MAX_CLIENTS                (72)
-#define MB                             (1024*1024)
-#define KB                             (1024)
-#define SEC_TO_MSEC                    (1000LL)
-#define RUNNER_SEC_THRESHOLD           (10)
-#define RUNNER_GC_THRESHOLD            (3)
-#define RUNNER_LMK_THRESHOLD           (10)
-#define NUM_NX_OBJS                    (128)
-#define MAX_NX_OBJS                    (2048)
-#define MIN_PLATFORM_DEC               (2)
-#define NSC_FB_NUMBER                  (3)
-#define OOM_SCORE_IGNORE               (-16)
-#define OOM_CONSUME_MAX                (192)
-#define OOM_THRESHOLD_AGRESSIVE        (16)
-#define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
-#define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
-#define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
-#define NX_WD_TIMEOUT_DEF              60
-#define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
-#define NX_PROP_ENABLED                "1"
-#define NX_PROP_DISABLED               "0"
-#define NX_INVALID                     -1
-#define NX_NOGRAB_MAGIC                "AWnG"
-#define EVM_CNT_DEF                    (14)
-#define MMU_MAX_CLIENTS                (32) /* 16 in reality at the moment. */
-
-typedef enum {
-   SVP_MODE_NONE,
-   SVP_MODE_NONE_TRANSCODE,
-   SVP_MODE_PLAYBACK,
-   SVP_MODE_PLAYBACK_TRANSCODE,
-   SVP_MODE_DTU,
-   SVP_MODE_DTU_TRANSCODE,
-} SVP_MODE_T;
-
-typedef enum {
-   EVM_NONE,
-   EVM_SOFT,
-   EVM_ZEALOUS,
-} EVICTOR_MODE_T;
-
-typedef struct {
-   pthread_t runner;
-   int running;
-   BKNI_EventHandle runner_run;
-
-} RUNNER_T;
-
-typedef struct {
-   pthread_t runner;
-   int running;
-
-} BINDER_T;
-
-typedef struct {
-   pthread_t catcher;
-   int running;
-   /* use native sem_t as nexus may not be available. */
-   sem_t catcher_run;
-
-} CATCHER_T;
-
-typedef struct {
-    int fd;
-    NEXUS_WatchdogCallbackHandle nx;
-    bool inStandby;
-    BKNI_MutexHandle lock;
-    bool init;
-    bool want;
-} WDOG_T;
-
-typedef struct {
-    BKNI_MutexHandle lock;
-    nxserver_t server;
-    BINDER_T binder;
-    RUNNER_T proactive_runner;
-    BINDER_T standby_monitor;
-    unsigned refcnt;
-    BKNI_MutexHandle clients_lock;
-    unsigned standbyId;
-    BKNI_MutexHandle standby_lock;
-    NxClient_StandbyStatus standbyState;
-    int dcma_index;
-    struct {
-        nxclient_t client;
-        NxClient_JoinSettings joinSettings;
-        unsigned pid;
-        NEXUS_ClientHandle handle;
-        unsigned long mmuvrt; /* total mapped for process. */
-        unsigned long mmushm; /* linux allocation (vs cma). */
-        unsigned long mmucma; /* cma allocation (vs linux). */
-        unsigned long nxmem;  /* nexus cma gfx allocation. */
-        unsigned long gfxmem; /* nexus bmem gfx allocation. */
-        int score;
-    } clients[APP_MAX_CLIENTS];
-    struct {
-        unsigned pid;
-        int score;
-    } mmu_cli[MMU_MAX_CLIENTS];
-    unsigned connected;
-    WDOG_T wdog;
-    CATCHER_T sigterm;
-    NexusImpl *nxi;
-    EVICTOR_MODE_T evm;
-} NX_SERVER_T;
 
 static NX_SERVER_T g_app;
 static bool g_exit = false;
@@ -1690,7 +1575,6 @@ int main(void)
     char device[PROPERTY_VALUE_MAX];
     char name[PROPERTY_VALUE_MAX];
     int memCfgFd = -1;
-    NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
     NxClient_JoinSettings joinSettings;
     NEXUS_Error rc;
     struct sched_param param;
@@ -1831,7 +1715,8 @@ int main(void)
        ALOGE("failed i-nexus creation, ignoring (but not looking good)...");
     }
 
-    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
+    ALOGI("launch secure dma configuration thread (if required).");
+    alloc_secdma(&g_app);
 
     ALOGI("trigger external memory configuration setup.");
     property_set(BCM_DYN_NX_STATE, "memcfg");
@@ -1887,9 +1772,9 @@ int main(void)
        if (g_exit) break;
     }
 
-    if(hSecDmaMemoryBlock != NULL) {
-       NEXUS_MemoryBlock_Unlock(hSecDmaMemoryBlock);
-       NEXUS_MemoryBlock_Free(hSecDmaMemoryBlock);
+    if(g_app.sdmablk != NULL) {
+       NEXUS_MemoryBlock_Unlock(g_app.sdmablk);
+       NEXUS_MemoryBlock_Free(g_app.sdmablk);
     }
 
     ALOGI("terminating nxserver.");

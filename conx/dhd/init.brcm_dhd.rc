@@ -3,8 +3,7 @@ on post-fs-data
     mkdir /data/vendor/wifi/wpa 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
 
-on post-fs
-    wait_for_prop dyn.nx.state memcfg
+on property:vendor.nx.wifi.trigger=init
     insmod /vendor/lib/modules/bcmdhd.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
