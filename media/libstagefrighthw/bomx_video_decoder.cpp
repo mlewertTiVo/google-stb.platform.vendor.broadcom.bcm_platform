@@ -6829,6 +6829,12 @@ void BOMX_VideoDecoder::RemoveAllVdecOmxAssociation()
         return;
     }
 
+    if (m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eConfirmed)
+    {
+        // Cannot remove association as it would break the texturing model.
+        return;
+    }
+
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
           NULL != pBuffer; pBuffer = BLST_Q_NEXT(pBuffer, node) )
     {
