@@ -1012,7 +1012,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     struct brcm_stream_out *bout;
     brcm_devices_out_t bdevices;
     int ret = 0;
-    int dolby_ms;
 
     UNUSED(handle);
     UNUSED(address);
@@ -1129,10 +1128,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
             // Just keep going without debug
         }
     }
-
-    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
-    bout->dolbyMs11 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS11);
-    bout->dolbyMs12 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS12);
 
     pthread_mutex_lock(&bdev->lock);
 
@@ -1474,6 +1469,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
                      hw_device_t **dev)
 {
     struct brcm_device *bdev;
+    int dolby_ms;
     int ret = 0;
 
     ALOGV("%s: at %d\n", __FUNCTION__, __LINE__);
@@ -1528,6 +1524,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev->standbyThread = new StandbyMonitorThread();
     bdev->standbyThread->Start();
+
+    bdev->dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
 
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;

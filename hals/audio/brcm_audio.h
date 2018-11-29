@@ -149,6 +149,8 @@ struct brcm_device {
     bool mic_mute;
     bool master_mute;
 
+    int dolby_ms;
+
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
     struct StandbyMonitorThread *standbyThread;
@@ -208,8 +210,6 @@ struct brcm_stream_out {
     bool started;
     bool suspended;
     bool tunneled;
-    bool dolbyMs11;
-    bool dolbyMs12;
     int standbyCallback;
     FILE *outDebugFile;
     uint64_t last_pres_frame;

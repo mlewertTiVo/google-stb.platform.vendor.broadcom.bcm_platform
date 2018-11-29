@@ -153,7 +153,7 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
     }
 
 
-    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
         if (bout->nexus.direct.fadeLevel != (unsigned)(left * 100)) {
             NEXUS_SimpleAudioDecoderSettings audioSettings;
             NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
@@ -379,7 +379,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
 
-        if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
+        if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
             start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
         }
 
@@ -407,7 +407,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
                                 &codecSettings.codecSettings.ac3:
                                 &codecSettings.codecSettings.ac3Plus;
 
-            if (bout->dolbyMs12) {
+            if (bout->bdev->dolby_ms == 12) {
                 dolbySettings->enableAtmosProcessing = true;
 
                 if (property_get_bool(BCM_RO_AUDIO_DISABLE_ATMOS, false) ||
@@ -1097,7 +1097,6 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     uint32_t audioDecoderId;
     String8 rates_str, channels_str, formats_str;
     char config_rate_str[11];
-    int dolby_ms;
     int i, ret = 0;
 
     if (config->sample_rate == 0)
@@ -1176,10 +1175,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->framesPlayedTotal = 0;
-    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
     if (bout->nexus.direct.playpump_mode) {
         bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
-                                                    ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                    ((bout->bdev->dolby_ms == 11) || (bout->bdev->dolby_ms == 12)) ?
                                                         NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
                                  * bout->config.sample_rate) / 1000;
     } else {
@@ -1223,7 +1221,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioDecoderId;
 
-    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
     }
 
@@ -1321,7 +1319,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
     // Restore auto mode for MS11
-    if (bout->dolbyMs11 &&
+    if ((bout->bdev->dolby_ms == 11) &&
         !(property_get_bool(BCM_RO_AUDIO_DIRECT_FORCE_PCM, false) ||
           property_get_bool(BCM_PERSIST_AUDIO_DIRECT_FORCE_PCM, false))) {
         NxClient_AudioSettings audioSettings;
@@ -1336,7 +1334,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         }
     }
 
-    if (bout->nexus.direct.playpump_mode && bout->dolbyMs12) {
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
         NEXUS_SimpleAudioDecoderSettings settings;
         NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
@@ -1345,6 +1343,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
+
     return 0;
 
 err_pid:
@@ -1386,7 +1385,7 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 
         ALOGI("Restore audio output mode");
         NxClient_SetAudioSettings(&audioSettings);
-    } else if (bout->dolbyMs11) { // Force PCM mode for MS11
+    } else if (bout->bdev->dolby_ms == 11) { // Force PCM mode for MS11
         NxClient_AudioSettings audioSettings;
 
         ALOGI("Force PCM output");
