@@ -1124,8 +1124,10 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             return -EINVAL;
         break;
     case AUDIO_FORMAT_AC3:
+        nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
         NEXUS_GetAudioCapabilities(&audioCaps);
-        disable_ac3_passthrough = property_get_bool(BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH, false);
+        disable_ac3_passthrough = property_get_bool(BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH,
+                                                    formats_str.contains("AUDIO_FORMAT_AC3")?false:true);
         if (disable_ac3_passthrough && audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
             ALOGI("Enable play pump mode");
             bout->nexus.direct.playpump_mode = true;
