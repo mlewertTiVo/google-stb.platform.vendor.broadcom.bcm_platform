@@ -53,11 +53,18 @@ import android.os.IBinder;
 import android.provider.Settings;
 import android.util.Log;
 
+import com.google.gson.Gson;
+
 import java.util.Map;
 
 import static com.broadcom.nrdphelper.Constants.DEBUG;
 import static com.broadcom.nrdphelper.Constants.TAG_BCM_NRDPHELPER;
 import static com.broadcom.nrdphelper.Constants.TAG_WITH_CLASS_NAME;
+
+import com.broadcom.nrdphelper.AudioCapability;
+import com.broadcom.nrdphelper.PlatformAudioCapabilities;
+import com.broadcom.nrdphelper.PlatformAudioCapabilitiesRoot;
+
 
 public class HdmiAudioPlugService extends Service {
     private static final String TAG = TAG_WITH_CLASS_NAME ?
@@ -65,9 +72,32 @@ public class HdmiAudioPlugService extends Service {
 
     private final String propertyKey = "ro.nx.dolby.ms";
     private final String nrdpAudioSettingKey = "nrdp_audio_platform_capabilities";
-    private final String nrdpAudioSettingNonMS12Value = "{\"audiocaps\":{\"continuousAudio\":false,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":false,\"easing\":false},\"atmos\":{\"enabled\":false,\"mixing\":false,\"easing\":false}}}";
-    private final String nrdpAudioSettingMS12AtmosValue = "{\"audiocaps\":{\"continuousAudio\":true,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":true,\"easing\":true},\"atmos\":{\"enabled\":true,\"mixing\":true,\"easing\":true}}}";
-    private final String nrdpAudioSettingMS12Value = "{\"audiocaps\":{\"continuousAudio\":true,\"pcm\":{\"mixing\":true,\"easing\":true},\"ddplus\":{\"mixing\":true,\"easing\":true},\"atmos\":{\"enabled\":false,\"mixing\":true,\"easing\":true}}}";
+
+    public final void setAudioCapabilities(boolean ms12, boolean atmos) {
+       AudioCapability pcmCap = new AudioCapability();
+       pcmCap.setEasing(true);
+       pcmCap.setMixing(true);
+
+       AudioCapability ddplusCap = new AudioCapability();
+       ddplusCap.setEasing(ms12?true:false);
+       ddplusCap.setMixing(ms12?true:false);
+
+       AudioCapability atmosCap = new AudioCapability();
+       atmosCap.setEnabled((ms12 && atmos)?true:false);
+       atmosCap.setEasing(ms12?true:false);
+       atmosCap.setMixing(ms12?true:false);
+
+       PlatformAudioCapabilities platformAudioCapabilities = new PlatformAudioCapabilities();
+       platformAudioCapabilities.setContinuousAudio(ms12?true:false);
+       platformAudioCapabilities.setPcmAudioCapability(pcmCap);
+       platformAudioCapabilities.setDdplusAudioCapability(ddplusCap);
+       platformAudioCapabilities.setAtmosAudioCapability(atmosCap);
+
+       String jsonString = new Gson().toJson(new PlatformAudioCapabilitiesRoot(platformAudioCapabilities));
+
+       Settings.Global.putString(getContentResolver(), nrdpAudioSettingKey, jsonString);
+       Log.i(TAG, nrdpAudioSettingKey + " set to " + jsonString);
+    }
 
     @Override
     public void onCreate() {
@@ -77,8 +107,7 @@ public class HdmiAudioPlugService extends Service {
 
         if (propString.compareTo("12") != 0) {
             // Set to non-MS12
-            Settings.Global.putString(this.getContentResolver(), nrdpAudioSettingKey, nrdpAudioSettingNonMS12Value);
-            Log.i(TAG, nrdpAudioSettingKey + " set to " + nrdpAudioSettingNonMS12Value);
+            setAudioCapabilities(false, false);
             stopSelf();
             return;
         }
@@ -94,21 +123,20 @@ public class HdmiAudioPlugService extends Service {
 
                 if (intent.getIntExtra(AudioManager.EXTRA_AUDIO_PLUG_STATE, 0) != 0) {
                     int formats[] = intent.getIntArrayExtra(AudioManager.EXTRA_ENCODINGS);
-                    String settingValue;
+                    boolean atmos;
 
                     // Assume no ATMOS as default
-                    settingValue = nrdpAudioSettingMS12Value;
+                    atmos = false;
                     if (formats != null) {
                         for (int i = 0; i < formats.length; i++) {
                             if (formats[i] == AudioFormat.ENCODING_E_AC3_JOC) {
                                 // ATMOS supported
-                                settingValue = nrdpAudioSettingMS12AtmosValue;
+                                atmos = true;
                                 break;
                             }
                         }
                     }
-                    Settings.Global.putString(context.getContentResolver(), nrdpAudioSettingKey, settingValue);
-                    Log.i(TAG, nrdpAudioSettingKey + " set to " + settingValue);
+                    setAudioCapabilities(true, atmos);
                 }
             }
         }, new IntentFilter(AudioManager.ACTION_HDMI_AUDIO_PLUG));

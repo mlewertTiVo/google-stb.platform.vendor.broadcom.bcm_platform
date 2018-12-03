@@ -24,4 +24,7 @@ LOCAL_CERTIFICATE := media
 LOCAL_STATIC_ANDROID_LIBRARIES := \
     android-support-annotations
 
+LOCAL_STATIC_JAVA_LIBRARIES := \
+    gson-prebuilt-jar
+
 include $(BUILD_PACKAGE)
