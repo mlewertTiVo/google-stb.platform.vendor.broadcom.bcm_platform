@@ -255,7 +255,8 @@ static int bout_set_parameters(struct audio_stream *stream,
     // are actually ones that we care.
     parms = str_parms_create_str(kvpairs);
     if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE) ||
-        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC) ||
+        str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK)) {
         pthread_mutex_lock(&bout->lock);
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
@@ -287,6 +288,21 @@ static int bout_set_parameters(struct audio_stream *stream,
                           __FUNCTION__, hw_sync_id);
                     ret = -EINVAL;
                 }
+            }
+        }
+
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK) && (bout->bdev->dolby_ms == 12)) {
+            int lock = 0;
+            NxClient_AudioProcessingSettings audioProcessingSettings;
+
+            ret = str_parms_get_int(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK, &lock);
+
+            NxClient_GetAudioProcessingSettings(&audioProcessingSettings);
+            if ((audioProcessingSettings.dolby.ddre.fixedAtmosOutput && !lock) ||
+                (!audioProcessingSettings.dolby.ddre.fixedAtmosOutput && lock)) {
+                audioProcessingSettings.dolby.ddre.fixedAtmosOutput = lock ? true : false;
+                ALOGI("%s: %s Dolby ATMOS", __FUNCTION__, lock ? "Locking" : "Unlocking");
+                NxClient_SetAudioProcessingSettings(&audioProcessingSettings);
             }
         }
 
