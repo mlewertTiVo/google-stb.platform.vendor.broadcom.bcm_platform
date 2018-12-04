@@ -6,7 +6,9 @@ on post-fs-data
 on post-fs
     wait_for_prop dyn.nx.state memcfg
     insmod /vendor/lib/modules/wlplat.ko
-    insmod /vendor/lib/modules/wl.ko
+    insmod /vendor/lib/modules/wl.ko \
+       nvram_path=/dev/hwcfg/nvm.txt \
+       board_nvram_path=/vendor/broadcom/nvrams/nvram.txt
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
 
