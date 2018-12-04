@@ -412,6 +412,48 @@ static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
     NEXUS_AudioDecoderTrickState trickState;
     NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
 
+    ALOGV("%s", __FUNCTION__);
+    if ((bout->bdev->dolby_ms == 12) && (bout->nexus.tunnel.soft_muting >= 0)){
+        NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
+        NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+        NEXUS_AudioProcessorStatus processorStatus;
+        NEXUS_Error rc;
+        int soft_muting = bout->nexus.tunnel.soft_muting;
+        int sleep_after_mute = bout->nexus.tunnel.sleep_after_mute;
+
+        ALOGV_FIFO_INFO(audio_decoder, bout->nexus.tunnel.playpump);
+
+        NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, 0);
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 0;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = soft_muting;
+        NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &audioSettings);
+
+        rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(audio_decoder,
+                 NEXUS_SimpleAudioDecoderSelector_ePrimary,
+                 NEXUS_AudioPostProcessing_eFade, &processorStatus);
+        for (int i = ((soft_muting / 10) + 1); i > 0; i--) {
+            if (rc)
+                break;
+            if (processorStatus.status.fade.level == 0)
+                break;
+
+            ALOGVV("%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
+                       (unsigned long)processorStatus.status.fade.active,
+                       (unsigned long)processorStatus.status.fade.remaining,
+                       (int)processorStatus.status.fade.level);
+            usleep(10 * 1000);
+
+            rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(audio_decoder,
+                     NEXUS_SimpleAudioDecoderSelector_ePrimary,
+                     NEXUS_AudioPostProcessing_eFade, &processorStatus);
+        }
+        if (sleep_after_mute)
+            usleep(sleep_after_mute * 1000);
+        ALOGV("%s fade level %d%%", __FUNCTION__, processorStatus.status.fade.level);
+    }
+
     trickState.rate = 0;
     res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
     if (res != NEXUS_SUCCESS) {
@@ -427,6 +469,9 @@ static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
        NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
        return false;
     }
+
+    ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
+
     return true;
 }
 
@@ -434,6 +479,19 @@ static bool nexus_tunnel_bout_resume_pcm(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
     NEXUS_AudioDecoderTrickState trickState;
+
+    ALOGV("%s, %p", __FUNCTION__, bout);
+    if ((bout->bdev->dolby_ms == 12) && (bout->nexus.tunnel.soft_muting >= 0)) {
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+
+        NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
+            bout->nexus.tunnel.fadeLevel;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0; //ms
+        NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &audioSettings);
+        ALOGV("%s unmuted", __FUNCTION__);
+    }
 
     NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
     if (trickState.rate == 0) {
@@ -461,6 +519,19 @@ static bool nexus_tunnel_bout_resume_comp(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
     NEXUS_AudioDecoderTrickState trickState;
+
+    ALOGV("%s, %p", __FUNCTION__, bout);
+    if ((bout->bdev->dolby_ms == 12) && (bout->nexus.tunnel.soft_muting >= 0)) {
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+
+        NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
+            bout->nexus.tunnel.fadeLevel;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0; //ms
+        NEXUS_SimpleAudioDecoder_SetSettings(bout->nexus.tunnel.audio_decoder, &audioSettings);
+        ALOGV("%s unmuted", __FUNCTION__);
+    }
 
     ALOG_ASSERT(!bout->nexus.tunnel.pcm_format);
     int32_t fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
@@ -648,6 +719,21 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
+    {
+        NEXUS_AudioDecoderStatus decoderStatus;
+        NEXUS_PlaypumpStatus playpumpStatus;
+
+        NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decoderStatus);
+        NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
+
+        ALOGV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
+            decoderStatus.codecStatus.ac3.bitrate,
+            decoderStatus.fifoDepth,
+            decoderStatus.fifoSize,
+            playpumpStatus.fifoDepth,
+            playpumpStatus.fifoSize);
+    }
+
     if (audio_decoder) {
         NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
 
@@ -751,31 +837,33 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
-    // Audio underruns can happen when the app is not feeding the audio frames fast enough
-    // especially at the beginning of the playback or after seeking. We debounce the pause/resume
-    // operations in such underruns by deferring the pause for 0.3 seconds.
-    if (!bout->nexus.tunnel.debounce) {
-       if (pthread_create(&bout->nexus.tunnel.debounce_thread, NULL, nexus_tunnel_bout_debounce_task, bout) != 0) {
-          ALOGE("%s: Error starting debouncing", __FUNCTION__);
-       }
-       else {
-          pthread_setname_np(bout->nexus.tunnel.debounce_thread, "baudio_debounce");
-          bout->nexus.tunnel.debounce = true;
-          bout->nexus.tunnel.debounce_pausing = true;
+    if (!bout->nexus.tunnel.no_debounce) {
+        // Audio underruns can happen when the app is not feeding the audio frames fast enough
+        // especially at the beginning of the playback or after seeking. We debounce the pause/resume
+        // operations in such underruns by deferring the pause for 0.3 seconds.
+        if (!bout->nexus.tunnel.debounce) {
+           if (pthread_create(&bout->nexus.tunnel.debounce_thread, NULL, nexus_tunnel_bout_debounce_task, bout) != 0) {
+              ALOGE("%s: Error starting debouncing", __FUNCTION__);
+           }
+           else {
+              pthread_setname_np(bout->nexus.tunnel.debounce_thread, "baudio_debounce");
+              bout->nexus.tunnel.debounce = true;
+              bout->nexus.tunnel.debounce_pausing = true;
 
-          return 0;
-       }
-    }
+              return 0;
+           }
+        }
 
-    // No-op when debouncing
-    if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
-       ALOGV("%s: No-op", __FUNCTION__);
-       if (!bout->nexus.tunnel.debounce_pausing) {
-          bout->nexus.tunnel.debounce_more = true;
-          bout->nexus.tunnel.last_pause_time = systemTime(SYSTEM_TIME_MONOTONIC);
-       }
-       bout->nexus.tunnel.debounce_pausing = true;
-       return 0;
+        // No-op when debouncing
+        if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
+           ALOGV("%s: No-op", __FUNCTION__);
+           if (!bout->nexus.tunnel.debounce_pausing) {
+              bout->nexus.tunnel.debounce_more = true;
+              bout->nexus.tunnel.last_pause_time = systemTime(SYSTEM_TIME_MONOTONIC);
+           }
+           bout->nexus.tunnel.debounce_pausing = true;
+           return 0;
+        }
     }
 
     if (bout->nexus.tunnel.pcm_format) {
@@ -1571,6 +1659,10 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
     av_header.reset();
     current_buff.reset();
+
+    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE, true);
+    bout->nexus.tunnel.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
+    bout->nexus.tunnel.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
 
     if (property_get_int32(BCM_RO_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
         time_t rawtime;

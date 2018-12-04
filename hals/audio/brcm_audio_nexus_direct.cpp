@@ -58,7 +58,7 @@ using namespace android;
 #define BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY    (128)
 #define BRCM_AUDIO_DIRECT_DEFAULT_LATENCY       (10)    // ms
 
-#define BITRATE_TO_BYTES_PER_125_MS(bitrate)    (bitrate * 1024/8/8)
+#define BITRATE_TO_BYTES_PER_250_MS(bitrate)    (bitrate * 1024/8/4)
 
 typedef struct {
     const char *key;
@@ -357,6 +357,11 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p", __FUNCTION__, bout);
 
+    // Do not start while paused
+    if (bout->nexus.direct.playpump_mode && bout->nexus.direct.paused ) {
+        ALOGV("%s: paused", __FUNCTION__);
+        return -EBUSY;
+    }
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_SimpleAudioDecoderSettings settings;
 
@@ -379,7 +384,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
 
-        if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
+        if (bout->bdev->dolby_ms == 12) {
             start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
         }
 
@@ -485,6 +490,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
             bout->nexus.direct.priming = false;
             ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
         }
+        bout->nexus.direct.paused = false;
     }
 
     bout->nexus.direct.lastCount = 0;
@@ -500,6 +506,8 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+
+    ALOGV_FIFO_INFO(simple_decoder, playpump);
 
     if (simple_decoder) {
         NEXUS_SimpleAudioDecoder_Stop(simple_decoder);
@@ -542,6 +550,44 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
     }
 
     ALOGV("%s, %p", __FUNCTION__, bout);
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12) && (bout->nexus.direct.soft_muting >= 0)) {
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+        NEXUS_AudioProcessorStatus processorStatus;
+        NEXUS_Error rc;
+        int soft_muting = bout->nexus.direct.soft_muting;
+        int sleep_after_mute = bout->nexus.direct.sleep_after_mute;
+
+        ALOGV_FIFO_INFO(simple_decoder, playpump);
+
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, 0);
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 0;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = soft_muting;
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+
+        rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(simple_decoder,
+                 NEXUS_SimpleAudioDecoderSelector_ePrimary,
+                 NEXUS_AudioPostProcessing_eFade, &processorStatus);
+        for (int i = ((soft_muting / 10) + 1); i > 0; i--) {
+            if (rc)
+                break;
+            if (processorStatus.status.fade.level == 0)
+                break;
+
+            ALOGVV("%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
+                       (unsigned long)processorStatus.status.fade.active,
+                       (unsigned long)processorStatus.status.fade.remaining,
+                       (int)processorStatus.status.fade.level);
+            usleep(10 * 1000);
+
+            rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(simple_decoder,
+                     NEXUS_SimpleAudioDecoderSelector_ePrimary,
+                     NEXUS_AudioPostProcessing_eFade, &processorStatus);
+        }
+        if (sleep_after_mute)
+            usleep(sleep_after_mute * 1000);
+        ALOGV("%s fade level %d%%", __FUNCTION__, processorStatus.status.fade.level);
+    }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
         if (!bout->nexus.direct.priming) {
@@ -558,11 +604,13 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
                 if (res != NEXUS_SUCCESS) {
                     ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
                 }
+                ALOGV_FIFO_INFO(simple_decoder, playpump);
             }
         } else {
             ALOGV("%s, %p stop priming", __FUNCTION__, bout);
             bout->nexus.direct.priming = false;
         }
+        bout->nexus.direct.paused = true;
     }
 
     return 0;
@@ -580,8 +628,20 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
     }
 
     ALOGV("%s, %p", __FUNCTION__, bout);
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12) && (bout->nexus.direct.soft_muting >= 0)) {
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
+            bout->nexus.direct.fadeLevel;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0; //ms
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+        ALOGV("%s unmuted", __FUNCTION__);
+    }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
+        bout->nexus.direct.paused = false;
         /* Prime again only if not yet resumed */
         if (!bout->nexus.direct.priming) {
             NEXUS_AudioDecoderStatus decoderStatus;
@@ -605,7 +665,7 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
             if (trickState.rate == 0) {
                 if ( bout->nexus.direct.bitrate &&
                      (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                         BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate) ) {
+                         BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate) ) {
                     ALOGV("%s: at %d, Already have enough data.  No need to prime.", __FUNCTION__, __LINE__);
                     trickState.rate = NEXUS_NORMAL_DECODE_RATE;
                     res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
@@ -662,6 +722,12 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
     if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
         ALOGE("%s: not ready to output audio samples", __FUNCTION__);
         return -ENOSYS;
+    }
+
+    // Do not consume any data while paused
+    if (bout->nexus.direct.playpump_mode && bout->nexus.direct.paused ) {
+        ALOGV("%s: paused", __FUNCTION__);
+        return -EBUSY;
     }
 
     // For playpump mode, parse the frame header to determine the bitrate
@@ -808,7 +874,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         trickState.rate);
 
                     if ((decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                            BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
+                            BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                         NEXUS_Error res;
 
                         ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
@@ -885,10 +951,10 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 /* If not priming nor paused, do not buffer too much data */
                 if (bout->nexus.direct.bitrate &&
                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                         BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
+                         BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                     ALOGVV("%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
                           (decoderStatus.fifoDepth + playpumpStatus.fifoDepth),
-                           BITRATE_TO_BYTES_PER_125_MS(decoderStatus.codecStatus.ac3.bitrate));
+                           BITRATE_TO_BYTES_PER_250_MS(decoderStatus.codecStatus.ac3.bitrate));
                     pthread_mutex_unlock(&bout->lock);
                     ret = BKNI_WaitForEvent(event, 50);
                     pthread_mutex_lock(&bout->lock);
@@ -903,7 +969,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 /* If priming, finish priming if enough data */
                 if ( bout->nexus.direct.bitrate &&
                      (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                         BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate) ) {
+                         BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate) ) {
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
@@ -981,7 +1047,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     trickState.rate);
 
                 if ((decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                        BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
+                        BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
@@ -1317,6 +1383,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
+
+    bout->nexus.direct.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
+    bout->nexus.direct.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
 
     // Restore auto mode for MS11
     if ((bout->bdev->dolby_ms == 11) &&
