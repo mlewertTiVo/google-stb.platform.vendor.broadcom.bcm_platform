@@ -1764,6 +1764,9 @@ int main(void)
 
     ALOGI("trigger nexus waiters now.");
     property_set(BCM_DYN_NX_STATE, "loaded");
+    if (property_get_bool(BCM_RO_NX_LDVBON_ENABLED, 0)) {
+       property_set(BCM_VDR_NX_DVB_TRIGGER, "init");
+    }
 
     ALOGI("init done.");
     while (1) {
