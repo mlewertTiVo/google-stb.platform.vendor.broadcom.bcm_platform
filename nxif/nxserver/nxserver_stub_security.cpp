@@ -41,11 +41,12 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <cutils/properties.h>
 #include "nxserver.h"
 #include "nxclient.h"
 
-void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
+void alloc_secdma(NX_SERVER_T *srv)
 {
-   (void)hMemoryBlock;
-   (void)server;
+   srv->sdmablk = NULL;
+   property_set(BCM_VDR_NX_WIFI_TRIGGER, "init");
 }

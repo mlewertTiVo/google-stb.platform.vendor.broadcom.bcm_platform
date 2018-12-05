@@ -397,6 +397,28 @@ Return<NexusStatus> NexusImpl::releaseWL() {
    return NexusStatus::SUCCESS;
 }
 
+Return<NexusStatus> NexusImpl::forcedPCM(uint8_t e) {
+   NEXUS_Error rc;
+   NxClient_AudioSettings audioSettings;
+
+   NxClient_GetAudioSettings(&audioSettings);
+   if (e) {
+      ALOGI("[audio] Force PCM output");
+      audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+      audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+   } else {
+      ALOGI("[audio] Auto output");
+      audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_eAuto;
+      audioSettings.spdif.outputMode = NxClient_AudioOutputMode_eAuto;
+   }
+   rc = NxClient_SetAudioSettings(&audioSettings);
+   if (rc) {
+      return NexusStatus::BAD_VALUE;
+   }
+
+   return NexusStatus::SUCCESS;
+}
+
 void NexusImpl::start_middleware() {
    init_hdmi_out();
    init_ir();

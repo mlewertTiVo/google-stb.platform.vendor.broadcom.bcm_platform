@@ -47,7 +47,7 @@
 #include "cutils/properties.h"
 #include <nxwrap.h>
 #include "nexus_platform.h"
-#include <bcm/hardware/nexus/1.0/INexus.h>
+#include <bcm/hardware/nexus/1.1/INexus.h>
 #if defined(SRAI_PRESENT)
 #include "sage_srai.h"
 #endif
@@ -55,6 +55,7 @@
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::nexus::V1_0;
+using namespace bcm::hardware::nexus::V1_1;
 
 Mutex NxWrap::mLck("NxWrap-Lock");
 static struct pmlib_state_t gPm;
@@ -75,11 +76,11 @@ public:
 };
 static NxWrapDsp *gNxiDsp = NULL;
 
-static const sp<INexus> nxi(void) {
-   sp<INexus> inx = NULL;
+static const sp<::bcm::hardware::nexus::V1_1::INexus> nxi(void) {
+   sp<::bcm::hardware::nexus::V1_1::INexus> inx = NULL;
    Mutex::Autolock _l(NxWrap::mLck);
 
-   inx = INexus::getService();
+   inx = ::bcm::hardware::nexus::V1_1::INexus::getService();
    if (inx != NULL) {
       return inx;
    }
@@ -126,6 +127,12 @@ int NxWrap::join() {
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
 
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join(): client already registered, ignoring.");
+      }
+   }
+
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
    joinSettings.ignoreStandbyRequest = true;
@@ -145,6 +152,12 @@ int NxWrap::join_v() {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_v(): client already registered, ignoring.");
+      }
+   }
 
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
@@ -169,6 +182,12 @@ int NxWrap::join_once() {
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
 
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_once(): client already registered, ignoring.");
+      }
+   }
+
    Mutex::Autolock autoLock(mLck);
    NxClient_GetDefaultJoinSettings(&joinSettings);
    joinSettings.ignoreStandbyRequest = true;
@@ -181,6 +200,12 @@ int NxWrap::join(StdbyMonCb cb, void *ctx) {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join(stbdy): client already registered, ignoring.");
+      }
+   }
 
    if (cb == NULL) {
       return join();
@@ -211,6 +236,12 @@ int NxWrap::join_v(StdbyMonCb cb, void *ctx) {
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_JoinSettings joinSettings;
    NEXUS_PlatformStatus status;
+
+   if (nxi() != NULL) {
+      if (client()) {
+         ALOGI("join_v(stdby): client already registered, ignoring.");
+      }
+   }
 
    if (cb == NULL) {
       return join();

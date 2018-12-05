@@ -2566,7 +2566,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             // Much of this structure is not relevant.  Zero everything except for allowed picture types, profile, level.
-            memset(pMpeg4, 0, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+            memset(pMpeg4, 0, sizeof(OMX_VIDEO_PARAM_MPEG4TYPE));
             BOMX_STRUCT_INIT(pMpeg4);
             pMpeg4->nPortIndex = m_videoPortBase;
             pMpeg4->eProfile = OMX_VIDEO_MPEG4ProfileSimple;
@@ -3727,15 +3727,12 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                    }
                 }
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
-                if (m_tunnelMode)
+                if (m_tunnelMode && m_tunnelStcChannel)
                 {
-                    if (!property_get_int32(BCM_RO_AUDIO_OUTPUT_HW_SYNC_FAKE, 0))
+                    errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
+                    if ( errCode )
                     {
-                        errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
-                        if ( errCode )
-                        {
-                            return BOMX_BERR_TRACE(errCode);
-                        }
+                        return BOMX_BERR_TRACE(errCode);
                     }
                 }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
@@ -6832,6 +6829,12 @@ void BOMX_VideoDecoder::RemoveAllVdecOmxAssociation()
         return;
     }
 
+    if (m_pVideoPorts[1]->GetBufferHwTexUsed() == BOMX_PortBufferHwTexUsage_eConfirmed)
+    {
+        // Cannot remove association as it would break the texturing model.
+        return;
+    }
+
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
           NULL != pBuffer; pBuffer = BLST_Q_NEXT(pBuffer, node) )
     {
@@ -6981,7 +6984,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if (!m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 m_stcSyncValue = stcSync;
                 ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);

@@ -18,10 +18,10 @@ ifneq ($(ANDROID_SUPPORTS_WIDEVINE), n)
 
 ifeq ($(SAGE_SUPPORT), y)
 #---------------
-# liboemcrypto.so for Modular DRM
+# libcasoemcrypto.so for Widevine CAS
 #---------------
 include $(CLEAR_VARS)
-LOCAL_MODULE := liboemcrypto
+LOCAL_MODULE := libcasoemcrypto
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 LOCAL_MODULE_TAGS := optional
 
@@ -65,7 +65,7 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
-    broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
+    broadcom/bcm_platform/sec-priv/brcm_cas_oemcrypto/src/oemcrypto_cas_TL.cpp\
     widevine/libwvdrmengine/cdm/core/src/string_conversions.cpp\
     widevine/libwvdrmengine/cdm/core/src/properties.cpp \
     widevine/libwvdrmengine/cdm/src/log.cpp \
@@ -78,7 +78,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/system/core/libcutils/include \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
-    $(TOP)/vendor/broadcom/bcm_platform/sec-priv/brcm_oemcrypto_L1/include \
+    $(TOP)/vendor/broadcom/bcm_platform/sec-priv/brcm_cas_oemcrypto/include \
     $(TOP)/vendor/widevine/libwvdrmengine/cdm/core/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
@@ -91,11 +91,15 @@ LOCAL_C_INCLUDES := \
     $(NXCLIENT_INCLUDES)
 
 LOCAL_C_INCLUDES += \
+    ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
     ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+ifeq ($(SAGE_VERSION),2x)
+LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
+endif
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_MULTILIB := 32
@@ -104,8 +108,7 @@ LOCAL_MULTILIB := 32
 LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 LOCAL_SHARED_LIBRARIES += libnxwrap
-
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.1
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
 
 include $(BUILD_SHARED_LIBRARY)
 endif

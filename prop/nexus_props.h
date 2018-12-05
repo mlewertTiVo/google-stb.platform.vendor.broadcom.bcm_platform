@@ -159,4 +159,6 @@
 /* needs prefixing (persist.|ro.|dyn.). */
 #define BCM_XX_NX_HD_OUT_FMT                          "nx.vidout.force"
 
+#define BCM_VDR_NX_WIFI_TRIGGER                       "vendor.nx.wifi.trigger"
+
 #endif /* VENDOR_BCM_PROPS__NEXUS */

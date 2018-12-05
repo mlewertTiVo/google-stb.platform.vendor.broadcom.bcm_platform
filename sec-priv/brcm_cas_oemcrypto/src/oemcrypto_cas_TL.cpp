@@ -37,7 +37,7 @@
 
  ******************************************************************************/
 
-#define LOG_TAG "oemcrypto_brcm_tl"
+#define LOG_TAG "oemcrypto_cas_tl"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -46,7 +46,7 @@
 
 #include "wv_cdm_constants.h"
 #include "drm_wvoemcrypto_tl.h"
-#include "OEMCryptoCENC.h"
+#include "OEMCryptoCAS.h"
 
 #include <nxwrap.h>
 
@@ -118,7 +118,6 @@ OEMCryptoResult OEMCrypto_Initialize(void)
     if (oemCryptoNxWrap) {
        if (oemCryptoNxWrap->client() == 0) {
           oemCryptoNxWrap->join();
-          oemCryptoNxWrap->sraiClient();
           oemCryptoNxWrapJoined = 1;
        }
     } else {
@@ -128,6 +127,7 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
     WvOemCryptoParamSettings.api_version = OEMCRYPTO_API_VERSION;
+    WvOemCryptoParamSettings.config_flags = DRM_WVOEMCRYPTO_INIT_OPTION_CAS;
     DRM_WVOemCrypto_SetParamSettings(&WvOemCryptoParamSettings);
 
     if ((DRM_WVOemCrypto_Initialize(&WvOemCryptoParamSettings, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
@@ -1231,7 +1231,7 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
                                       const uint8_t *iv,
                                       size_t block_offset,
                                       OEMCrypto_DestBufferDesc* out_buffer,
-                                      const OEMCrypto_CENCEncryptPatternDesc* pattern,
+                                      const OEMCrypto_EncryptPatternDesc* pattern,
                                       uint8_t subsample_flags)
 {
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
@@ -1634,7 +1634,7 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
                                      const uint8_t *iv,
                                      size_t block_offset,
                                      OEMCrypto_DestBufferDesc* out_buffer,
-                                     const OEMCrypto_CENCEncryptPatternDesc* pattern,
+                                     const OEMCrypto_EncryptPatternDesc* pattern,
                                      uint8_t subsample_flags)
 {
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;

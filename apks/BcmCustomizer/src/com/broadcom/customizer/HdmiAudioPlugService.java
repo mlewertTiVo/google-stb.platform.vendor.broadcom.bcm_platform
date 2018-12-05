@@ -41,38 +41,93 @@
  ******************************************************************************/
 package com.broadcom.customizer;
 
+import android.app.Service;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.util.Log;
+
+import bcm.hardware.nexus.V1_1.INexus;
+
+import java.util.Map;
 
 import static com.broadcom.customizer.Constants.DEBUG;
 import static com.broadcom.customizer.Constants.TAG_BCM_CUSTOMIZER;
 import static com.broadcom.customizer.Constants.TAG_WITH_CLASS_NAME;
 
-/**
- * Boot completed receiver for BcmCustomizer app.
- *
- * It's used to notify the {@link SplashScreenManager} that the event has
- * already happened.
- */
-public class BootCompletedReceiver extends BroadcastReceiver {
+public class HdmiAudioPlugService extends Service {
     private static final String TAG = TAG_WITH_CLASS_NAME ?
-            "BootCompletedReceiver" : TAG_BCM_CUSTOMIZER;
-
-    private static final String CUSTOMIZER_PACKAGE = "com.broadcom.customizer";
-    private static final String CUSTOMIZER_HDMI_AUDIO_PLUG_SERVICE = "com.broadcom.customizer.HdmiAudioPlugService";
-
-    private SplashScreenManager mSplashScreenManager = SplashScreenManager.getInstance();
+            "HdmiAudioPlugService" : TAG_BCM_CUSTOMIZER;
 
     @Override
-    public void onReceive(Context context, Intent intent) {
-        if (DEBUG) Log.d(TAG, "boot completed " + intent);
-        mSplashScreenManager.bootCompleted();
+    public void onCreate() {
+        super.onCreate();
 
-        Intent localIntent = new Intent();
-        localIntent.setComponent(new ComponentName(CUSTOMIZER_PACKAGE, CUSTOMIZER_HDMI_AUDIO_PLUG_SERVICE));
-        context.startService(localIntent);
+        this.registerReceiver(new BroadcastReceiver() {
+            private INexus NexusInterface;
+
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (DEBUG) Log.d(TAG, "plug received " + intent);
+
+                if (intent.getIntExtra(AudioManager.EXTRA_AUDIO_PLUG_STATE, 0) != 0) {
+                    final byte PCM_output = 1;
+                    final byte auto_output = 0;
+                    int formats[] = intent.getIntArrayExtra(AudioManager.EXTRA_ENCODINGS);
+                    boolean PCMOnly = false;
+
+                    if (formats != null) {
+                        PCMOnly = true;
+                        for (int i = 0; i < formats.length; i++) {
+                            if ((formats[i] == AudioFormat.ENCODING_AC3) ||
+                                (formats[i] == AudioFormat.ENCODING_E_AC3) ||
+                                (formats[i] == AudioFormat.ENCODING_DTS) ||
+                                (formats[i] == AudioFormat.ENCODING_DTS_HD)) {
+                                // Not PCM only
+                                PCMOnly = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (DEBUG) Log.d(TAG, "PCM only: " + PCMOnly);
+
+                    // Get the service handle from the HAL
+                    try {
+                        NexusInterface = INexus.getService();
+                    } catch (RemoteException e) {
+                        Log.e(TAG, "RemoteException trying to reach INexus", e);
+                        return;
+                    }
+
+                    if (NexusInterface == null) {
+                        Log.e(TAG, "Nexus service is null");
+                        throw new IllegalArgumentException("Nexus service is null");
+                    }
+                    try {
+                        if (PCMOnly) {
+                            Log.i(TAG, "Force PCM output");
+                            NexusInterface.forcedPCM(PCM_output);
+                        } else {
+                            Log.i(TAG, "Auto audio output");
+                            NexusInterface.forcedPCM(auto_output);
+                        }
+                    } catch (RemoteException e) {
+                        Log.e(TAG, "RemoteException trying to call INexus", e);
+                    }
+                }
+            }
+        }, new IntentFilter(AudioManager.ACTION_HDMI_AUDIO_PLUG));
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
     }
 }

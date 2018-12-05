@@ -476,6 +476,7 @@ static int brcm_gk_open(
       return -EINVAL;
    }
    gk_hdl->nxwrap->join_v(gk_stdby, (void *)gk_hdl);
+   gk_hdl->nxwrap->sraiClient();
    // busy loop wait for keymaster readiness, the gatekeeper is linked
    // to the keymaster through the TA service effectively.
    property_get(BCM_DYN_KM_STATE, nexus, "");

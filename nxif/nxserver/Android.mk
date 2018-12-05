@@ -25,6 +25,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libnxclient \
                           libpmlibservice
 LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0 \
+                          bcm.hardware.nexus@1.1 \
                           libhidlbase \
                           libhidltransport \
                           libhwbinder \
@@ -42,8 +43,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 LOCAL_C_INCLUDES += $(TOP)/system/core/base/include
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_HEADER_LIBRARIES := liblog_headers
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)

@@ -21,7 +21,6 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
@@ -36,7 +35,7 @@ LOCAL_SRC_FILES += bp3.cpp
 
 LOCAL_SHARED_LIBRARIES := \
     bcm.hardware.bp3@1.0 \
-    bcm.hardware.nexus@1.0 \
+    bcm.hardware.nexus@1.1 \
     libhidlbase \
     libhidltransport \
     libbase \

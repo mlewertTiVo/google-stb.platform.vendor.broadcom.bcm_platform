@@ -7,6 +7,9 @@ LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/priv-app
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
+LOCAL_JAVA_LIBRARIES := android.hidl.base-V1.0-java
+LOCAL_STATIC_JAVA_LIBRARIES := bcm.hardware.nexus-V1.1-java
+
 LOCAL_PACKAGE_NAME := BcmCustomizer
 
 ifdef PRODUCT_SHIPPING_API_LEVEL

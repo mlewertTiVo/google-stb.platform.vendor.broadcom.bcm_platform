@@ -104,8 +104,6 @@ extern "C" {
 #define DUMMY_AUDIO_OUT 0
 #define DUMMY_AUDIO_IN  0
 
-#define DUMMY_HW_SYNC   0xCAFEBABE
-
 #define NEXUS_DEFAULT_MS_MIXER_LATENCY 128
 
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */

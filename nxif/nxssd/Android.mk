@@ -9,9 +9,7 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/prop
-LOCAL_C_INCLUDES += \
-  ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
-  ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+LOCAL_C_INCLUDES += ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += system/core/base/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_HEADER_LIBRARIES := liblog_headers
@@ -31,7 +29,7 @@ LOCAL_SHARED_LIBRARIES := \
    liblog \
    libnxwrap
 LOCAL_SHARED_LIBRARIES += \
-   bcm.hardware.nexus@1.0
+   bcm.hardware.nexus@1.1
 
 LOCAL_SRC_FILES := nxssd.cpp
 LOCAL_INIT_RC := nxssd.rc

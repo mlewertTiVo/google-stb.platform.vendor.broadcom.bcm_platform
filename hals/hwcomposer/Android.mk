@@ -149,7 +149,7 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libnxwrap
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.1
 LOCAL_SHARED_LIBRARIES += bcm.hardware.dspsvcext@1.0
 LOCAL_SHARED_LIBRARIES += libhidlbase
 LOCAL_SHARED_LIBRARIES += libhidltransport
@@ -163,8 +163,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/dspsvcext/1.0/default
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include
