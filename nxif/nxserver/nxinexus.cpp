@@ -783,7 +783,12 @@ bool NexusImpl::getLimitedColorSettings(unsigned &limitedColorDepth,
    // reduces the hdmi TMDS clock rate, giving more stability to the hdmi
    // connection on some TV's.
    hdmiOutput = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+   if (!hdmiOutput) {
+      ALOGW("%s: Unable to open HDMI output handle", __FUNCTION__);
+      return false;
+   }
    errCode = NEXUS_HdmiOutput_GetEdidData(hdmiOutput, &edid);
+   NEXUS_HdmiOutput_Close(hdmiOutput);
    if (errCode) {
        ALOGW("%s: Unable to read edid, err:%d", __FUNCTION__, errCode);
        return false;
