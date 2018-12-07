@@ -1815,6 +1815,7 @@ NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
     // create stc channels
     NEXUS_SimpleStcChannel_GetDefaultSettings(&stc_channel_settings);
     stc_channel_settings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
+    stc_channel_settings.sync = NEXUS_SimpleStcChannelSyncMode_eAudioAdjustmentConcealment;
     channel_st_ptr->stc_channel = NEXUS_SimpleStcChannel_Create(&stc_channel_settings);
     NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel, true);
 
