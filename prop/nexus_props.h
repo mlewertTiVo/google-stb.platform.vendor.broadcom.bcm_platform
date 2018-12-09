@@ -97,6 +97,7 @@
 #define BCM_RO_NX_LOG_UNKNOWN_AS_INFO                 "ro.nx.logger.u2i"
 #define BCM_RO_NX_LOG_LOG_AS_DEBUG                    "ro.nx.logger.l2d"
 #define BCM_RO_NX_LOG_PRIORITY                        "ro.nx.logger.pri"
+#define BCM_RO_NX_LDVBON_ENABLED                      "ro.nx.ldvbon_enabled"
 
 #define BCM_DYN_NX_STATE                              "dyn.nx.state"
 #define BCM_SYS_RECOVERY_NX_STATE                     "sys.recov.nx.state"
@@ -160,5 +161,6 @@
 #define BCM_XX_NX_HD_OUT_FMT                          "nx.vidout.force"
 
 #define BCM_VDR_NX_WIFI_TRIGGER                       "vendor.nx.wifi.trigger"
+#define BCM_VDR_NX_DVB_TRIGGER                        "vendor.nx.ldvbon.trigger"
 
 #endif /* VENDOR_BCM_PROPS__NEXUS */

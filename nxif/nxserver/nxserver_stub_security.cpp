@@ -45,6 +45,8 @@
 #include "nxserver.h"
 #include "nxclient.h"
 
+#include "vendor_bcm_props.h"
+
 void alloc_secdma(NX_SERVER_T *srv)
 {
    srv->sdmablk = NULL;

@@ -41,48 +41,32 @@
  ******************************************************************************/
 package com.broadcom.nrdphelper;
 
-import android.content.BroadcastReceiver;
-import android.content.ComponentName;
-import android.content.Context;
-import android.content.Intent;
-import android.provider.Settings;
-import android.util.Log;
-
 import com.google.gson.Gson;
+import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
 
-import static com.broadcom.nrdphelper.Constants.DEBUG;
-import static com.broadcom.nrdphelper.Constants.TAG_BCM_NRDPHELPER;
-import static com.broadcom.nrdphelper.Constants.TAG_WITH_CLASS_NAME;
+public class AudioCapability {
+   @SerializedName("enabled")
+   @Expose
+   private Boolean enabled;
 
-import com.broadcom.nrdphelper.PlatformCapabilitiesRoot;
+   @SerializedName("mixing")
+   @Expose
+   private Boolean mixing;
 
-/**
- * Boot completed receiver for BcmNrdpHelper app.
- */
-public class BootCompletedReceiver extends BroadcastReceiver {
-    private static final String TAG = TAG_WITH_CLASS_NAME ?
-            "BootCompletedReceiver" : TAG_BCM_NRDPHELPER;
+   @SerializedName("easing")
+   @Expose
+   private Boolean easing;
 
-    private final String nrdpSettingKey = "nrdp_platform_capabilities";
+   public void setEnabled(Boolean enabled) {
+       this.enabled = enabled;
+   }
 
-    private static final String NRDPHELPER_PACKAGE = "com.broadcom.nrdphelper";
-    private static final String NRDPHELPER_HDMI_AUDIO_PLUG_SERVICE = "com.broadcom.nrdphelper.HdmiAudioPlugService";
+   public void setMixing(Boolean mixing) {
+       this.mixing = mixing;
+   }
 
-    public final void setCapabilities(Context context) {
-       String jsonString = new Gson().toJson(new PlatformCapabilitiesRoot(false, "always", "none", "disable"));
-
-       Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, jsonString);
-       Log.i(TAG, nrdpSettingKey + " set to " + jsonString);
-    }
-
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        if (DEBUG) Log.d(TAG, "boot completed " + intent);
-
-        setCapabilities(context);
-
-        Intent localIntent = new Intent();
-        localIntent.setComponent(new ComponentName(NRDPHELPER_PACKAGE, NRDPHELPER_HDMI_AUDIO_PLUG_SERVICE));
-        context.startService(localIntent);
-    }
+   public void setEasing(Boolean easing) {
+       this.easing = easing;
+   }
 }

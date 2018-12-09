@@ -529,7 +529,6 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     NxClient_ConnectSettings connectSettings;
     BKNI_EventHandle event;
     uint32_t audioPlaybackId;
-    int dolby_ms;
     int i, ret = 0;
 
     /* Check if sample rate is supported */
@@ -550,9 +549,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->framesPlayedTotal = 0;
-    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
     bout->latencyEstimate = (property_get_int32(BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY,
-                                                ((dolby_ms == 11) || (dolby_ms == 12)) ?
+                                                ((bout->bdev->dolby_ms == 11) || (bout->bdev->dolby_ms == 12)) ?
                                                     NEXUS_DEFAULT_MS_MIXER_LATENCY : 0)
                              * bout->config.sample_rate) / 1000;
     bout->latencyPad = bout->latencyEstimate;
@@ -565,7 +563,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    NEXUS_OUT_BUFFER_DURATION_MS);
 
     /* Force PCM mode for MS11 */
-    if (bout->dolbyMs11) {
+    if (bout->bdev->dolby_ms == 11) {
         NxClient_AudioSettings audioSettings;
 
         ALOGI("Force PCM output");

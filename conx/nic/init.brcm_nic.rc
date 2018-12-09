@@ -3,10 +3,11 @@ on post-fs-data
     mkdir /data/vendor/wifi/wpa 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
 
-on post-fs
-    wait_for_prop dyn.nx.state memcfg
+on property:vendor.nx.wifi.trigger=init
     insmod /vendor/lib/modules/wlplat.ko
-    insmod /vendor/lib/modules/wl.ko
+    insmod /vendor/lib/modules/wl.ko \
+       nvram_path=/dev/hwcfg/nvm.txt \
+       board_nvram_path=/vendor/broadcom/nvrams/nvram.txt
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
 

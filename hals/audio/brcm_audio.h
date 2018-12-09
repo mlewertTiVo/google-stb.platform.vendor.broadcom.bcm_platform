@@ -109,6 +109,9 @@ extern "C" {
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
 
+/* Special parameter for locking Dolby ATMOS output */
+#define AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK "hdmi_dolby_atmos_lock"
+
 #define NEXUS_PCM_FRAMES_PER_AC3_AUDIO_BLOCK 256
 #define NEXUS_PCM_FRAMES_PER_AC3_FRAME 1536     // Always 6 audio blocks per AC-3 frame
 #define NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE 32768  // 32768 covers the maximum frame size required to handle
@@ -148,6 +151,8 @@ struct brcm_device {
     audio_devices_t in_devices;
     bool mic_mute;
     bool master_mute;
+
+    int dolby_ms;
 
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
@@ -208,8 +213,6 @@ struct brcm_stream_out {
     bool started;
     bool suspended;
     bool tunneled;
-    bool dolbyMs11;
-    bool dolbyMs12;
     int standbyCallback;
     FILE *outDebugFile;
     uint64_t last_pres_frame;

@@ -217,7 +217,7 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
 {
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
 
-    if (!bout->dolbyMs12) {
+    if (bout->bdev->dolby_ms != 12) {
         ALOGV("%s: No dolby MS support, changing master volume", __FUNCTION__);
         brcm_audio_set_audio_volume(left, right);
 
@@ -411,6 +411,7 @@ static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
     NEXUS_Error res;
     NEXUS_AudioDecoderTrickState trickState;
     NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+
     trickState.rate = 0;
     res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
     if (res != NEXUS_SUCCESS) {
@@ -539,7 +540,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
     start_settings.primary.pidChannel = bout->nexus.tunnel.pid_channel;
 
-    if (bout->dolbyMs12) {
+    if (bout->bdev->dolby_ms == 12) {
         start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
 
         if ((start_settings.primary.codec == NEXUS_AudioCodec_eAc3) ||
@@ -1478,7 +1479,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioResourceId;
 
-    if (bout->dolbyMs12) {
+    if (bout->bdev->dolby_ms == 12) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
     }
 
@@ -1593,7 +1594,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
 
     // Restore auto mode for MS11
-    if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
+    if ((bout->bdev->dolby_ms == 11) && !bout->nexus.tunnel.pcm_format) {
         NxClient_AudioSettings audioSettings;
 
         ALOGI("Force auto output");
@@ -1606,7 +1607,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         }
     }
 
-    if (bout->dolbyMs12) {
+    if (bout->bdev->dolby_ms == 12) {
         NEXUS_SimpleAudioDecoderSettings settings;
         NEXUS_SimpleAudioDecoder_GetSettings(bout->nexus.tunnel.audio_decoder, &settings);
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
@@ -1643,7 +1644,7 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
     }
 
     // Force PCM mode for MS11
-    if (bout->dolbyMs11 && !bout->nexus.tunnel.pcm_format) {
+    if ((bout->bdev->dolby_ms == 11) && !bout->nexus.tunnel.pcm_format) {
         NxClient_AudioSettings audioSettings;
 
         ALOGI("Force PCM output");

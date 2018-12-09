@@ -3024,7 +3024,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 }
 
                 NEXUS_VideoCodec currentCodec = GetNexusCodec();
-                if ((currentCodec == NEXUS_VideoCodec_eH264 ||
+                bool b4kAvc = false;
+                if ( currentCodec == NEXUS_VideoCodec_eH264 )
+                {
+                    NEXUS_VideoDecoderCodecCapabilities videoCaps;
+                    NEXUS_VideoDecoder_GetCodecCapabilities(NULL, NEXUS_VideoCodec_eH264, &videoCaps);
+                    if ( videoCaps.protocolLevel >= NEXUS_VideoProtocolLevel_e51 )
+                    {
+                        b4kAvc = true;
+                    }
+                }
+
+                if ((b4kAvc ||
                      currentCodec == NEXUS_VideoCodec_eH265 ||
                      currentCodec == NEXUS_VideoCodec_eVp9) &&
                     (m_maxDecoderWidth >= B_DATA_BUFFER_WIDTH_HIGHRES ||

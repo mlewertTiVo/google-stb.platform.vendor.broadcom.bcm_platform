@@ -255,7 +255,8 @@ static int bout_set_parameters(struct audio_stream *stream,
     // are actually ones that we care.
     parms = str_parms_create_str(kvpairs);
     if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE) ||
-        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC) ||
+        str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK)) {
         pthread_mutex_lock(&bout->lock);
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
@@ -287,6 +288,21 @@ static int bout_set_parameters(struct audio_stream *stream,
                           __FUNCTION__, hw_sync_id);
                     ret = -EINVAL;
                 }
+            }
+        }
+
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK) && (bout->bdev->dolby_ms == 12)) {
+            int lock = 0;
+            NxClient_AudioProcessingSettings audioProcessingSettings;
+
+            ret = str_parms_get_int(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK, &lock);
+
+            NxClient_GetAudioProcessingSettings(&audioProcessingSettings);
+            if ((audioProcessingSettings.dolby.ddre.fixedAtmosOutput && !lock) ||
+                (!audioProcessingSettings.dolby.ddre.fixedAtmosOutput && lock)) {
+                audioProcessingSettings.dolby.ddre.fixedAtmosOutput = lock ? true : false;
+                ALOGI("%s: %s Dolby ATMOS", __FUNCTION__, lock ? "Locking" : "Unlocking");
+                NxClient_SetAudioProcessingSettings(&audioProcessingSettings);
             }
         }
 
@@ -1012,7 +1028,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     struct brcm_stream_out *bout;
     brcm_devices_out_t bdevices;
     int ret = 0;
-    int dolby_ms;
 
     UNUSED(handle);
     UNUSED(address);
@@ -1129,10 +1144,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
             // Just keep going without debug
         }
     }
-
-    dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
-    bout->dolbyMs11 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS11);
-    bout->dolbyMs12 = (dolby_ms == BRCM_SUPPORTED_DOLBY_MS12);
 
     pthread_mutex_lock(&bdev->lock);
 
@@ -1474,6 +1485,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
                      hw_device_t **dev)
 {
     struct brcm_device *bdev;
+    int dolby_ms;
     int ret = 0;
 
     ALOGV("%s: at %d\n", __FUNCTION__, __LINE__);
@@ -1528,6 +1540,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev->standbyThread = new StandbyMonitorThread();
     bdev->standbyThread->Start();
+
+    bdev->dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
 
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;
