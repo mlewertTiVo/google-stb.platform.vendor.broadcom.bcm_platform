@@ -132,8 +132,15 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     if ((DRM_WVOemCrypto_Initialize(&WvOemCryptoParamSettings, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
     {
-       ALOGV("%s: Initilaize failed",__FUNCTION__);
-       return wvRc;
+       ALOGE("%s: Initialize failed",__FUNCTION__);
+       if (oemCryptoNxWrapJoined) {
+          oemCryptoNxWrapJoined = 0;
+          oemCryptoNxWrap->leave();
+       }
+       delete oemCryptoNxWrap;
+       oemCryptoNxWrap = NULL;
+
+       return OEMCrypto_ERROR_INIT_FAILED;
     }
 
     ALOGV("[OEMCrypto_Initialize(): success]");
