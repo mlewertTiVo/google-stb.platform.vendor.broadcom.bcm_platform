@@ -357,11 +357,6 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p", __FUNCTION__, bout);
 
-    // Do not start while paused
-    if (bout->nexus.direct.playpump_mode && bout->nexus.direct.paused ) {
-        ALOGV("%s: paused", __FUNCTION__);
-        return -EBUSY;
-    }
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_SimpleAudioDecoderSettings settings;
 
@@ -490,7 +485,6 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
             bout->nexus.direct.priming = false;
             ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
         }
-        bout->nexus.direct.paused = false;
     }
 
     bout->nexus.direct.lastCount = 0;
@@ -724,12 +718,6 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         return -ENOSYS;
     }
 
-    // Do not consume any data while paused
-    if (bout->nexus.direct.playpump_mode && bout->nexus.direct.paused ) {
-        ALOGV("%s: paused", __FUNCTION__);
-        return -EBUSY;
-    }
-
     // For playpump mode, parse the frame header to determine the bitrate
     if (bout->nexus.direct.playpump_mode && bout->nexus.direct.bitrate == 0 ) {
         if (bout->config.format == AUDIO_FORMAT_AC3) {
@@ -861,8 +849,9 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     }
                 }
 
-                // Finish priming playpump if enough data
-                if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming && bout->nexus.direct.bitrate) {
+                // Finish priming playpump if enough data and not paused
+                if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming && bout->nexus.direct.bitrate &&
+                    !bout->nexus.direct.paused) {
                     NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
                     NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
                     ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
@@ -1174,6 +1163,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     bout->nexus.direct.playpump_mode = false;
     bout->nexus.direct.transcode_latency = 0;
+    bout->nexus.direct.paused = false;
 
     switch (config->format) {
     case AUDIO_FORMAT_PCM_16_BIT:
