@@ -587,6 +587,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_bitsPerSample(0),
     m_numPcmChannels(0),
     m_codecDelayAdjusted(0),
+    m_inputFlushing(false),
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0)
@@ -2394,23 +2395,39 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
         if ( portIndex == m_audioPortBase )
         {
             // Input port
-            if ( m_hAudioDecoder )
+            if ( m_pAudioPorts[0]->IsEnabled() && m_pAudioPorts[0]->IsPopulated() && m_hPlaypump != NULL )
             {
-                (void)SetInputPortState(OMX_StateIdle);
-                (void)SetInputPortState(StateGet());
+                m_inputFlushing = true;
+
+                NEXUS_Playpump_Flush(m_hPlaypump);
+                m_eosPending = false;
+                m_eosStandalone = false;
+                PlaypumpEvent();
+                ALOG_ASSERT(m_submittedDescriptors == 0);
+                ReturnInputBuffers(0, true);
                 m_configBufferState = ConfigBufferState_eFlushed;
+
+                m_inputFlushing = false;
+            }
+            else
+            {
+                ReturnPortBuffers(m_pAudioPorts[0]);
             }
         }
         else
         {
             // Output port
-            if ( m_pAudioPorts[1]->IsEnabled() && m_pAudioPorts[1]->IsPopulated() )
+            if ( m_pAudioPorts[1]->IsEnabled() && m_pAudioPorts[1]->IsPopulated() && m_hAudioDecoder != NULL )
             {
-                (void)SetOutputPortState(OMX_StateIdle);
-                (void)SetOutputPortState(StateGet());
+                NEXUS_AudioDecoder_Flush(m_hAudioDecoder);
+                RemoveOutputBuffers();
+                m_pBufferTracker->Flush();
+                m_eosDelivered = false;
+                m_eosReceived = false;
+                m_eosReady = false;
             }
+            ReturnPortBuffers(m_pAudioPorts[1]);
         }
-        ReturnPortBuffers(pPort);
     }
 
     return err;
@@ -3468,7 +3485,7 @@ void BOMX_AudioDecoder::PlaypumpEvent()
     {
         BOMX_Buffer *pBuffer, *pFifoHead=NULL;
 
-        if ( m_hAudioDecoder )
+        if ( m_hAudioDecoder && !m_inputFlushing )
         {
             NEXUS_AudioDecoderStatus fifoStatus;
             NEXUS_Error errCode = NEXUS_AudioDecoder_GetStatus(m_hAudioDecoder, &fifoStatus);
@@ -3546,7 +3563,7 @@ void BOMX_AudioDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pAudioPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout)
+void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll)
 {
     uint32_t count = 0;
     BOMX_AudioDecoderInputBufferInfo *pInfo;
@@ -3564,7 +3581,7 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
             break;
         }
 
-        if ( causedByTimeout || pReturnBuffer == NULL )
+        if ( bReturnAll || pReturnBuffer == NULL )
         {
             pReturnBuffer = pBuffer;
         }

@@ -256,6 +256,7 @@ protected:
     unsigned m_bitsPerSample;
     unsigned m_numPcmChannels;
     int m_codecDelayAdjusted;
+    bool m_inputFlushing;
 
     // These parameters are specific only to AAC handling
     BOMX_AAC_ASCInfo m_ascInfo;
@@ -318,7 +319,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them
