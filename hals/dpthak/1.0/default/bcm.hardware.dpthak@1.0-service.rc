@@ -1,5 +1,5 @@
 service dpthak-hal-1-0 /vendor/bin/hw/bcm.hardware.dpthak@1.0-service
     class hal
     user system
-    group system inet
+    group system inet readproc
     capabilities NET_ADMIN SYS_NICE
