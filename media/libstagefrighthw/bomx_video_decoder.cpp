@@ -93,6 +93,7 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 #define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
+#define B_TUNNEL_PTS_INVALID_VALUE (0xFFFFFFFF)
 #define B_OUTSTANDING_FRAMES_WATERMARK (6)
 #define B_OUTSTANDING_FRAME_MAX_AGE (4)
 /****************************************************************************
@@ -119,6 +120,9 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_YV12_ALIGNMENT (16)
 
 #define B_UHD_DISPLAY ("3840x2160")     // marker for having a uhd display connected.
+
+#define B_VNDEXT_NAME_NRDP ("nrdp")
+#define B_VNDEXT_NRDP_KEY_VIDEO_PEEK ("video-peek-in-tunnel")
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -255,6 +259,59 @@ static const OMX_VIDEO_VP9LEVELTYPE g_vp9StandardLevels[] =  {OMX_VIDEO_VP9Level
                                                               OMX_VIDEO_VP9Level5};
 static const size_t g_numVp9StandardLevels = sizeof(g_vp9StandardLevels)/sizeof(OMX_VIDEO_VP9LEVELTYPE);
 
+struct BOMX_VendorExtension
+{
+    const char *pParamName;
+    const char *pParamKey;
+    OMX_U32 paramCnt;
+    void (*pGetFunc)(BOMX_VideoDecoder *pThis, OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pExt);
+    bool (*pSetFunc)(BOMX_VideoDecoder *pThis, OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pExt);
+};
+static void BOMX_VideoDecoder_VndExtNrdpGet(BOMX_VideoDecoder *pThis, OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pExt)
+{
+    int val = pThis->GetVndExtVideoPeek();
+
+    snprintf((char*)(pExt->cName), sizeof(pExt->cName), B_VNDEXT_NAME_NRDP);
+    pExt->eDir = OMX_DirInput;
+    snprintf((char*)(pExt->param[0].cKey), sizeof(pExt->param[0].cKey), B_VNDEXT_NRDP_KEY_VIDEO_PEEK);
+    pExt->param[0].bSet = ( val == -1 ) ? OMX_FALSE : OMX_TRUE;
+    pExt->param[0].eValueType = OMX_AndroidVendorValueInt32;
+    pExt->param[0].nInt32 = val;
+
+    ALOGV("NRDP extension get name:%s key:%s set:%d val:%d", pExt->cName, pExt->param[0].cKey, pExt->param[0].bSet, pExt->param[0].nInt32);
+}
+static bool BOMX_VideoDecoder_VndExtNrdpSet(BOMX_VideoDecoder *pThis, OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pExt)
+{
+    if ( strncmp((char*)(pExt->param[0].cKey), B_VNDEXT_NRDP_KEY_VIDEO_PEEK, strlen(B_VNDEXT_NRDP_KEY_VIDEO_PEEK)) != 0 )
+    {
+        ALOGE("Invalid NRDP key %s", pExt->param[0].cKey);
+        return false;
+    }
+    if ( pExt->param[0].bSet == OMX_TRUE )
+    {
+        if ( pExt->param[0].eValueType == OMX_AndroidVendorValueInt32 )
+        {
+            pThis->SetVndExtVideoPeek(pExt->param[0].nInt32);
+        }
+        else
+        {
+            ALOGE("Invalid vendor parameter type %d for %s.%s", pExt->param[0].eValueType, pExt->cName, pExt->param[0].cKey);
+            return false;
+        }
+    }
+    else
+    {
+        pThis->SetVndExtVideoPeek(-1);
+    }
+
+    ALOGV("NRDP extension set name:%s key:%s set:%d val:%d", pExt->cName, pExt->param[0].cKey, pExt->param[0].bSet, pExt->param[0].nInt32);
+    return true;
+}
+
+static const BOMX_VendorExtension g_vendorExtensions[] =
+        {{B_VNDEXT_NAME_NRDP, B_VNDEXT_NRDP_KEY_VIDEO_PEEK, 1, BOMX_VideoDecoder_VndExtNrdpGet, BOMX_VideoDecoder_VndExtNrdpSet}};
+static const size_t g_numVendorExtensions = sizeof(g_vendorExtensions)/sizeof(BOMX_VendorExtension);
+
 static bool g_nxStandBy = false;
 static Mutex g_mutexStandBy;
 
@@ -331,6 +388,7 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_eCheckpoint,
     BOMX_VideoDecoderEventType_eSourceChanged,
     BOMX_VideoDecoderEventType_eStreamChanged,
+    BOMX_VideoDecoderEventType_eFirstPtsPassed,
     BOMX_VideoDecoderEventType_eDecodeError,
     BOMX_VideoDecoderEventType_eFifoEmpty,
     BOMX_VideoDecoderEventType_ePlaypumpErrorCallback,
@@ -579,6 +637,15 @@ static void BOMX_VideoDecoder_StreamChangedEvent(void *pParam)
     ALOGV("StreamChangedEvent");
 
     pDecoder->StreamChangedEvent();
+}
+
+static void BOMX_VideoDecoder_FirstPtsPassedEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("FirstPtsPassedEvent");
+
+    pDecoder->FirstPtsPassedEvent();
 }
 
 static void BOMX_VideoDecoder_DecodeErrorEvent(void *pParam)
@@ -1373,6 +1440,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_sourceChangedEventId(NULL),
     m_hStreamChangedEvent(NULL),
     m_streamChangedEventId(NULL),
+    m_hFirstPtsPassedEvent(NULL),
+    m_firstPtsPassedEventId(NULL),
     m_hDecodeErrorEvent(NULL),
     m_decodeErrorEventId(NULL),
     m_hFifoEmptyEvent(NULL),
@@ -1424,7 +1493,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelHfr(false),
     m_enableHdrForNonVp9(0),
     m_pTunnelNativeHandle(NULL),
-    m_tunnelCurrentPts(0),
+    m_tunnelCurrentPts(B_TUNNEL_PTS_INVALID_VALUE),
     m_waitingForStc(false),
     m_stcSyncValue(B_STC_SYNC_INVALID_VALUE),
     m_stcResumePending(false),
@@ -1467,6 +1536,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_forcePortResetOnHwTex(true),
     m_sdbGeomCb(NULL),
     m_forceScanMode1080p(false),
+    m_vidPeekState(VideoPeekState_eDisabled),
+    m_vndExtNrdpVidPeek(-1),
     m_renderedFrameHandler(this)
 {
     unsigned i;
@@ -1658,6 +1729,22 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_streamChangedEventId )
     {
         ALOGW("Unable to register stream changed event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hFirstPtsPassedEvent = B_Event_Create(NULL);
+    if ( NULL == m_hFirstPtsPassedEvent )
+    {
+        ALOGW("Unable to create first PTS passed event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_firstPtsPassedEventId = this->RegisterEvent(m_hFirstPtsPassedEvent, BOMX_VideoDecoder_FirstPtsPassedEvent, static_cast <void *> (this));
+    if ( NULL == m_firstPtsPassedEventId )
+    {
+        ALOGW("Unable to register first PTS passed event");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
@@ -2352,6 +2439,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_streamChangedEventId);
     }
+    if ( m_firstPtsPassedEventId )
+    {
+        UnregisterEvent(m_firstPtsPassedEventId);
+    }
     if ( m_decodeErrorEventId )
     {
         UnregisterEvent(m_decodeErrorEventId);
@@ -2395,6 +2486,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hStreamChangedEvent )
     {
         B_Event_Destroy(m_hStreamChangedEvent);
+    }
+    if ( m_hFirstPtsPassedEvent )
+    {
+        B_Event_Destroy(m_hFirstPtsPassedEvent);
     }
     if ( m_hDecodeErrorEvent )
     {
@@ -3462,6 +3557,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
             }
             m_videoStreamInfo.valid = false;
+            m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
+            m_vndExtNrdpVidPeek = -1;
+            m_vidPeekState = VideoPeekState_eDisabled;
             BKNI_Memset(&m_hdrInfoFwks, 0, sizeof(m_hdrInfoFwks));
             BKNI_Memset(&m_hdrInfoStream, 0, sizeof(m_hdrInfoStream));
             BKNI_Memset(&m_hdrInfoFinal, 0, sizeof(m_hdrInfoFinal));
@@ -3500,6 +3598,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecSettings.streamChanged.callback = BOMX_VideoDecoder_EventCallback;
                 vdecSettings.streamChanged.context = (void *)m_hStreamChangedEvent;
                 vdecSettings.streamChanged.param = (int)BOMX_VideoDecoderEventType_eStreamChanged;
+                vdecSettings.firstPtsPassed.callback = BOMX_VideoDecoder_EventCallback;
+                vdecSettings.firstPtsPassed.context = (void *)m_hFirstPtsPassedEvent;
+                vdecSettings.firstPtsPassed.param = (int)BOMX_VideoDecoderEventType_eFirstPtsPassed;
                 NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
             }
 
@@ -3628,6 +3729,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_pBufferTracker->Flush();
                 ReturnPortBuffers(m_pVideoPorts[0]);
                 m_submittedDescriptors = 0;
+                m_videoStreamInfo.valid = false;
+                m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
+                m_vndExtNrdpVidPeek = -1;
+                m_vidPeekState = VideoPeekState_eDisabled;
                 m_inputDataTracker.PrintStats();
                 m_inputDataTracker.Reset();
                 B_Mutex_Lock(m_hDisplayMutex);
@@ -4085,28 +4190,35 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                 m_outputFlushing = false;
                 // Handle possible timestamp discontinuity (seeking) after a flush command
-                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ) && !m_waitingForStc)
+                if ( m_tunnelMode && m_tunnelStcChannel != NULL )
                 {
-                    NEXUS_VideoDecoderTrickState vdecTrickState;
-                    NEXUS_Error errCode;
+                    m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
+                    m_vidPeekState = VideoPeekState_eDisabled;
 
-                    m_waitingForStc = true;
-                    m_stcResumePending = false;
+                    if ( !m_waitingForStc )
+                    {
+                        NEXUS_VideoDecoderTrickState vdecTrickState;
+                        NEXUS_Error errCode;
 
-                    // Pause decoder until a valid stc is available
-                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                    vdecTrickState.rate = 0;
-                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                    if (errCode != NEXUS_SUCCESS)
-                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+                        m_waitingForStc = true;
+                        m_stcResumePending = false;
 
-                    // Reset stc sync only if it hasn't changed its last value.
-                    uint32_t stcSync;
-                    NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                    ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
-                    if (stcSync == m_stcSyncValue) {
-                        NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
-                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Setting sync stc to invalid value");
+                        // Pause decoder until a valid stc is available
+                        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                        vdecTrickState.rate = 0;
+                        errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                        if (errCode != NEXUS_SUCCESS)
+                            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+
+                        // Reset stc sync only if it hasn't changed its last value.
+                        uint32_t stcSync;
+                        NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
+                        if (stcSync == m_stcSyncValue)
+                        {
+                            NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
+                            ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Setting sync stc to invalid value");
+                        }
                     }
                 }
             }
@@ -5388,6 +5500,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
                 ALOGW("Unable to track buffer");
                 pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
             }
+
+            if ( m_vidPeekState == VideoPeekState_eWaitForInput )
+            {
+                errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, pInfo->pts);
+                if ( errCode != NEXUS_SUCCESS )
+                {
+                    ALOGE("Error setting start pts %d", errCode);
+                }
+                else
+                {
+                    ALOGV("Setting first PTS:%u", pInfo->pts);
+                }
+                m_vidPeekState = VideoPeekState_eInputReceived;
+                m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
+            }
         }
 
         switch ( codec )
@@ -6041,6 +6168,27 @@ void BOMX_VideoDecoder::StreamChangedEvent()
     }
 }
 
+void BOMX_VideoDecoder::FirstPtsPassedEvent()
+{
+    // Pause on the very first frame when video peek is enabled
+    if ( m_vndExtNrdpVidPeek > 0 && m_vidPeekState == VideoPeekState_eInputReceived )
+    {
+        NEXUS_VideoDecoderTrickState vdecTrickState;
+        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        vdecTrickState.rate = 0;
+        NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        if ( errCode != NEXUS_SUCCESS )
+        {
+            ALOGE("Error pausing video decoder for first PTS %d", errCode);
+        }
+        else
+        {
+            m_vidPeekState = VideoPeekState_ePaused;
+            ALOGV("Pause on video peek");
+        }
+    }
+}
+
 void BOMX_VideoDecoder::DecodeErrorEvent()
 {
     ALOGE("%s: video decoder reports an error", __FUNCTION__);
@@ -6450,8 +6598,42 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             (OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pAndroidVendorExtensionType);
         ALOGV("GetConfig OMX_IndexConfigAndroidVendorExtension");
+
         pAndroidVendorExtensionType->nParamCount = 0;
-        return OMX_ErrorNoMore;
+        if ( m_tunnelMode )
+        {
+            if ( pAndroidVendorExtensionType->nIndex >= g_numVendorExtensions )
+            {
+                return OMX_ErrorNoMore;
+            }
+
+            OMX_U32 idx = pAndroidVendorExtensionType->nIndex;
+            pAndroidVendorExtensionType->nParamCount = g_vendorExtensions[idx].paramCnt;
+            ALOGV("Vendor ext idx:%d parmCnt:%d parmSz:%d", idx, pAndroidVendorExtensionType->nParamCount, pAndroidVendorExtensionType->nParamSizeUsed);
+            if ( pAndroidVendorExtensionType->nParamSizeUsed < g_vendorExtensions[idx].paramCnt )
+            {
+                if ( pAndroidVendorExtensionType->nParamSizeUsed == 1 )
+                {
+                    // Request the frameworks to re-allocate bigger config
+                    return OMX_ErrorNone;
+                }
+                else
+                {
+                    ALOGE("Invalid number of vendor parameter size %u count %u", pAndroidVendorExtensionType->nParamSizeUsed, g_vendorExtensions[idx].paramCnt);
+                    return OMX_ErrorBadParameter;
+                }
+            }
+
+            if ( g_vendorExtensions[idx].pGetFunc != NULL )
+            {
+                g_vendorExtensions[idx].pGetFunc(this, pAndroidVendorExtensionType);
+            }
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            return OMX_ErrorNoMore;
+        }
     }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
@@ -6525,8 +6707,43 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
             (OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pAndroidVendorExtensionType);
         ALOGV("SetConfig OMX_IndexConfigAndroidVendorExtension");
-        ALOGW("ConfigAndroidVendorExtension: ignoring...");
-        return OMX_ErrorUnsupportedIndex;
+
+        if ( m_tunnelMode )
+        {
+            if ( pAndroidVendorExtensionType->nParamSizeUsed < pAndroidVendorExtensionType->nParamCount )
+            {
+                ALOGE("Parameter size %u must be at least %u", pAndroidVendorExtensionType->nParamSizeUsed, pAndroidVendorExtensionType->nParamCount);
+                return OMX_ErrorBadParameter;
+            }
+
+            unsigned idx = 0;
+            for ( ; idx < g_numVendorExtensions; idx++ )
+            {
+                if ( strncmp((char*)(pAndroidVendorExtensionType->cName), g_vendorExtensions[idx].pParamName, strlen(g_vendorExtensions[idx].pParamName)) == 0 )
+                {
+                    ALOGV("\"%s\" found in vendor extension", pAndroidVendorExtensionType->cName);
+                    break;
+                }
+            }
+            if ( idx == g_numVendorExtensions || g_vendorExtensions[idx].pSetFunc == NULL )
+            {
+                ALOGE("Vendor parameter name %s not found", pAndroidVendorExtensionType->cName);
+                return OMX_ErrorUnsupportedIndex;
+            }
+
+            if ( g_vendorExtensions[idx].pSetFunc(this, pAndroidVendorExtensionType) )
+            {
+                return OMX_ErrorNone;
+            }
+            else
+            {
+                return OMX_ErrorUnsupportedSetting;
+            }
+        }
+        else
+        {
+            return OMX_ErrorUnsupportedIndex;
+        }
     }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
@@ -6869,6 +7086,28 @@ void BOMX_VideoDecoder::RemoveAllVdecOmxAssociation()
     }
 }
 
+void BOMX_VideoDecoder::ResumeAfterVideoPeek()
+{
+    if ( m_vidPeekState == VideoPeekState_ePaused )
+    {
+        NEXUS_VideoDecoderTrickState vdecTrickState;
+
+        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
+        NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        if ( errCode != NEXUS_SUCCESS )
+        {
+            ALOGE("Error resuming after video peek %d", errCode);
+        }
+        else
+        {
+            m_vidPeekState = VideoPeekState_eFinished;
+        }
+
+        ALOGV_IF(m_vidPeekState != VideoPeekState_ePaused, "Resume after video peek");
+    }
+}
+
 void BOMX_VideoDecoder::PollDecodedFrames()
 {
     NEXUS_VideoDecoderFrameStatus frameStatus[B_MAX_DECODED_FRAMES], *pFrameStatus;
@@ -6904,36 +7143,53 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
             uint32_t stcSync;
 
-            if (m_waitingForStc) {
-                bool resumeDecoder = false;
+            if ( m_waitingForStc )
+            {
+                NEXUS_VideoDecoderTrickState vdecTrickState;
 
-                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                if (stcSync != B_STC_SYNC_INVALID_VALUE) {
-                    resumeDecoder = true;
-                    m_stcSyncValue = stcSync;
-                    ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
+                if ( m_vidPeekState != VideoPeekState_eWaitForInput )
+                {
+                    NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                    if ( stcSync != B_STC_SYNC_INVALID_VALUE ) {
+                        m_stcSyncValue = stcSync;
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
+
+                        m_waitingForStc = false;
+                        m_stcResumePending = true;
+
+                        errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
+                        if (errCode != NEXUS_SUCCESS)
+                        {
+                            ALOGE("%s: error setting stc rate to 0", __FUNCTION__);
+                        }
+
+                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u", __FUNCTION__, stcSync);
+                        if (errCode != NEXUS_SUCCESS)
+                        {
+                            ALOGE("%s: error setting start pts", __FUNCTION__);
+                        }
+
+                        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                        vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                        errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                        if (errCode != NEXUS_SUCCESS)
+                            ALOGE("%s: error setting trick state", __FUNCTION__);
+                    }
                 }
+                else
+                {
+                    ALOGV("Video peek is enabled. No STC sync is needed");
+                    m_waitingForStc = false;
+                    m_stcResumePending = false;
 
-                if (resumeDecoder) {
-                   m_waitingForStc = false;
-                   m_stcResumePending = true;
-                   NEXUS_VideoDecoderTrickState vdecTrickState;
-
-                   errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
-                   if (errCode != NEXUS_SUCCESS)
-                       ALOGE("%s: error setting stc rate to 0", __FUNCTION__);
-                   if (stcSync != B_STC_SYNC_INVALID_VALUE) {
-                       errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
-                       ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u", __FUNCTION__, stcSync);
-                       if (errCode != NEXUS_SUCCESS)
-                           ALOGE("%s: error setting start pts", __FUNCTION__);
-                   }
-
-                   NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                   vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                   errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                   if (errCode != NEXUS_SUCCESS)
-                       ALOGE("%s: error setting trick state", __FUNCTION__);
+                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    if ( errCode != NEXUS_SUCCESS )
+                    {
+                        ALOGE("Error resuming decoder at video peek %d", errCode);
+                    }
                 }
             }
 
@@ -6951,11 +7207,27 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             }
 
             bool newRenderedFrame = false;
-            if (status.pts != 0 && m_tunnelCurrentPts != status.pts) {
+            bool firstPtsRendered = (status.numIFramesDisplayed > 0 || (status.firstPtsPassed && !m_waitingForStc));
+            if ( (status.pts != 0 || (status.pts == 0 && firstPtsRendered)) && m_tunnelCurrentPts != status.pts )
+            {
                 if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
                 {
                     ALOGI("Unable to find tracker entry for pts %#x", status.pts);
                     BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
+                }
+
+                if ( m_vndExtNrdpVidPeek > 0 && m_vidPeekState == VideoPeekState_ePaused && m_tunnelCurrentPts == B_TUNNEL_PTS_INVALID_VALUE )
+                {
+                    // Align to the exact first video peek frame
+                    errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, status.pts);
+                    if ( errCode != NEXUS_SUCCESS )
+                    {
+                        ALOGE("Error setting start pts %d", errCode);
+                    }
+                    else
+                    {
+                        ALOGV("Align to the first PTS:%u", status.pts);
+                    }
                 }
 
                 m_tunnelCurrentPts = status.pts;
@@ -6997,8 +7269,14 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
             if (!m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                m_stcSyncValue = stcSync;
-                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                if ( stcSync != B_STC_SYNC_INVALID_VALUE )
+                {
+                    m_stcSyncValue = stcSync;
+	                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+
+                    // Audio PTS received, resume STC
+                    ResumeAfterVideoPeek();
+                }
             }
         }
 

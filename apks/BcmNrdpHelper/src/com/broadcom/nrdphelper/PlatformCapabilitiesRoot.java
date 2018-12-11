@@ -62,13 +62,19 @@ public class PlatformCapabilitiesRoot {
    @Expose
    private String tunnelModeWithBTSetting;
 
+   @SerializedName("videoPeekTunnelFramesToSend")
+   @Expose
+   private String videoPeekTunnelFramesToSend;
+
    PlatformCapabilitiesRoot(Boolean vp9Disabled,
                             String hdrOutputType,
                             String formatNotificationType,
-                            String tunnelModeWithBTSetting) {
+                            String tunnelModeWithBTSetting,
+                            String videoPeekTunnelFramesToSend) {
        this.vp9Disabled = vp9Disabled;
        this.hdrOutputType = hdrOutputType;
        this.formatNotificationType = formatNotificationType;
        this.tunnelModeWithBTSetting = tunnelModeWithBTSetting;
+       this.videoPeekTunnelFramesToSend = videoPeekTunnelFramesToSend;
    }
 }
