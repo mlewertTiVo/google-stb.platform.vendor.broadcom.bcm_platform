@@ -5508,10 +5508,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
                 {
                     ALOGE("Error setting start pts %d", errCode);
                 }
-                else
-                {
-                    ALOGV("Setting first PTS:%u", pInfo->pts);
-                }
+                ALOGI("Video peek enabled with first ts:%lld", pBufferHeader->nTimeStamp);
+
                 m_vidPeekState = VideoPeekState_eInputReceived;
                 m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
             }
@@ -7104,7 +7102,7 @@ void BOMX_VideoDecoder::ResumeAfterVideoPeek()
             m_vidPeekState = VideoPeekState_eFinished;
         }
 
-        ALOGV_IF(m_vidPeekState != VideoPeekState_ePaused, "Resume after video peek");
+        ALOGI_IF(m_vidPeekState != VideoPeekState_ePaused, "Resume after video peek");
     }
 }
 
