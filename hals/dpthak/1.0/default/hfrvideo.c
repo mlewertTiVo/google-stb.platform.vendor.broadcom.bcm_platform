@@ -127,12 +127,20 @@ struct thread_entity {
    int niceness;
 };
 
+enum ElevateMode {
+  EMSched,
+  EMNiceness
+};
+
 struct process_entity {
    const char *name;
    const char *thread_keep_filter;
    const char *thread_ignore_filter;
    pid_t pid;
+   enum ElevateMode mode;
    const int *map;
+   int niceness;
+   int default_niceness;
    struct thread_entity threads[MAX_THREADS];
 };
 
@@ -142,6 +150,7 @@ static struct process_entity key_process_list_vmode[] = {
       .thread_keep_filter = NULL,
       .thread_ignore_filter = "Binder",
       .pid = 0,
+      .mode = EMSched,
       .map = surfaceflinger_prio_map,
    },
    {
@@ -149,6 +158,7 @@ static struct process_entity key_process_list_vmode[] = {
       .thread_keep_filter = NULL,
       .thread_ignore_filter = "Binder",
       .pid = 0,
+      .mode = EMSched,
       .map = nxserver_prio_map,
    },
    {
@@ -156,6 +166,7 @@ static struct process_entity key_process_list_vmode[] = {
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
+      .mode = EMSched,
       .map = mediacodec_prio_map,
    },
    {
@@ -163,53 +174,64 @@ static struct process_entity key_process_list_vmode[] = {
       .thread_keep_filter = "bomx_display",
       .thread_ignore_filter = NULL,
       .pid = 0,
+      .mode = EMSched,
       .map = mediacodec_prio_map,
-   },
-   {
-      .name = "system/bin/mediadrmserver",
-      .thread_keep_filter = "wv_decrypt_thre",
-      .thread_ignore_filter = NULL,
-      .pid = 0,
-      .map = mediadrmserver_prio_map,
    },
    {
       .name = "vendor/bin/hwcbinder",
       .thread_keep_filter = NULL,
       .thread_ignore_filter = NULL,
       .pid = 0,
+      .mode = EMSched,
       .map = hwcbinder_prio_map,
+   },
+   {
+      .name = "com.google.android.exoplayer2.demo",
+      .thread_keep_filter = "MediaCodec_loop",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
+   },
+   {
+      .name = "com.netflix.ninja",
+      .thread_keep_filter = "MediaCodec_loop",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
    },
 };
 static const int num_key_processes_vmode = sizeof(key_process_list_vmode)/sizeof(key_process_list_vmode[0]);
 
 static struct process_entity key_process_list_tunneled[] = {
    {
-      .name = "vendor/bin/nxserver",
-      .thread_keep_filter = NULL,
-      .thread_ignore_filter = "Binder",
-      .pid = 0,
-      .map = nxserver_prio_map,
-   },
-   {
       .name = "media.codec",
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
+      .mode = EMSched,
       .map = mediacodec_prio_map,
    },
    {
-      .name = "system/bin/mediadrmserver",
-      .thread_keep_filter = "wv_decrypt_thre",
+      .name = "com.google.android.exoplayer2.demo",
+      .thread_keep_filter = "MediaCodec_loop",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediadrmserver_prio_map,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
    },
    {
-      .name = "system/bin/audioserver",
-      .thread_keep_filter = "AudioOut_",
+      .name = "com.netflix.ninja",
+      .thread_keep_filter = "MediaCodec_loop",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = audioserver_prio_map,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
    },
 };
 static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);
@@ -254,8 +276,10 @@ static ssize_t get_cmdline_from_pid (pid_t pid, char *cmdline, int len)
 
    snprintf(cmdline_file, MAX_NAME_LEN, "/proc/%d/cmdline", pid);
    fd = open(cmdline_file, O_RDONLY);
-   if (fd < 0)
+   if (fd < 0) {
+      ALOGV("error reading cmdline, pid:%d", pid);
       return fd;
+    }
 
    cmdline[0] = '\0';
    rc = read(fd, cmdline, len);
@@ -364,11 +388,9 @@ static int find_key_processes (struct process_entity *key_process_list, int num_
       return -1;
 
    while ((found != num_key_processes) && ((de = readdir(d)) != 0)) {
-
       if (isdigit(de->d_name[0]) &&
           (pid = (pid_t)strtol(de->d_name, NULL, 10)) &&
           (get_cmdline_from_pid(pid, cmdline, sizeof(cmdline)) > 0)) {
-
          for (i = 0, found = 0; i < num_key_processes; i++) {
             if (key_process_list[i].pid == 0) {
                if (strstr (cmdline, key_process_list[i].name) != NULL) {
@@ -414,16 +436,27 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
          continue;
 
       for (j = 0; (j < MAX_THREADS) && threads[j].tid; j++) {
-         param.sched_priority = map[nice_to_idx(threads[j].niceness)];
+         if (key_process_list[i].mode == EMSched) {
+             param.sched_priority = map[nice_to_idx(threads[j].niceness)];
 
-         if (param.sched_priority > 0) {
-            if (threads[j].policy != SCHED_OTHER) {
-               ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
-               continue;
-            }
-            rc = sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
-            ALOGV("%d elevated to %d:%d:%d rc=%d,err=%d (%s)",
-               threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness, rc, errno, strerror(errno));
+             if (param.sched_priority > 0) {
+                if (threads[j].policy != SCHED_OTHER) {
+                   ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
+                   continue;
+                }
+                rc = sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
+                ALOGV("%d elevated to %d:%d:%d rc=%d,err=%d (%s)",
+                   threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness, rc, errno, strerror(errno));
+             }
+         } else if (key_process_list[i].mode == EMNiceness) {
+             key_process_list[j].default_niceness = threads[j].niceness;
+             if (threads[j].niceness == key_process_list[i].niceness) {
+                 ALOGV("%d already at nice:%d", threads[j].tid, threads[j].niceness);
+                 continue;
+             }
+             rc = setpriority(PRIO_PROCESS, threads[j].tid, key_process_list[i].niceness);
+             ALOGV("%d set to nice:%d,%d rc=%d,err=%d (%s)",
+                threads[j].tid, key_process_list[i].niceness, threads[j].niceness, rc, errno, strerror(errno));
          }
       }
    }
@@ -431,7 +464,7 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
 
 static void restore_priority (struct process_entity *key_process_list, int num_key_processes)
 {
-   int i, j;
+   int i, j, rc;
    struct sched_param param;
 
    memset(&param, 0, sizeof(param));
@@ -443,16 +476,26 @@ static void restore_priority (struct process_entity *key_process_list, int num_k
          continue;
 
       for (j = 0; (j < MAX_THREADS) && threads[j].tid; j++) {
-         param.sched_priority = map[nice_to_idx(threads[j].niceness)];
+         if (key_process_list[i].mode == EMSched) {
+             param.sched_priority = map[nice_to_idx(threads[j].niceness)];
 
-         if (param.sched_priority > 0) {
-            if (threads[j].policy == SCHED_OTHER) {
-               ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
-               continue;
-            }
-            param.sched_priority = 0;
-            sched_setscheduler(threads[j].tid, SCHED_OTHER, &param);
-            ALOGV("%d restored to %d:%d:%d", threads[j].tid, SCHED_OTHER, param.sched_priority, threads[j].niceness);
+             if (param.sched_priority > 0) {
+                if (threads[j].policy == SCHED_OTHER) {
+                   ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
+                   continue;
+                }
+                param.sched_priority = 0;
+                sched_setscheduler(threads[j].tid, SCHED_OTHER, &param);
+                ALOGV("%d restored to %d:%d:%d", threads[j].tid, SCHED_OTHER, param.sched_priority, threads[j].niceness);
+             }
+         } else if (key_process_list[i].mode == EMNiceness) {
+             if (threads[j].niceness == key_process_list[i].default_niceness) {
+                 ALOGV("%d already at nice:%d", threads[j].tid, threads[j].niceness);
+                 continue;
+             }
+             rc = setpriority(PRIO_PROCESS, threads[j].tid, key_process_list[i].default_niceness);
+             ALOGV("%d set to nice:%d rc=%d,err=%d (%s)",
+                threads[j].tid, threads[j].niceness, rc, errno, strerror(errno));
          }
       }
    }
@@ -487,7 +530,7 @@ int do_hfrvideo(int mode)
 
    ALOGV("Found %d processes", rc);
    if (rc != num_key_processes) {
-      ALOGE("Only found %d/%d key processes", rc, num_key_processes);
+      ALOGI("Found %d/%d key processes", rc, num_key_processes);
    }
 
    switch (video_mode) {
