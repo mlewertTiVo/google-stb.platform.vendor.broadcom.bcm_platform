@@ -354,6 +354,7 @@ protected:
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
+    unsigned m_minNumInputBuffers;
 
     bool m_frEstimated;
     unsigned m_frStableCount;

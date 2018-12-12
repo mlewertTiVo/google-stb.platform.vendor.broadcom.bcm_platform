@@ -77,7 +77,8 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_INPUT_BUFFERS (4)
-#define B_MIN_QUEUED_INPUT_BUFFERS (16)     // Min outstanding input buffers not decoded yet
+#define B_MIN_QUEUED_INPUT_BUFFERS (16)           // Min outstanding input buffers not decoded yet
+#define B_MIN_QUEUED_INPUT_BUFFERS_TUNN_SVP (64)  // Larger limit for tunneling svp
 #define B_MIN_QUEUED_PTS_DIFF (11250)       // Nexus pts units (250 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (24)
@@ -1462,6 +1463,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
+    m_minNumInputBuffers(B_MIN_QUEUED_INPUT_BUFFERS),
     m_frEstimated(false),
     m_frStableCount(0),
     m_deltaUs(0),
@@ -2271,7 +2273,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
        m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
 
-       m_tunnelHfr = ( property_get_int32(BCM_RO_MEDIA_TUNNELED_HFRVIDEO, 0) != 0 );
+       // Enable tunneling hfr only for secure decoding. We also increase the input buffers fast return
+       // watermark as it helps preventing decoder underflows when doing high fps svp decoding
+       m_tunnelHfr = ( property_get_int32(BCM_RO_MEDIA_TUNNELED_HFRVIDEO, 0) != 0 ) && m_secureDecoder;
+       m_minNumInputBuffers = m_tunnelHfr ? B_MIN_QUEUED_INPUT_BUFFERS_TUNN_SVP : B_MIN_QUEUED_INPUT_BUFFERS;
     }
     else
     {
@@ -5952,16 +5957,16 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
     unsigned returnRate = 0;
 
     // Determine the maximum number of buffers to return as follows:
-    // 1. When we haven't reached B_MIN_QUEUED_INPUT_BUFFERS, return as many buffers as possible
+    // 1. When we haven't reached m_minNumInputBuffers, return as many buffers as possible
     // 2. Return buffers at a slower pace otherwise (maximum 1) if we haven't reached the minimum
     //    pts delta criteria (B_MIN_PTS_DIFF) or if the framework hasn't had any available buffer
     //    during a pre-determined period of time (see end of function for more info)
     if ( mode != InputReturnMode_eAll )
     {
-        bool minBuffersCond = queuedInputBuffers >= B_MIN_QUEUED_INPUT_BUFFERS;
+        bool minBuffersCond = queuedInputBuffers >= m_minNumInputBuffers;
         bool minPtsDiffCond = ptsDiff >= B_MIN_QUEUED_PTS_DIFF;
         if ( !minBuffersCond )
-          maxCount = B_MIN_QUEUED_INPUT_BUFFERS - (queuedInputBuffers + m_AvailInputBuffers);
+          maxCount = m_minNumInputBuffers - (queuedInputBuffers + m_AvailInputBuffers);
         else if ( !minPtsDiffCond )
           maxCount = 1;
         else if ( m_AvailInputBuffers == 0 && mode == InputReturnMode_eTimeout )
@@ -5992,7 +5997,7 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
     // Re-schedule itself at a rate based on current conditions
     if ( m_inputBuffersTimerId == NULL )
     {
-        if ( ((queuedInputBuffers + m_AvailInputBuffers) < B_MIN_QUEUED_INPUT_BUFFERS)
+        if ( ((queuedInputBuffers + m_AvailInputBuffers) < m_minNumInputBuffers)
              || (ptsDiff < B_MIN_QUEUED_PTS_DIFF) )
         {
             // fast rate, try to reach the minimum queue count fast
@@ -6007,11 +6012,6 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
                                  fpsRate : B_INPUT_BUFFERS_SLOW_RATE;
             // use slower rate if a buffer was just returned
             returnRate = (m_AvailInputBuffers > 0) ? slowRate : B_INPUT_BUFFERS_FAST_RATE;
-            // For video tunneling, avoid queueing too many buffers as the framework has a
-            // limitation on the number of OMX_EventOutputRendered events that may be sent
-            // without an 'EmptyBufferComplete' event.
-            returnRate = (m_tunnelMode && (queuedInputBuffers > B_INPUT_BUFFERS_HIGH_WATERMARK)) ?
-                         fpsRate : returnRate;
             m_inputBuffersTimerId = StartTimer(returnRate,
                                     BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
         }
