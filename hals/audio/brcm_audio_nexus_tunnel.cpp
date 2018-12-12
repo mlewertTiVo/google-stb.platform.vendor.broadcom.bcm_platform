@@ -1364,11 +1364,12 @@ done:
                                     last_written_ts - bout->nexus.tunnel.last_written_ts : 0;
                 bout->nexus.tunnel.last_bytes_written += bytes_written;
 
+                uint32_t expectedBytes = bout->nexus.tunnel.bitrate * 128 * (uint32_t)deltaMs / 1000;
                 if (deltaTs >= (BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS * 1000) ||
+                    (bout->nexus.tunnel.last_bytes_written > MORE_THAN_20_PERCENT(expectedBytes)) ||
                     deltaMs >= BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS ||
                     bout->nexus.tunnel.last_bytes_written >= bout->buffer_size * BRCM_AUDIO_TUNNEL_COMP_EST_BYTE_MUL) {
 
-                    uint32_t expectedBytes = bout->nexus.tunnel.bitrate * 128 * (uint32_t)deltaMs / 1000;
                     if (bout->nexus.tunnel.last_bytes_written > MORE_THAN_20_PERCENT(expectedBytes)) {
                         uint32_t diffBytes = bout->nexus.tunnel.last_bytes_written - MORE_THAN_20_PERCENT(expectedBytes);
                         uint32_t throttleMs = BYTES_TO_MS_FROM_KBITRATE(diffBytes, bout->nexus.tunnel.bitrate);
