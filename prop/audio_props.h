@@ -53,6 +53,9 @@
 #define BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH        "ro.nx.media.disable_ac3_passthru"
 #define BCM_RO_AUDIO_DIRECT_DOLBY_DRC_MODE                 "ro.nx.media.direct_drc_mode"
 #define BCM_RO_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE      "ro.nx.media.direct_stereo_mode"
+#define BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE                    "ro.nx.media.no_debounce"
+#define BCM_RO_AUDIO_SOFT_MUTING                           "ro.nx.media.soft_muting"
+#define BCM_RO_AUDIO_SLEEP_AFTER_MUTE                      "ro.nx.media.sleep_after_mute"
 
 #define BCM_PERSIST_AUDIO_DISABLE_ATMOS                    "persist.nx.disable_atmos"
 #define BCM_PERSIST_AUDIO_DIRECT_FORCE_PCM                 "persist.nx.direct_force_pcm"

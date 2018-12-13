@@ -246,7 +246,10 @@ struct brcm_stream_out {
                     NxClient_AudioOutputMode savedHDMIOutputMode;
                     NxClient_AudioOutputMode savedSPDIFOutputMode;
                     bool priming;
+                    bool paused;
                     unsigned fadeLevel;
+                    int32_t soft_muting;
+                    int32_t sleep_after_mute;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
@@ -275,6 +278,9 @@ struct brcm_stream_out {
                     FILE *pes_debug;
                     bool priming;
                     unsigned fadeLevel;
+                    bool no_debounce;
+                    int32_t soft_muting;
+                    int32_t sleep_after_mute;
                 } tunnel;
             };
             BKNI_EventHandle event;
@@ -400,5 +406,25 @@ private:
     StandbyMonitorThread(const StandbyMonitorThread &);
     StandbyMonitorThread &operator=(const StandbyMonitorThread &);
 };
+
+#if !LOG_NDEBUG
+#define ALOGV_FIFO_INFO(decoder,playpump) \
+    { \
+        NEXUS_AudioDecoderStatus decoderStatus; \
+        NEXUS_PlaypumpStatus playpumpStatus; \
+ \
+        NEXUS_SimpleAudioDecoder_GetStatus(decoder, &decoderStatus); \
+        NEXUS_Playpump_GetStatus(playpump, &playpumpStatus); \
+ \
+        ALOGV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__, \
+            decoderStatus.codecStatus.ac3.bitrate, \
+            decoderStatus.fifoDepth, \
+            decoderStatus.fifoSize, \
+            playpumpStatus.fifoDepth, \
+            playpumpStatus.fifoSize); \
+    }
+#else
+#define ALOGV_FIFO_INFO(...) ((void)0)
+#endif
 
 #endif // BRCM_AUDIO_H
