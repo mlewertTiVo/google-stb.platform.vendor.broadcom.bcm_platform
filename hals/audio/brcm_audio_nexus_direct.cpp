@@ -158,9 +158,35 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
             bout->nexus.direct.fadeLevel = (unsigned)(left * 100);
 
             ALOGV("%s: Volume: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
-            if (bout->started && !nexus_common_is_paused(simple_decoder)) {
-                // Apply volume immediately if not paused
-                nexus_common_set_volume(bout->bdev, simple_decoder, bout->nexus.direct.fadeLevel, NULL, -1, -1);
+            if (bout->started) {
+                if (bout->nexus.direct.deferred_volume) {
+                    struct timespec now;
+
+                    clock_gettime(CLOCK_MONOTONIC, &now);
+                    if (nexus_common_is_paused(simple_decoder)) {
+                        // Record deferral amount if volume is set during priming
+                        int32_t deferred_ms;
+                        deferred_ms = (int32_t)((now.tv_sec - bout->nexus.direct.start_ts.tv_sec) * 1000) +
+                                      (int32_t)((now.tv_nsec - bout->nexus.direct.start_ts.tv_nsec)/1000000);
+                        bout->nexus.direct.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
+                    } else {
+                        if (timespec_greater_than(now, bout->nexus.direct.deferred_window)) {
+                            // Deferral window over, resume normal operation
+                            bout->nexus.direct.deferred_volume = false;
+                            nexus_common_set_volume(bout->bdev, simple_decoder, bout->nexus.direct.fadeLevel, NULL, -1, -1);
+                        } else {
+                            // Push deferral window based on current time
+                            bout->nexus.direct.deferred_window = now;
+                            timespec_add_ms(bout->nexus.direct.deferred_window, MAX_VOLUME_DEFERRAL);
+
+                            nexus_common_set_volume(bout->bdev, simple_decoder, bout->nexus.direct.fadeLevel, NULL,
+                                bout->nexus.direct.deferred_volume_ms, -1);
+                        }
+                    }
+                } else if (!nexus_common_is_paused(simple_decoder)) {
+                    // Apply volume immediately if not paused
+                    nexus_common_set_volume(bout->bdev, simple_decoder, bout->nexus.direct.fadeLevel, NULL, -1, -1);
+                }
             }
         }
     }
@@ -356,6 +382,8 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p", __FUNCTION__, bout);
 
+    clock_gettime(CLOCK_MONOTONIC, &bout->nexus.direct.start_ts);
+
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_SimpleAudioDecoderSettings settings;
 
@@ -544,6 +572,9 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
         NEXUS_Error rc;
 
         if (!bout->nexus.direct.priming) {
+            // Stop volume deferral as soon as paused
+            bout->nexus.direct.deferred_volume = false;
+
             ALOGV_FIFO_INFO(simple_decoder, playpump);
             rc = nexus_common_mute_and_pause(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
                                              bout->nexus.direct.soft_muting,
@@ -600,6 +631,53 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
         }
     }
     return 0;
+}
+
+static NEXUS_Error nexus_direct_finish_priming(struct brcm_stream_out *bout) {
+    NEXUS_Error res;
+
+    ALOGV("%s, %p", __FUNCTION__, bout);
+
+    if (!bout->nexus.direct.playpump_mode || !bout->nexus.direct.playpump)
+        return NEXUS_SUCCESS;
+
+    if (bout->nexus.direct.deferred_volume) {
+        if (bout->nexus.direct.deferred_volume_ms) {
+            struct timespec now;
+            int32_t deferred_ms;
+
+            clock_gettime(CLOCK_MONOTONIC, &now);
+
+            // Apply existing deferred volume
+            res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                                 bout->nexus.direct.deferred_volume_ms, bout->nexus.direct.fadeLevel);
+
+            // Record delta between resume and first start as subsequent deferral amount
+            deferred_ms = (int32_t)((now.tv_sec - bout->nexus.direct.start_ts.tv_sec) * 1000) +
+                          (int32_t)((now.tv_nsec - bout->nexus.direct.start_ts.tv_nsec)/1000000);
+            bout->nexus.direct.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
+
+            // Set deferral window
+            bout->nexus.direct.deferred_window = now;
+            timespec_add_ms(bout->nexus.direct.deferred_window, MAX_VOLUME_DEFERRAL);
+        } else {
+            // No volume was set during priming, no need to defer
+            bout->nexus.direct.deferred_volume = false;
+        }
+    }
+
+    if (!bout->nexus.direct.deferred_volume) {
+        res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                             bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
+    }
+
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error resuming %u", __FUNCTION__, res);
+       return res;
+    }
+
+    bout->nexus.direct.priming = false;
+    return NEXUS_SUCCESS;
 }
 
 static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
@@ -793,11 +871,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         NEXUS_Error res;
 
                         ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                        res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
-                                                             bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
-                        if (res == NEXUS_SUCCESS) {
-                            bout->nexus.direct.priming = false;
-                        } else {
+                        res = nexus_direct_finish_priming(bout);
+                        if (res != NEXUS_SUCCESS) {
                             ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
                         }
                     }
@@ -888,10 +963,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
-                                                         bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
+                    res = nexus_direct_finish_priming(bout);
                     if (res == NEXUS_SUCCESS) {
-                        bout->nexus.direct.priming = false;
                         pthread_mutex_unlock(&bout->lock);
                         ret = BKNI_WaitForEvent(event, 50);
                         pthread_mutex_lock(&bout->lock);
@@ -966,10 +1039,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
-                                                         bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
+                    res = nexus_direct_finish_priming(bout);
                     if (res == NEXUS_SUCCESS) {
-                        bout->nexus.direct.priming = false;
                         continue;
                     } else {
                         ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
@@ -982,10 +1053,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 NEXUS_Error res;
 
                 ALOGV("%s: finished priming decoder", __FUNCTION__);
-                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
-                                                     bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
+                res = nexus_direct_finish_priming(bout);
                 if (res == NEXUS_SUCCESS) {
-                    bout->nexus.direct.priming = false;
                     continue;
                 } else {
                     ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
@@ -1320,6 +1389,11 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.direct.playpump_mode) {
         bout->nexus.direct.fadeLevel = 100;
+        bout->nexus.direct.deferred_volume = true;
+        bout->nexus.direct.deferred_volume_ms = 0;
+    } else {
+        bout->nexus.direct.deferred_volume = false;
+        bout->nexus.direct.deferred_volume_ms = 0;
     }
 
     return 0;

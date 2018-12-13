@@ -230,9 +230,35 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
         bout->nexus.tunnel.fadeLevel = (unsigned)(left * 100);
 
         ALOGV("%s: Volume: %d", __FUNCTION__, bout->nexus.tunnel.fadeLevel);
-        if (bout->started && !nexus_common_is_paused(audio_decoder)) {
-            // Apply volume immediately if not paused
-            nexus_common_set_volume(bout->bdev, audio_decoder, bout->nexus.tunnel.fadeLevel, NULL, -1, -1);
+        if (bout->started) {
+            if (bout->nexus.tunnel.deferred_volume) {
+                struct timespec now;
+
+                clock_gettime(CLOCK_MONOTONIC, &now);
+                if (nexus_common_is_paused(audio_decoder)) {
+                    // Record deferral amount if volume is set during priming
+                    int32_t deferred_ms;
+                    deferred_ms = (int32_t)((now.tv_sec - bout->nexus.tunnel.start_ts.tv_sec) * 1000) +
+                                  (int32_t)((now.tv_nsec - bout->nexus.tunnel.start_ts.tv_nsec)/1000000);
+                    bout->nexus.tunnel.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
+                } else {
+                    if (timespec_greater_than(now, bout->nexus.tunnel.deferred_window)) {
+                        // Deferral window over, resume normal operation
+                        bout->nexus.tunnel.deferred_volume = false;
+                        nexus_common_set_volume(bout->bdev, audio_decoder, bout->nexus.tunnel.fadeLevel, NULL, -1, -1);
+                    } else {
+                        // Push deferral window based on current time
+                        bout->nexus.tunnel.deferred_window = now;
+                        timespec_add_ms(bout->nexus.tunnel.deferred_window, MAX_VOLUME_DEFERRAL);
+
+                        nexus_common_set_volume(bout->bdev, audio_decoder, bout->nexus.tunnel.fadeLevel, NULL,
+                            bout->nexus.tunnel.deferred_volume_ms, -1);
+                    }
+                }
+            } else if (!nexus_common_is_paused(audio_decoder)) {
+                // Apply volume immediately if not paused
+                nexus_common_set_volume(bout->bdev, audio_decoder, bout->nexus.tunnel.fadeLevel, NULL, -1, -1);
+            }
         }
     }
 
@@ -401,6 +427,10 @@ static bool nexus_tunnel_bout_pause_int(struct brcm_stream_out *bout)
 
     ALOGV("%s", __FUNCTION__);
     ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
+
+    // Stop volume deferral as soon as paused
+    bout->nexus.tunnel.deferred_volume = false;
+
     res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
                                      bout->nexus.tunnel.soft_muting,
                                      bout->nexus.tunnel.sleep_after_mute);
@@ -447,8 +477,36 @@ static bool nexus_tunnel_bout_resume_comp(struct brcm_stream_out *bout)
     if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate)) {
         ALOGV("%s: Resume without priming", __FUNCTION__);
 
-        res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
-                                             bout->nexus.tunnel.soft_unmuting, bout->nexus.tunnel.fadeLevel);
+        if (bout->nexus.tunnel.deferred_volume) {
+            if (bout->nexus.tunnel.deferred_volume_ms) {
+                struct timespec now;
+                int32_t deferred_ms;
+
+                clock_gettime(CLOCK_MONOTONIC, &now);
+
+                // Apply existing deferred volume
+                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
+                                                     bout->nexus.tunnel.deferred_volume_ms, bout->nexus.tunnel.fadeLevel);
+
+                // Record delta between resume and first start as subsequent deferral amount
+                deferred_ms = (int32_t)((now.tv_sec - bout->nexus.tunnel.start_ts.tv_sec) * 1000) +
+                              (int32_t)((now.tv_nsec - bout->nexus.tunnel.start_ts.tv_nsec)/1000000);
+                bout->nexus.tunnel.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
+
+                // Set deferral window
+                bout->nexus.tunnel.deferred_window = now;
+                timespec_add_ms(bout->nexus.tunnel.deferred_window, MAX_VOLUME_DEFERRAL);
+            } else {
+                // No volume was set during priming, no need to defer
+                bout->nexus.tunnel.deferred_volume = false;
+            }
+        }
+
+        if (!bout->nexus.tunnel.deferred_volume) {
+            res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
+                                                 bout->nexus.tunnel.soft_unmuting, bout->nexus.tunnel.fadeLevel);
+        }
+
 
         if (res != NEXUS_SUCCESS) {
            ALOGE("%s: Error resuming %u", __FUNCTION__, res);
@@ -491,6 +549,8 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     // defer start until first write request
     if (!bout->nexus.tunnel.first_write)
         return 0;
+
+    clock_gettime(CLOCK_MONOTONIC, &bout->nexus.tunnel.start_ts);
 
     ret = NEXUS_Playpump_Start(bout->nexus.tunnel.playpump);
     if (ret != NEXUS_SUCCESS) {
@@ -1584,6 +1644,14 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->nexus.tunnel.fadeLevel = 100;
+    if (bout->nexus.tunnel.pcm_format) {
+        bout->nexus.tunnel.deferred_volume = false;
+        bout->nexus.tunnel.deferred_volume_ms = 0;
+    } else {
+        bout->nexus.tunnel.deferred_volume = true;
+        bout->nexus.tunnel.deferred_volume_ms = 0;
+    }
+
     return 0;
 
 err_pid:

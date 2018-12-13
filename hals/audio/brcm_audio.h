@@ -120,6 +120,7 @@ extern "C" {
 #define NEXUS_PCM_FRAMES_PER_DTS_SAMPLE_BLOCK 32
 #define NEXUS_PCM_FRAMES_PER_DTS_FRAME 512      // Assuming 16 sample blocks by default
 
+#define MAX_VOLUME_DEFERRAL 500 // maximum allowed volume deferral in ms
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,
@@ -251,6 +252,9 @@ struct brcm_stream_out {
                     int32_t soft_muting;
                     int32_t soft_unmuting;
                     int32_t sleep_after_mute;
+                    bool deferred_volume;
+                    int32_t deferred_volume_ms;
+                    struct timespec deferred_window;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
@@ -258,6 +262,7 @@ struct brcm_stream_out {
                     NEXUS_SimpleStcChannelHandle stc_channel;
                     NEXUS_SimpleStcChannelHandle stc_channel_sync;
                     NEXUS_PidChannelHandle pid_channel;
+                    struct timespec start_ts;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_write_time;
@@ -283,6 +288,9 @@ struct brcm_stream_out {
                     int32_t soft_muting;
                     int32_t soft_unmuting;
                     int32_t sleep_after_mute;
+                    bool deferred_volume;
+                    int32_t deferred_volume_ms;
+                    struct timespec deferred_window;
                 } tunnel;
             };
             BKNI_EventHandle event;
@@ -446,5 +454,16 @@ private:
 #else
 #define ALOGV_FIFO_INFO(...) ((void)0)
 #endif
+
+#define timespec_add_ms(ts, ms) { \
+    (ts).tv_nsec += ((ms) * 1000000); \
+    if ((ts).tv_nsec > 1000000000) { \
+        (ts).tv_sec += 1; \
+        (ts).tv_nsec -= 1000000000; \
+    } \
+}
+
+#define timespec_greater_than(a, b) \
+    (((a).tv_sec > (b).tv_sec) || (((a).tv_sec == (b).tv_sec) && ((a).tv_nsec > (b).tv_nsec)))
 
 #endif // BRCM_AUDIO_H
