@@ -492,7 +492,7 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
 
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGV("%s: frames:%" PRIu64 ", timestamp(%ld.%09ld)", __FUNCTION__, *frames,
+    ALOGV("%s: %p frames:%" PRIu64 ", timestamp(%ld.%09ld)", __FUNCTION__, bout, *frames,
           timestamp->tv_sec, timestamp->tv_nsec);
 
     return ret;

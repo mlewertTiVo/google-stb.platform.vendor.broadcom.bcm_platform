@@ -249,6 +249,7 @@ struct brcm_stream_out {
                     bool paused;
                     unsigned fadeLevel;
                     int32_t soft_muting;
+                    int32_t soft_unmuting;
                     int32_t sleep_after_mute;
                 } direct;
                 struct {
@@ -280,6 +281,7 @@ struct brcm_stream_out {
                     unsigned fadeLevel;
                     bool no_debounce;
                     int32_t soft_muting;
+                    int32_t soft_unmuting;
                     int32_t sleep_after_mute;
                 } tunnel;
             };
@@ -380,6 +382,24 @@ extern NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);
 extern void nexus_tunnel_release_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);
 extern void nexus_tunnel_lock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl, stc_channel_st **stc_st);
 extern void nexus_tunnel_unlock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl);
+
+extern bool nexus_common_is_paused(NEXUS_SimpleAudioDecoderHandle simple_decoder);
+extern NEXUS_Error nexus_common_set_volume(struct brcm_device *bdev,
+                                           NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                           unsigned level,
+                                           unsigned *old_level,
+                                           int duration,
+                                           int sleep_after);
+extern NEXUS_Error nexus_common_mute_and_pause(struct brcm_device *bdev,
+                                               NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                               NEXUS_SimpleStcChannelHandle stc_channel,
+                                               int mute_duration,
+                                               int sleep_after_mute);
+extern NEXUS_Error nexus_common_resume_and_unmute(struct brcm_device *bdev,
+                                                  NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                                  NEXUS_SimpleStcChannelHandle stc_channel,
+                                                  int unmute_duration,
+                                                  unsigned level);
 
 /* Thread to monitor standby */
 #define MAX_STANDBY_MONITOR_CALLBACKS 3

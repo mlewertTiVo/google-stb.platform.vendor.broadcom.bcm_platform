@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2015-2017 Broadcom Corporation
+ *    (c)2015-2018 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -153,16 +153,15 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
     }
 
 
-    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
+    if (bout->nexus.direct.playpump_mode) {
         if (bout->nexus.direct.fadeLevel != (unsigned)(left * 100)) {
-            NEXUS_SimpleAudioDecoderSettings audioSettings;
-            NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
             bout->nexus.direct.fadeLevel = (unsigned)(left * 100);
-            ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
-            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
-                bout->nexus.direct.fadeLevel;
-            audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
-            NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+
+            ALOGV("%s: Volume: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
+            if (bout->started && !nexus_common_is_paused(simple_decoder)) {
+                // Apply volume immediately if not paused
+                nexus_common_set_volume(bout->bdev, simple_decoder, bout->nexus.direct.fadeLevel, NULL, -1, -1);
+            }
         }
     }
 
@@ -471,14 +470,11 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     }
 
     if (bout->nexus.direct.playpump_mode) {
-        NEXUS_AudioDecoderTrickState trickState;
         NEXUS_Error res;
 
         ALOGV("%s: pausing to prime decoder", __FUNCTION__);
+        res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.direct.simple_decoder, NULL, 0, 0);
 
-        NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
-        trickState.rate = 0;
-        res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
         if (res == NEXUS_SUCCESS) {
             bout->nexus.direct.priming = true;
         } else {
@@ -544,62 +540,19 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
     }
 
     ALOGV("%s, %p", __FUNCTION__, bout);
-    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12) && (bout->nexus.direct.soft_muting >= 0)) {
-        NEXUS_SimpleAudioDecoderSettings audioSettings;
-        NEXUS_AudioProcessorStatus processorStatus;
-        NEXUS_Error rc;
-        int soft_muting = bout->nexus.direct.soft_muting;
-        int sleep_after_mute = bout->nexus.direct.sleep_after_mute;
-
-        ALOGV_FIFO_INFO(simple_decoder, playpump);
-
-        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
-        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, 0);
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 0;
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = soft_muting;
-        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
-
-        rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(simple_decoder,
-                 NEXUS_SimpleAudioDecoderSelector_ePrimary,
-                 NEXUS_AudioPostProcessing_eFade, &processorStatus);
-        for (int i = ((soft_muting / 10) + 1); i > 0; i--) {
-            if (rc)
-                break;
-            if (processorStatus.status.fade.level == 0)
-                break;
-
-            ALOGVV("%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
-                       (unsigned long)processorStatus.status.fade.active,
-                       (unsigned long)processorStatus.status.fade.remaining,
-                       (int)processorStatus.status.fade.level);
-            usleep(10 * 1000);
-
-            rc = NEXUS_SimpleAudioDecoder_GetProcessorStatus(simple_decoder,
-                     NEXUS_SimpleAudioDecoderSelector_ePrimary,
-                     NEXUS_AudioPostProcessing_eFade, &processorStatus);
-        }
-        if (sleep_after_mute)
-            usleep(sleep_after_mute * 1000);
-        ALOGV("%s fade level %d%%", __FUNCTION__, processorStatus.status.fade.level);
-    }
-
     if (bout->nexus.direct.playpump_mode && playpump) {
+        NEXUS_Error rc;
+
         if (!bout->nexus.direct.priming) {
-            NEXUS_AudioDecoderTrickState trickState;
-            NEXUS_Error res;
+            ALOGV_FIFO_INFO(simple_decoder, playpump);
+            rc = nexus_common_mute_and_pause(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                             bout->nexus.direct.soft_muting,
+                                             bout->nexus.direct.sleep_after_mute);
 
-            ALOGV("%s, %p", __FUNCTION__, bout);
-
-            NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
-            if (trickState.rate != 0) {
-                trickState.rate = 0;
-                ALOGV("%s, %p pause decoder", __FUNCTION__, bout);
-                res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
-                if (res != NEXUS_SUCCESS) {
-                    ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
-                }
-                ALOGV_FIFO_INFO(simple_decoder, playpump);
+            if (rc != NEXUS_SUCCESS) {
+                ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, rc);
             }
+            ALOGV_FIFO_INFO(simple_decoder, playpump);
         } else {
             ALOGV("%s, %p stop priming", __FUNCTION__, bout);
             bout->nexus.direct.priming = false;
@@ -622,17 +575,6 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
     }
 
     ALOGV("%s, %p", __FUNCTION__, bout);
-    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12) && (bout->nexus.direct.soft_muting >= 0)) {
-        NEXUS_SimpleAudioDecoderSettings audioSettings;
-
-        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
-        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, bout->nexus.direct.fadeLevel);
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level =
-            bout->nexus.direct.fadeLevel;
-        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0; //ms
-        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
-        ALOGV("%s unmuted", __FUNCTION__);
-    }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
         bout->nexus.direct.paused = false;
@@ -640,8 +582,6 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
         if (!bout->nexus.direct.priming) {
             NEXUS_AudioDecoderStatus decoderStatus;
             NEXUS_PlaypumpStatus playpumpStatus;
-            NEXUS_AudioDecoderTrickState trickState;
-            NEXUS_Error res;
 
             NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
             NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
@@ -655,22 +595,8 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
 
             ALOGV("%s, %p", __FUNCTION__, bout);
 
-            NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
-            if (trickState.rate == 0) {
-                if ( bout->nexus.direct.bitrate &&
-                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
-                         BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate) ) {
-                    ALOGV("%s: at %d, Already have enough data.  No need to prime.", __FUNCTION__, __LINE__);
-                    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                    res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
-                    if (res != NEXUS_SUCCESS) {
-                        ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
-                    }
-                } else {
-                    ALOGV("%s: priming decoder for resume", __FUNCTION__);
-                    bout->nexus.direct.priming = true;
-                }
-            }
+            ALOGV("%s: priming decoder for resume", __FUNCTION__);
+            bout->nexus.direct.priming = true;
         }
     }
     return 0;
@@ -867,8 +793,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         NEXUS_Error res;
 
                         ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                        trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                        res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                        res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                                             bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
                         if (res == NEXUS_SUCCESS) {
                             bout->nexus.direct.priming = false;
                         } else {
@@ -962,8 +888,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                    res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                                         bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
                     if (res == NEXUS_SUCCESS) {
                         bout->nexus.direct.priming = false;
                         pthread_mutex_unlock(&bout->lock);
@@ -1040,8 +966,8 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     NEXUS_Error res;
 
                     ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
-                    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                    res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                                         bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
                     if (res == NEXUS_SUCCESS) {
                         bout->nexus.direct.priming = false;
                         continue;
@@ -1054,12 +980,10 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             /* Unpause decoder after priming is done */
             if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming) {
                 NEXUS_Error res;
-                NEXUS_AudioDecoderTrickState trickState;
 
                 ALOGV("%s: finished priming decoder", __FUNCTION__);
-                NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-                trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.direct.simple_decoder, NULL,
+                                                     bout->nexus.direct.soft_unmuting, bout->nexus.direct.fadeLevel);
                 if (res == NEXUS_SUCCESS) {
                     bout->nexus.direct.priming = false;
                     continue;
@@ -1375,6 +1299,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
     bout->nexus.direct.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
+    bout->nexus.direct.soft_unmuting = property_get_int32(BCM_RO_AUDIO_SOFT_UNMUTING, 30);
     bout->nexus.direct.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
 
     // Restore auto mode for MS11
@@ -1393,14 +1318,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         }
     }
 
-    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
-        NEXUS_SimpleAudioDecoderSettings settings;
-        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+    if (bout->nexus.direct.playpump_mode) {
         bout->nexus.direct.fadeLevel = 100;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
-        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
     }
 
     return 0;
