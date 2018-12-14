@@ -120,6 +120,7 @@ extern "C" {
 #define NEXUS_PCM_FRAMES_PER_DTS_SAMPLE_BLOCK 32
 #define NEXUS_PCM_FRAMES_PER_DTS_FRAME 512      // Assuming 16 sample blocks by default
 
+#define MAX_VOLUME_DEFERRAL 500 // maximum allowed volume deferral in ms
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,
@@ -249,7 +250,11 @@ struct brcm_stream_out {
                     bool paused;
                     unsigned fadeLevel;
                     int32_t soft_muting;
+                    int32_t soft_unmuting;
                     int32_t sleep_after_mute;
+                    bool deferred_volume;
+                    int32_t deferred_volume_ms;
+                    struct timespec deferred_window;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
@@ -257,6 +262,7 @@ struct brcm_stream_out {
                     NEXUS_SimpleStcChannelHandle stc_channel;
                     NEXUS_SimpleStcChannelHandle stc_channel_sync;
                     NEXUS_PidChannelHandle pid_channel;
+                    struct timespec start_ts;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_write_time;
@@ -280,7 +286,11 @@ struct brcm_stream_out {
                     unsigned fadeLevel;
                     bool no_debounce;
                     int32_t soft_muting;
+                    int32_t soft_unmuting;
                     int32_t sleep_after_mute;
+                    bool deferred_volume;
+                    int32_t deferred_volume_ms;
+                    struct timespec deferred_window;
                 } tunnel;
             };
             BKNI_EventHandle event;
@@ -381,6 +391,24 @@ extern void nexus_tunnel_release_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);
 extern void nexus_tunnel_lock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl, stc_channel_st **stc_st);
 extern void nexus_tunnel_unlock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl);
 
+extern bool nexus_common_is_paused(NEXUS_SimpleAudioDecoderHandle simple_decoder);
+extern NEXUS_Error nexus_common_set_volume(struct brcm_device *bdev,
+                                           NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                           unsigned level,
+                                           unsigned *old_level,
+                                           int duration,
+                                           int sleep_after);
+extern NEXUS_Error nexus_common_mute_and_pause(struct brcm_device *bdev,
+                                               NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                               NEXUS_SimpleStcChannelHandle stc_channel,
+                                               int mute_duration,
+                                               int sleep_after_mute);
+extern NEXUS_Error nexus_common_resume_and_unmute(struct brcm_device *bdev,
+                                                  NEXUS_SimpleAudioDecoderHandle simple_decoder,
+                                                  NEXUS_SimpleStcChannelHandle stc_channel,
+                                                  int unmute_duration,
+                                                  unsigned level);
+
 /* Thread to monitor standby */
 #define MAX_STANDBY_MONITOR_CALLBACKS 3
 typedef bool (*b_standby_monitor_callback)(void *context);
@@ -426,5 +454,16 @@ private:
 #else
 #define ALOGV_FIFO_INFO(...) ((void)0)
 #endif
+
+#define timespec_add_ms(ts, ms) { \
+    (ts).tv_nsec += ((ms) * 1000000); \
+    if ((ts).tv_nsec > 1000000000) { \
+        (ts).tv_sec += 1; \
+        (ts).tv_nsec -= 1000000000; \
+    } \
+}
+
+#define timespec_greater_than(a, b) \
+    (((a).tv_sec > (b).tv_sec) || (((a).tv_sec == (b).tv_sec) && ((a).tv_nsec > (b).tv_nsec)))
 
 #endif // BRCM_AUDIO_H

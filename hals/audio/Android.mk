@@ -42,6 +42,7 @@ LOCAL_SRC_FILES += \
 	brcm_audio_nexus_hdmi.cpp \
 	brcm_audio_nexus_parser.cpp \
 	brcm_audio_nexus_tunnel.cpp \
+	brcm_audio_nexus_common.cpp \
 	brcm_audio_builtin.cpp \
 	brcm_audio_dummy.cpp \
 	StandbyMonitorThread.cpp \

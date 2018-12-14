@@ -203,6 +203,15 @@ static struct process_entity key_process_list_vmode[] = {
       .map = NULL,
       .niceness = -18,
    },
+   {
+      .name = "com.google.android.media.gts",
+      .thread_keep_filter = "MediaCodec_loop",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
+   },
 };
 static const int num_key_processes_vmode = sizeof(key_process_list_vmode)/sizeof(key_process_list_vmode[0]);
 
@@ -226,6 +235,15 @@ static struct process_entity key_process_list_tunneled[] = {
    },
    {
       .name = "com.netflix.ninja",
+      .thread_keep_filter = "MediaCodec_loop",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
+   },
+   {
+      .name = "com.google.android.media.gts",
       .thread_keep_filter = "MediaCodec_loop",
       .thread_ignore_filter = NULL,
       .pid = 0,
