@@ -280,6 +280,7 @@ public:
     void OutputFrameEvent();
     void SourceChangedEvent();
     void StreamChangedEvent();
+    void FirstPtsPassedEvent();
     void DecodeErrorEvent();
     void FifoEmptyEvent();
     void PlaypumpErrorCallbackEvent();
@@ -293,6 +294,13 @@ public:
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
     void InputBufferTimeoutCallback();
     void FormatChangeTimeoutCallback();
+
+    inline int GetVndExtVideoPeek(void) { return m_vndExtNrdpVidPeek; };
+    inline void SetVndExtVideoPeek(int val)
+    {
+        m_vndExtNrdpVidPeek = val;
+        m_vidPeekState = (m_vndExtNrdpVidPeek > 0) ? VideoPeekState_eWaitForInput : VideoPeekState_eDisabled;
+    };
 
 protected:
 
@@ -323,6 +331,8 @@ protected:
     B_SchedulerEventId m_sourceChangedEventId;
     B_EventHandle m_hStreamChangedEvent;
     B_SchedulerEventId m_streamChangedEventId;
+    B_EventHandle m_hFirstPtsPassedEvent;
+    B_SchedulerEventId m_firstPtsPassedEventId;
     B_EventHandle m_hDecodeErrorEvent;
     B_SchedulerEventId m_decodeErrorEventId;
     B_EventHandle m_hFifoEmptyEvent;
@@ -344,6 +354,7 @@ protected:
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
+    unsigned m_minNumInputBuffers;
 
     bool m_frEstimated;
     unsigned m_frStableCount;
@@ -462,6 +473,17 @@ protected:
     sp<SdbGeomCb> m_sdbGeomCb;
     bool m_forceScanMode1080p;
 
+    enum VideoPeekState
+    {
+        VideoPeekState_eDisabled,
+        VideoPeekState_eWaitForInput,
+        VideoPeekState_eInputReceived,
+        VideoPeekState_ePaused,
+        VideoPeekState_eFinished
+    };
+    VideoPeekState m_vidPeekState;
+    OMX_S32 m_vndExtNrdpVidPeek;
+
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
     NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);
@@ -533,6 +555,7 @@ protected:
     void CleanupPortBuffers(OMX_U32 nPortIndex);
     BOMX_Buffer *AssociateOutVdec2Omx(BOMX_VideoDecoderFrameBuffer *pVdecBuffer, bool &shouldResetPort);
     void RemoveAllVdecOmxAssociation();
+    void ResumeAfterVideoPeek();
 
     // These functions are used to pace the input buffers rate
     void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);
