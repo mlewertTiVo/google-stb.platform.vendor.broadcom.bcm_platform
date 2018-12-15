@@ -76,7 +76,7 @@ static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
 #define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1200
+#define DATA_PLANE_MAX_HEIGHT   1280
 
 /* default alignment for gralloc buffers:
  *
