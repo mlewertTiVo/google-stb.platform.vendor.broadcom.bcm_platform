@@ -92,10 +92,8 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID      (0xFFFFFFFF)
 
-#define KBITRATE_TO_BYTES_PER_125MS(kbr)        ((kbr) * 16)    // 1024/8/8
-#define KBITRATE_TO_BYTES_PER_3S(kbr)           ((kbr) * 384)   // 1024*3/8
-#define MORE_THAN_20_PERCENT(x)                 ((x) * 6 / 5)
-#define BYTES_TO_MS_FROM_KBITRATE(bytes,kbr)    (((bytes) * 1000) / ((kbr) * 128))
+#define KBITRATE_TO_BYTES_PER_250MS(kbr)        ((kbr) * 32)    // 1024/8/8*2
+#define KBITRATE_TO_BYTES_PER_375MS(kbr)        ((kbr) * 48)    // 1024/8/8*3
 
 /*
  * Function declarations
@@ -416,7 +414,7 @@ static int32_t nexus_tunnel_bout_get_fifo_depth(struct brcm_stream_out *bout)
         ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
     }
 
-    ALOGV("%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_3S(bout->nexus.tunnel.bitrate));
+    ALOGV("%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
 
     return ppStatus.fifoDepth + decStatus.fifoDepth;
 }
@@ -474,7 +472,7 @@ static bool nexus_tunnel_bout_resume_comp(struct brcm_stream_out *bout)
         return false;
     }
 
-    if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate)) {
+    if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate)) {
         ALOGV("%s: Resume without priming", __FUNCTION__);
 
         if (bout->nexus.tunnel.deferred_volume) {
@@ -989,30 +987,22 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 if (bout->nexus.tunnel.bitrate > 0) {
                     unsigned bitrate;
                     int32_t fifoDepth;
-                    bool ppDataRdy = false;
-                    while (1) {
-                        fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
-                        if (fifoDepth < 0) {
-                            break;
-                        }
-                        if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_3S(bout->nexus.tunnel.bitrate)) {
-                            /* Enough data accumulated in playpump and decoder */
-                            if (ppDataRdy) {
-                                ret = 0;
-                                goto done;
-                            }
-                            BKNI_ResetEvent(event);
-                            pthread_mutex_unlock(&bout->lock);
-                            ret = BKNI_WaitForEvent(event, 50);
-                            pthread_mutex_lock(&bout->lock);
-                            if (ret == BERR_TIMEOUT) {
-                                ret = 0;
-                                goto done;
-                            }
-                            ppDataRdy = true;
-                            continue;
-                        }
+                    fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
+                    if (fifoDepth < 0) {
                         break;
+                    }
+                    if (bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate)) {
+                        /* Enough data accumulated in playpump and decoder */
+                        BKNI_ResetEvent(event);
+                        pthread_mutex_unlock(&bout->lock);
+                        ret = BKNI_WaitForEvent(event, 50);
+                        pthread_mutex_lock(&bout->lock);
+                        if (ret == BERR_TIMEOUT) {
+                            ret = 0;
+                            goto done;
+                        }
+                            /* Check again */
+                        continue;
                     }
                 }
             }
@@ -1352,62 +1342,7 @@ done:
         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
     }
     else {
-        NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
-        if (!bout->nexus.tunnel.priming && trickState.rate != 0) {
-            if (bout->nexus.tunnel.bitrate > 0) {
-                nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
-                int32_t deltaMs = toMillisecondTimeoutDelay(bout->nexus.tunnel.last_write_time, now);
-
-                if (bout->nexus.tunnel.last_written_ts == UINT64_MAX)
-                    bout->nexus.tunnel.last_written_ts = last_written_ts;
-                uint64_t deltaTs = (last_written_ts != UINT64_MAX) && (last_written_ts > bout->nexus.tunnel.last_written_ts) ?
-                                    last_written_ts - bout->nexus.tunnel.last_written_ts : 0;
-                bout->nexus.tunnel.last_bytes_written += bytes_written;
-
-                uint32_t expectedBytes = bout->nexus.tunnel.bitrate * 128 * (uint32_t)deltaMs / 1000;
-                if (deltaTs >= (BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS * 1000) ||
-                    (bout->nexus.tunnel.last_bytes_written > MORE_THAN_20_PERCENT(expectedBytes)) ||
-                    deltaMs >= BRCM_AUDIO_TUNNEL_COMP_EST_PERIOD_MS ||
-                    bout->nexus.tunnel.last_bytes_written >= bout->buffer_size * BRCM_AUDIO_TUNNEL_COMP_EST_BYTE_MUL) {
-
-                    if (bout->nexus.tunnel.last_bytes_written > MORE_THAN_20_PERCENT(expectedBytes)) {
-                        uint32_t diffBytes = bout->nexus.tunnel.last_bytes_written - MORE_THAN_20_PERCENT(expectedBytes);
-                        uint32_t throttleMs = BYTES_TO_MS_FROM_KBITRATE(diffBytes, bout->nexus.tunnel.bitrate);
-                        uint32_t fifoLoThres = KBITRATE_TO_BYTES_PER_125MS(bout->nexus.tunnel.bitrate) * BRCM_AUDIO_TUNNEL_COMP_THRES_MUL;
-
-                        ALOGV("%s: throttle %ums(%u) delta %dms written %u(%u) diff %u loThs %u", __FUNCTION__, throttleMs, BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS, deltaMs, bout->nexus.tunnel.last_bytes_written, expectedBytes, diffBytes, fifoLoThres);
-                        if (throttleMs > BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS) {
-                            throttleMs = BRCM_AUDIO_TUNNEL_COMP_DELAY_MAX_MS;
-                        }
-                        pthread_mutex_unlock(&bout->lock);
-                        usleep(throttleMs * 1000);
-                        pthread_mutex_lock(&bout->lock);
-
-                        int32_t fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
-                        if (fifoDepth >= 0 && (uint32_t)fifoDepth < fifoLoThres) {
-                            ALOGV("%s: low depth %d", __FUNCTION__, fifoDepth);
-                            bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
-                            bout->nexus.tunnel.last_bytes_written = 0;
-                            bout->nexus.tunnel.last_written_ts = UINT64_MAX;
-                        }
-                    }
-                    else {
-                        ALOGV("%s: delta %dms written %u(%d)", __FUNCTION__, deltaMs, bout->nexus.tunnel.last_bytes_written, expectedBytes);
-                        bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
-                        bout->nexus.tunnel.last_bytes_written = 0;
-                        bout->nexus.tunnel.last_written_ts = UINT64_MAX;
-                    }
-                }
-                else {
-                    ALOGV("%s: delta %dms written %u", __FUNCTION__, deltaMs, bout->nexus.tunnel.last_bytes_written);
-                }
-            }
-        }
-        else {
-            bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
-            bout->nexus.tunnel.last_bytes_written = 0;
-            bout->nexus.tunnel.last_written_ts = last_written_ts;
-        }
+        bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
         ALOGV("%s: prime %d rate %d wr %d", __FUNCTION__, bout->nexus.tunnel.priming, trickState.rate, bytes_written);
     }
 
