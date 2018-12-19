@@ -55,6 +55,7 @@ static void wait() {
    pthread_attr_init(&attr);
    pthread_create(&wait_task, &attr, wait_ops, (void *)NULL);
    pthread_attr_destroy(&attr);
+   pthread_setname_np(wait_task, "nxssd_worker");
 }
 
 static bool stdbMon(
