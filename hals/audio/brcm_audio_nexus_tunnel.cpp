@@ -94,6 +94,9 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define PCM_STOP_FILL_TARGET                    250 // 250 ms
 #define PCM_START_PLAY_TARGET                   375 // 375 ms
 
+#define PCM_DEBOUNCE_STOP_FILL_TARGET           300 // 300 ms
+#define PCM_DEBOUNCE_START_PLAY_TARGET          400 // 400 ms
+
 #define KBITRATE_TO_BYTES_PER_250MS(kbr)        ((kbr) * 32)    // 1024/8/8*2
 #define KBITRATE_TO_BYTES_PER_375MS(kbr)        ((kbr) * 48)    // 1024/8/8*3
 
@@ -456,7 +459,9 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
     if ((bout->nexus.tunnel.pcm_format && (uint32_t)fifoDepth >= get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                                bout->config.format,
                                                                popcount(bout->config.channel_mask),
-                                                               PCM_START_PLAY_TARGET)) ||
+                                                               bout->nexus.tunnel.no_debounce?
+                                                                   PCM_START_PLAY_TARGET:
+                                                                   PCM_DEBOUNCE_START_PLAY_TARGET)) ||
         (!bout->nexus.tunnel.pcm_format &&
           bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate))) {
         ALOGV("%s: Resume without priming", __FUNCTION__);
@@ -547,7 +552,9 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
         threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                bout->config.format,
                                                popcount(bout->config.channel_mask),
-                                               PCM_START_PLAY_TARGET);
+                                               bout->nexus.tunnel.no_debounce?
+                                                   PCM_START_PLAY_TARGET:
+                                                   PCM_DEBOUNCE_START_PLAY_TARGET);
     } else {
         threshold = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
     }
@@ -767,7 +774,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
-    if (!bout->nexus.tunnel.no_debounce) {
+    if (!bout->nexus.tunnel.no_debounce && !bout->nexus.tunnel.priming) {
         // Audio underruns can happen when the app is not feeding the audio frames fast enough
         // especially at the beginning of the playback or after seeking. We debounce the pause/resume
         // operations in such underruns by deferring the pause for 0.3 seconds.
@@ -959,7 +966,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 int32_t threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                                bout->config.format,
                                                                popcount(bout->config.channel_mask),
-                                                               PCM_STOP_FILL_TARGET);
+                                                               bout->nexus.tunnel.no_debounce?
+                                                                   PCM_STOP_FILL_TARGET:
+                                                                   PCM_DEBOUNCE_STOP_FILL_TARGET);
 
                 fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
                 if (fifoDepth > threshold) {
@@ -1523,7 +1532,8 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     av_header.reset();
     current_buff.reset();
 
-    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE, true);
+    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE,
+        bout->nexus.tunnel.pcm_format?false:true);
     bout->nexus.tunnel.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
     bout->nexus.tunnel.soft_unmuting = property_get_int32(BCM_RO_AUDIO_SOFT_UNMUTING, 30);
     bout->nexus.tunnel.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
