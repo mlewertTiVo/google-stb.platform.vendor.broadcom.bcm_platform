@@ -257,6 +257,7 @@ struct brcm_stream_out {
                     struct timespec deferred_window;
                 } direct;
                 struct {
+                    bool started;
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
                     NEXUS_PlaypumpHandle playpump;
                     NEXUS_SimpleStcChannelHandle stc_channel;
@@ -266,12 +267,12 @@ struct brcm_stream_out {
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_pause_time;
+                    uint64_t last_written_ts;
                     bool debounce;
                     bool debounce_pausing;
                     bool debounce_more;
                     bool debounce_expired;
                     bool debounce_stopping;
-                    bool first_write;
                     pthread_t debounce_thread;
                     bool pcm_format;
                     size_t lastCount;
