@@ -265,10 +265,7 @@ struct brcm_stream_out {
                     struct timespec start_ts;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
-                    nsecs_t last_write_time;
                     nsecs_t last_pause_time;
-                    unsigned last_bytes_written;
-                    uint64_t last_written_ts;
                     bool debounce;
                     bool debounce_pausing;
                     bool debounce_more;

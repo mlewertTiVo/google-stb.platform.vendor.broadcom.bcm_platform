@@ -1118,11 +1118,13 @@ static nxserver_t init_nxserver(void)
     }
     settings.display.hdmiPreferences.enabled = false;
     settings.display.componentPreferences.enabled = false;
+    /* -default_sd off (unless composite video enabled) */
     if (cvbs) {
        settings.display.compositePreferences.enabled = true;
        settings.display.defaultSdFormat = NEXUS_VideoFormat_eNtsc;
     } else {
        settings.display.compositePreferences.enabled = false;
+       settings.display.defaultSdFormat = NEXUS_VideoFormat_eUnknown;
     }
 
     settings.allowCompositionBypass = property_get_int32(BCM_RO_NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
