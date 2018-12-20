@@ -78,6 +78,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 
 #define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
+#define BRCM_AUDIO_TUNNEL_HALF_DURATION_US      (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
 #define BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS      (200)
 #define BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER       (BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS / BRCM_AUDIO_TUNNEL_DURATION_MS)
 #define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
@@ -633,6 +634,7 @@ static int nexus_tunnel_bout_start_int(struct brcm_stream_out *bout)
 
     nexus_tunnel_bout_debounce_reset(bout);
 
+    bout->nexus.tunnel.last_write_time = 0;
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
@@ -1341,6 +1343,18 @@ done:
     /* Return error if no bytes written */
     if (bytes_written == 0) {
         return ret;
+    }
+
+
+    // For PCM, throttle the output to prevent audio underruns
+    if (bout->nexus.tunnel.pcm_format) {
+        nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
+        int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
+        if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
+            ALOGV("%s: throttle %d us", __FUNCTION__, throttle_us);
+            usleep(throttle_us);
+        }
+        bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
     }
 
     return bytes_written;
