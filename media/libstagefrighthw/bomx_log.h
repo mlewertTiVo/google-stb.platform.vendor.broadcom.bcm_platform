@@ -54,13 +54,14 @@
 #define B_LOG_VDEC_IN_FEED      (1<<(B_LOG_VDEC_BASE))      /* Input feeding */
 #define B_LOG_VDEC_IN_RET       (1<<(B_LOG_VDEC_BASE+1))    /* Input returning */
 #define B_LOG_VDEC_OUTPUT       (1<<(B_LOG_VDEC_BASE+2))    /* Output */
-#define B_LOG_VDEC_NEXUS_RET    (1<<(B_LOG_VDEC_BASE+3))    /* Frames return to Nexus*/
-#define B_LOG_VDEC_TRANS_STATE  (1<<(B_LOG_VDEC_BASE+4))    /* State transitions */
-#define B_LOG_VDEC_TRANS_PORT   (1<<(B_LOG_VDEC_BASE+5))    /* Port state transitions */
-#define B_LOG_VDEC_PORT_RECFG   (1<<(B_LOG_VDEC_BASE+6))    /* Port re-configuration */
-#define B_LOG_VDEC_STC          (1<<(B_LOG_VDEC_BASE+7))    /* STC (for tunneled decoder) */
-#define B_LOG_VDEC_COLOR_INFO   (1<<(B_LOG_VDEC_BASE+8))    /* Color info */
-#define B_LOG_VDEC_CODEC_CFG    (1<<(B_LOG_VDEC_BASE+9))    /* Codec configuration parser */
+#define B_LOG_VDEC_NEXUS_RET    (1<<(B_LOG_VDEC_BASE+3))    /* Frames return to Nexus */
+#define B_LOG_VDEC_DROP         (1<<(B_LOG_VDEC_BASE+4))    /* Frames dropped */
+#define B_LOG_VDEC_TRANS_STATE  (1<<(B_LOG_VDEC_BASE+5))    /* State transitions */
+#define B_LOG_VDEC_TRANS_PORT   (1<<(B_LOG_VDEC_BASE+6))    /* Port state transitions */
+#define B_LOG_VDEC_PORT_RECFG   (1<<(B_LOG_VDEC_BASE+7))    /* Port re-configuration */
+#define B_LOG_VDEC_STC          (1<<(B_LOG_VDEC_BASE+8))    /* STC (for tunneled decoder) */
+#define B_LOG_VDEC_COLOR_INFO   (1<<(B_LOG_VDEC_BASE+9))    /* Color info */
+#define B_LOG_VDEC_CODEC_CFG    (1<<(B_LOG_VDEC_BASE+10))   /* Codec configuration parser */
 
 /* Video encoder (8-bit) (bit 12-19) */
 #define B_LOG_VENC_BASE         (12)
