@@ -36,24 +36,11 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef VENDOR_BCM_PROPS__TOP_LEVEL
-#define VENDOR_BCM_PROPS__TOP_LEVEL
+#ifndef VENDOR_BCM_PROPS__DRM
+#define VENDOR_BCM_PROPS__DRM
 
-/* this module only contains includes.  when adding a new property, use the
- * adequate location to place it, either in an existing sub-module, or create
- * a new one if warranted.
- */
+/* properties used by DRM. */
 
-#include "audio_props.h"
-#include "gralloc_props.h"
-#include "hdmicec_props.h"
-#include "hwcomposer_props.h"
-#include "keymaster_props.h"
-#include "drm_props.h"
-#include "media_props.h"
-#include "nexus_props.h"
-#include "others_props.h"
-#include "power_props.h"
+#define BCM_RO_DRM_WV_PLUGIN_RT                     "ro.drm.wv.plugin_rt"
 
-#endif /* VENDOR_BCM_PROPS__TOP_LEVEL */
-
+#endif /* VENDOR_BCM_PROPS__DRM */
