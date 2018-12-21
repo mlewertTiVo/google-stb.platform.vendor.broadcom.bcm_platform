@@ -373,6 +373,19 @@ static void hwc2_dump_content(
    }
 }
 
+static NEXUS_VideoEotf hwc2_tonx_eotf(
+   int32_t eotf) {
+
+   switch (eotf) {
+   case HWC2_EOTF_HDR10: return NEXUS_VideoEotf_eHdr10; break;
+   case HWC2_EOTF_HLG:   return NEXUS_VideoEotf_eHlg; break;
+   case HWC2_EOTF_SDR:   return NEXUS_VideoEotf_eSdr; break;
+   case HWC2_EOTF_INPUT: return NEXUS_VideoEotf_eMax; break;
+   case HWC2_EOTF_NS:    /* fall */
+   default:              return NEXUS_VideoEotf_eInvalid; break;
+   }
+}
+
 static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
    int32_t wanted) {
@@ -380,8 +393,10 @@ static void hwc2_eotf(
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_DisplaySettings s;
    int32_t eotf = HWC2_INVALID;
+   bool forced = hwc2_enabled(hwc2_tweak_forced_eotf);
 
-   if (hwc2_enabled(hwc2_tweak_forced_eotf)) {
+   // forced mode - use value supported by sink, hdr10 preferred.
+   if (forced) {
       if (dsp->aCfg->hdr10) {
          eotf = HWC2_EOTF_HDR10;
       } else if (dsp->aCfg->hlg) {
@@ -390,46 +405,35 @@ static void hwc2_eotf(
          eotf = HWC2_INVALID;
       }
    } else {
-      eotf =
-         (wanted != HWC2_INVALID) ? wanted : hwc2_setting(hwc2_tweak_eotf);
+      // use value specified if valid.
+      if (wanted != HWC2_INVALID) {
+         eotf = wanted;
+      } else {
+         eotf = hwc2_setting(hwc2_tweak_eotf);
+         if (!eotf) {
+            eotf = HWC2_INVALID;
+         }
+      }
    }
 
+   // nothing specific to set, revert to input tracking as the best default.
    if (eotf == HWC2_INVALID) {
-      return;
+      eotf = HWC2_EOTF_INPUT;
    }
 
    if (pthread_mutex_lock(&dsp->mtx_cfg)) {
       return;
    }
-   if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      do {
-         NxClient_GetDisplaySettings(&s);
-         switch (eotf) {
-         case HWC2_EOTF_HDR10:
-            ALOGI("[eotf]: hdr10.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+   do {
+      NxClient_GetDisplaySettings(&s);
+      if (hwc2_tonx_eotf(eotf) == s.hdmiPreferences.drmInfoFrame.eotf) {
          break;
-         case HWC2_EOTF_HLG:
-            ALOGI("[eotf]: hlg.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
-         break;
-         case HWC2_EOTF_SDR:
-            ALOGI("[eotf]: sdr.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
-         break;
-         case HWC2_EOTF_INPUT:
-            ALOGI("[eotf]: input tracking.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eMax;
-         break;
-         case HWC2_EOTF_NS:
-         default:
-            ALOGI("[eotf]: non-specific.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
-         break;
-         }
-         rc = NxClient_SetDisplaySettings(&s);
-      } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
-   }
+      }
+      ALOGI("[eotf]: %supdating function from %d to %d",
+         forced? "force " : "", s.hdmiPreferences.drmInfoFrame.eotf, hwc2_tonx_eotf(eotf));
+      s.hdmiPreferences.drmInfoFrame.eotf = hwc2_tonx_eotf(eotf);
+      rc = NxClient_SetDisplaySettings(&s);
+   } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
 
