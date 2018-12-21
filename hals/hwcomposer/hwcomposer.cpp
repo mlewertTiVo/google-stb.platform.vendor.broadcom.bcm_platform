@@ -6718,7 +6718,7 @@ static uint32_t hwc2_afb_min(
    bool is_h,
    uint32_t max) {
 
-   (void) max;
+   bool fixed = property_get_bool(BCM_RO_HWC2_GFB_FIXED, 0);
 
    /* estimate the 'best' framebuffer we report to android to avoid
     * ridiculous looking user interface.  use the defined density for
@@ -6736,8 +6736,13 @@ static uint32_t hwc2_afb_min(
    case 213: v = is_h ? 720 : 1280; break;  /* 720p */
    case 640: v = is_h ? 2160 : 3840; break; /* 4K (unused) */
    case 320:                                /* 1080p + default. */
-   default: { if (is_h) {v=(max==1080)?720:1080;}
-              else {v=(max==1920)?1280:1920;}
+   default: { if (fixed) {
+                 if (is_h) {v = 1080;}
+                 else {v = 1920;}
+              } else {
+                 if (is_h) {v=(max==1080)?720:1080;}
+                 else {v=(max==1920)?1280:1920;}
+              }
             } break;
    }
 

@@ -49,6 +49,7 @@
 #define BCM_RO_HWC2_GFB_MAX_W                         "ro.nx.hwc2.gfb.w"
 #define BCM_RO_HWC2_GFB_MAX_H                         "ro.nx.hwc2.gfb.h"
 #define BCM_RO_HWC2_SF_LCD_DENSITY                    "ro.nx.sf.lcd_density"
+#define BCM_RO_HWC2_GFB_FIXED                         "ro.nx.hwc2.gfb.fixed"
 
 #define BCM_DYN_HWC2_DUMP_SET                         "dyn.nx.hwc2.dump.data"
 #define BCM_DYN_HWC2_DUMP_NOW                         "dyn.nx.hwc2.dump.this"
