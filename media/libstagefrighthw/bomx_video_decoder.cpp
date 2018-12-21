@@ -5097,7 +5097,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             if ( active && pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
                 // Drop the buffer in the decoder
-                ALOGV("Dropping frame %u on FreeBuffer", pFrameBuffer->frameStatus.serialNumber);
+                ALOGD_IF((m_logMask & B_LOG_VDEC_DROP), "Dropping frame %u on FreeBuffer", pFrameBuffer->frameStatus.serialNumber);
                 pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
                 ReturnDecodedFrames();
             }
@@ -8014,7 +8014,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                         {
                             if (m_pVideoPorts[1]->GetBufferHwTexUsed() != BOMX_PortBufferHwTexUsage_eConfirmed)
                             {
-                               ALOGD("Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
+                               ALOGD_IF((m_logMask & B_LOG_VDEC_DROP), "Dropping outstanding frame %u", pBuffer->frameStatus.serialNumber);
                             }
                             else
                             {
