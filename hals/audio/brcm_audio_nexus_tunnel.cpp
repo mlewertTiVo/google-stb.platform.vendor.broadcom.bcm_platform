@@ -102,6 +102,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define KBITRATE_TO_BYTES_PER_375MS(kbr)        ((kbr) * 48)    // 1024/8/8*3
 
 #define MAX_TS_DELTA                            10000000
+#define PCM_MUTE_TIME                           10
 
 /*
  * Function declarations
@@ -481,9 +482,18 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
 
                 clock_gettime(CLOCK_MONOTONIC, &now);
 
-                // Apply existing deferred volume
-                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
-                                                     bout->nexus.tunnel.deferred_volume_ms, bout->nexus.tunnel.fadeLevel);
+                if (bout->nexus.tunnel.pcm_format) {
+                    // Resume muted first, then apply deferred volume
+                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
+                                                         0, 0);
+                    nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, 0, NULL, PCM_MUTE_TIME, 1);
+                    nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.fadeLevel, NULL,
+                                                         bout->nexus.tunnel.deferred_volume_ms, -1);
+                } else {
+                    // Apply existing deferred volume
+                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel,
+                                                         bout->nexus.tunnel.deferred_volume_ms, bout->nexus.tunnel.fadeLevel);
+                }
 
                 // Record delta between resume and first start as subsequent deferral amount
                 deferred_ms = (int32_t)((now.tv_sec - bout->nexus.tunnel.start_ts.tv_sec) * 1000) +
@@ -509,6 +519,7 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
            ALOGE("%s: Error resuming %u", __FUNCTION__, res);
            return false;
         }
+        ALOGV("%s: Resume priming over", __FUNCTION__);
         bout->nexus.tunnel.priming = false;
     }
     else {
@@ -788,6 +799,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
+    ALOGV("%s", __FUNCTION__);
     if (!bout->nexus.tunnel.no_debounce && !bout->nexus.tunnel.priming) {
         // Audio underruns can happen when the app is not feeding the audio frames fast enough
         // especially at the beginning of the playback or after seeking. We debounce the pause/resume

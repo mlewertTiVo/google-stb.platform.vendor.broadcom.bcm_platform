@@ -87,7 +87,7 @@ NEXUS_Error nexus_common_set_volume(struct brcm_device *bdev,
             for (int i = ((duration / 10) + 1); i > 0; i--) {
                 if (rc != NEXUS_SUCCESS)
                     break;
-                if (processorStatus.status.fade.level == 0)
+                if (processorStatus.status.fade.level == level)
                     break;
 
                 ALOGVV("%s: %d, active %lu, remain %lu, lvl %d%%", __FUNCTION__, i,
