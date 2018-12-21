@@ -454,6 +454,11 @@ static bool nexus_tunnel_bout_resume_int(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p", __FUNCTION__, bout);
 
+    if (!nexus_common_is_paused(bout->nexus.tunnel.audio_decoder)) {
+        // Not paused. Nothing to resume
+        return true;
+    }
+
     int32_t fifoDepth = nexus_tunnel_bout_get_fifo_depth(bout);
     if (fifoDepth < 0) {
         return false;
