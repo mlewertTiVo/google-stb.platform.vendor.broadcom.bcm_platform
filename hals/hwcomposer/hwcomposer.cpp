@@ -7000,6 +7000,11 @@ static void hwc2_hb_ntfy(
       }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
+      ALOGV("[ext]: active sideband client.");
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_INPUT);
+      }
+   break;
    default:
    break;
    }
