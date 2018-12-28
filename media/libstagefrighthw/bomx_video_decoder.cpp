@@ -3430,7 +3430,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
                 NEXUS_MemoryBlock_Unlock(hdl);
             }
-            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
+            ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
                     m_tunnelStcChannel, m_tunnelStcChannelSync);
         }
 
