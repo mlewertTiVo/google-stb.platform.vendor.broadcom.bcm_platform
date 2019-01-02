@@ -7211,8 +7211,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             }
 
             bool newRenderedFrame = false;
-            bool firstPtsRendered = (status.numIFramesDisplayed > 0 || (status.firstPtsPassed && !m_waitingForStc));
-            if ( (status.pts != 0 || (status.pts == 0 && firstPtsRendered)) && m_tunnelCurrentPts != status.pts )
+            bool displayed = (status.numIFramesDisplayed > 0 || status.numDisplayed > 0);
+            if ( displayed && m_tunnelCurrentPts != status.pts )
             {
                 if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
                 {
