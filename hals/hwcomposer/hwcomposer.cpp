@@ -262,7 +262,7 @@ static bool hwc2_enabled(
       r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_FBCOMP, 0);
    break;
    case hwc2_tweak_pip_alpha_hole:
-      r = !!HWC2_PAH;
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_PIPAH, 0);
    break;
    case hwc2_tweak_bypass_disable:
       r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_NOCB, 0);
@@ -280,7 +280,7 @@ static bool hwc2_enabled(
       r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_HPD0, 0);
    break;
    case hwc2_tweak_odv_alpha_hole:
-      r = !!HWC2_ODV;
+      r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_ODVAH, 1);
    break;
    case hwc2_tweak_one_cfg:
       r = (bool)property_get_bool(BCM_DYN_HWC2_TWEAK_ONE_CFG, 0);
@@ -373,6 +373,19 @@ static void hwc2_dump_content(
    }
 }
 
+static NEXUS_VideoEotf hwc2_tonx_eotf(
+   int32_t eotf) {
+
+   switch (eotf) {
+   case HWC2_EOTF_HDR10: return NEXUS_VideoEotf_eHdr10; break;
+   case HWC2_EOTF_HLG:   return NEXUS_VideoEotf_eHlg; break;
+   case HWC2_EOTF_SDR:   return NEXUS_VideoEotf_eSdr; break;
+   case HWC2_EOTF_INPUT: return NEXUS_VideoEotf_eMax; break;
+   case HWC2_EOTF_NS:    /* fall */
+   default:              return NEXUS_VideoEotf_eInvalid; break;
+   }
+}
+
 static void hwc2_eotf(
    struct hwc2_dsp_t *dsp,
    int32_t wanted) {
@@ -380,8 +393,10 @@ static void hwc2_eotf(
    NEXUS_Error rc = NEXUS_SUCCESS;
    NxClient_DisplaySettings s;
    int32_t eotf = HWC2_INVALID;
+   bool forced = hwc2_enabled(hwc2_tweak_forced_eotf);
 
-   if (hwc2_enabled(hwc2_tweak_forced_eotf)) {
+   // forced mode - use value supported by sink, hdr10 preferred.
+   if (forced) {
       if (dsp->aCfg->hdr10) {
          eotf = HWC2_EOTF_HDR10;
       } else if (dsp->aCfg->hlg) {
@@ -390,46 +405,35 @@ static void hwc2_eotf(
          eotf = HWC2_INVALID;
       }
    } else {
-      eotf =
-         (wanted != HWC2_INVALID) ? wanted : hwc2_setting(hwc2_tweak_eotf);
+      // use value specified if valid.
+      if (wanted != HWC2_INVALID) {
+         eotf = wanted;
+      } else {
+         eotf = hwc2_setting(hwc2_tweak_eotf);
+         if (!eotf) {
+            eotf = HWC2_INVALID;
+         }
+      }
    }
 
+   // nothing specific to set, revert to input tracking as the best default.
    if (eotf == HWC2_INVALID) {
-      return;
+      eotf = HWC2_EOTF_INPUT;
    }
 
    if (pthread_mutex_lock(&dsp->mtx_cfg)) {
       return;
    }
-   if (dsp->aCfg->hdr10 || dsp->aCfg->hlg) {
-      do {
-         NxClient_GetDisplaySettings(&s);
-         switch (eotf) {
-         case HWC2_EOTF_HDR10:
-            ALOGI("[eotf]: hdr10.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+   do {
+      NxClient_GetDisplaySettings(&s);
+      if (hwc2_tonx_eotf(eotf) == s.hdmiPreferences.drmInfoFrame.eotf) {
          break;
-         case HWC2_EOTF_HLG:
-            ALOGI("[eotf]: hlg.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eHlg;
-         break;
-         case HWC2_EOTF_SDR:
-            ALOGI("[eotf]: sdr.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
-         break;
-         case HWC2_EOTF_INPUT:
-            ALOGI("[eotf]: input tracking.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eMax;
-         break;
-         case HWC2_EOTF_NS:
-         default:
-            ALOGI("[eotf]: non-specific.");
-            s.hdmiPreferences.drmInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
-         break;
-         }
-         rc = NxClient_SetDisplaySettings(&s);
-      } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
-   }
+      }
+      ALOGI("[eotf]: %supdating function from %d to %d",
+         forced? "force " : "", s.hdmiPreferences.drmInfoFrame.eotf, hwc2_tonx_eotf(eotf));
+      s.hdmiPreferences.drmInfoFrame.eotf = hwc2_tonx_eotf(eotf);
+      rc = NxClient_SetDisplaySettings(&s);
+   } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
    pthread_mutex_unlock(&dsp->mtx_cfg);
 }
 
@@ -6430,6 +6434,7 @@ static void hwc2_ext_cmp_frame(
          }
       case HWC2_COMPOSITION_DEVICE:
          if (is_video) {
+            bool use_odv = false;
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
@@ -6445,21 +6450,35 @@ static void hwc2_ext_cmp_frame(
                     (uint16_t)(lyr->fr.right - lyr->fr.left),
                     (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
                hwc2_lyr_adj(dsp, &cr, &p, NULL);
-               if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
-                   (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  pah = p;
-                  ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
-                           "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
-                           dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
-               } else if (c && hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
+               /* odv-alpha-hole: carved if a composition has already happened to ensure
+                * the background of the result is transparent to allow the video punch thru,
+                * this is the preferred mode of usage.
+                */
+               if (c && hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
                   odv = p;
-                  pah.width = 0;
+                  /* reset pah if set on a precedent layer. */
+                  pah.width  = 0;
                   pah.height = 0;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
                            "[ext]:[odv-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
                            dsp->pres, dsp->post, odv.x, odv.y, odv.width, odv.height);
                   hwc2_pah(hwc2, d, &odv);
                   hwc2_chkpt(hwc2);
+                  use_odv = true;
+               }
+               /* pip-alpha-hole: carved at the top of the composition stack to ensure a video
+                * punch thru can be seen, however it is less ideal than odv-alpha-hole as it may
+                * also remove valid composed area of the graphics (thus disabled by default).
+                */
+               if (!use_odv &&
+                   hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+                  if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
+                      (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
+                     pah = p;
+                     ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                              "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                              dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
+                  }
                }
             }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -6718,7 +6737,7 @@ static uint32_t hwc2_afb_min(
    bool is_h,
    uint32_t max) {
 
-   (void) max;
+   bool fixed = property_get_bool(BCM_RO_HWC2_GFB_FIXED, 0);
 
    /* estimate the 'best' framebuffer we report to android to avoid
     * ridiculous looking user interface.  use the defined density for
@@ -6736,8 +6755,13 @@ static uint32_t hwc2_afb_min(
    case 213: v = is_h ? 720 : 1280; break;  /* 720p */
    case 640: v = is_h ? 2160 : 3840; break; /* 4K (unused) */
    case 320:                                /* 1080p + default. */
-   default: { if (is_h) {v=(max==1080)?720:1080;}
-              else {v=(max==1920)?1280:1920;}
+   default: { if (fixed) {
+                 if (is_h) {v = 1080;}
+                 else {v = 1920;}
+              } else {
+                 if (is_h) {v=(max==1080)?720:1080;}
+                 else {v=(max==1920)?1280:1920;}
+              }
             } break;
    }
 
@@ -6976,6 +7000,11 @@ static void hwc2_hb_ntfy(
       }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
+      ALOGV("[ext]: active sideband client.");
+      if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_INPUT);
+      }
+   break;
    default:
    break;
    }

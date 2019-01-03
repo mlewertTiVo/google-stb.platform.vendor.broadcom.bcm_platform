@@ -49,6 +49,7 @@
 #define BCM_RO_HWC2_GFB_MAX_W                         "ro.nx.hwc2.gfb.w"
 #define BCM_RO_HWC2_GFB_MAX_H                         "ro.nx.hwc2.gfb.h"
 #define BCM_RO_HWC2_SF_LCD_DENSITY                    "ro.nx.sf.lcd_density"
+#define BCM_RO_HWC2_GFB_FIXED                         "ro.nx.hwc2.gfb.fixed"
 
 #define BCM_DYN_HWC2_DUMP_SET                         "dyn.nx.hwc2.dump.data"
 #define BCM_DYN_HWC2_DUMP_NOW                         "dyn.nx.hwc2.dump.this"
@@ -72,6 +73,8 @@
 #define BCM_RO_HWC2_TWEAK_NOCB                         "ro.nx.hwc2.tweak.nocb"
 #define BCM_RO_HWC2_TWEAK_FEOTF                        "ro.nx.hwc2.tweak.force_eotf"
 #define BCM_RO_HWC2_TWEAK_HPD0                         "ro.nx.hwc2.tweak.hpd0"
+#define BCM_RO_HWC2_TWEAK_PIPAH                        "ro.nx.hwc2.tweak.pipah"
+#define BCM_RO_HWC2_TWEAK_ODVAH                        "ro.nx.hwc2.tweak.odvah"
 
 #define BCM_DYN_HWC2_TWEAK_EOTF                        "dyn.nx.hwc2.tweak.eotf"
 #define BCM_DYN_HWC2_TWEAK_PLMOFF                      "dyn.nx.hwc2.tweak.plmoff"
