@@ -576,6 +576,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_eosStandalone(false),
     m_eosReady(false),
     m_eosTimeStamp(0),
+    m_flushWithReset(false),
     m_formatChangePending(false),
     m_secureDecoder(secure),
     m_allocNativeHandle(secure),
@@ -2395,7 +2396,18 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
         if ( portIndex == m_audioPortBase )
         {
             // Input port
-            if ( m_pAudioPorts[0]->IsEnabled() && m_pAudioPorts[0]->IsPopulated() && m_hPlaypump != NULL )
+            if ( m_eosDelivered )
+            {
+                // A full restart is required after the decoder receives an EOS
+                m_flushWithReset = true;
+
+                (void)SetInputPortState(OMX_StateIdle);
+                (void)SetInputPortState(StateGet());
+                m_configBufferState = ConfigBufferState_eFlushed;
+
+                ReturnPortBuffers(m_pAudioPorts[0]);
+            }
+            else if ( m_pAudioPorts[0]->IsEnabled() && m_pAudioPorts[0]->IsPopulated() && m_hPlaypump != NULL )
             {
                 m_inputFlushing = true;
 
@@ -2419,12 +2431,21 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
             // Output port
             if ( m_pAudioPorts[1]->IsEnabled() && m_pAudioPorts[1]->IsPopulated() && m_hAudioDecoder != NULL )
             {
-                NEXUS_AudioDecoder_Flush(m_hAudioDecoder);
-                RemoveOutputBuffers();
-                m_pBufferTracker->Flush();
-                m_eosDelivered = false;
-                m_eosReceived = false;
-                m_eosReady = false;
+                if ( m_eosDelivered || m_flushWithReset )
+                {
+                    (void)SetOutputPortState(OMX_StateIdle);
+                    (void)SetOutputPortState(StateGet());
+                    m_flushWithReset = false;
+                }
+                else
+                {
+                    NEXUS_AudioDecoder_Flush(m_hAudioDecoder);
+                    RemoveOutputBuffers();
+                    m_pBufferTracker->Flush();
+                    m_eosDelivered = false;
+                    m_eosReceived = false;
+                    m_eosReady = false;
+                }
             }
             ReturnPortBuffers(m_pAudioPorts[1]);
         }
