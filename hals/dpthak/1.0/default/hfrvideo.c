@@ -186,6 +186,15 @@ static struct process_entity key_process_list_vmode[] = {
       .map = hwcbinder_prio_map,
    },
    {
+      .name = "nxssd",
+      .thread_keep_filter = "nxssd_worker",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
+   },
+   {
       .name = "com.google.android.exoplayer2.demo",
       .thread_keep_filter = "MediaCodec_loop",
       .thread_ignore_filter = NULL,
@@ -223,6 +232,15 @@ static struct process_entity key_process_list_tunneled[] = {
       .pid = 0,
       .mode = EMSched,
       .map = mediacodec_prio_map,
+   },
+   {
+      .name = "nxssd",
+      .thread_keep_filter = "nxssd_worker",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .mode = EMNiceness,
+      .map = NULL,
+      .niceness = -18,
    },
    {
       .name = "com.google.android.exoplayer2.demo",
