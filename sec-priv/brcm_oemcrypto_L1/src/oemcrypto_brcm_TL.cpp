@@ -38,7 +38,7 @@
  ******************************************************************************/
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "oemcrypto_brcm_TL"
+#define LOG_TAG "oemcrypto_brcm_tl"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -120,47 +120,56 @@ static bool oemcrypto_in_shutdown = false;
         }\
     } while (0)
 
-static bool oemcrypto_stdby(void * ctx) {
+static void checkPowerStatus() {
     nxwrap_pwr_state powerStatus;
-    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     bool getpower = nxwrap_get_pwr_info(&powerStatus, NULL);
+    if (getpower) {
+        ALOGV("%s >> power state = %d", __FUNCTION__, powerStatus);
+        switch (powerStatus) {
+            case ePowerState_S0:
+            case ePowerState_S05:
+                oemcrypto_in_shutdown = false;
+            break;
+            case ePowerState_S3:
+            case ePowerState_S4:
+            case ePowerState_S5:
+                oemcrypto_in_shutdown = true;
+            break;
+            case ePowerState_S1:
+            case ePowerState_S2:
+            default:
+                // no action required
+            break;
+        }
+    } else {
+        ALOGE("%s >> failed to get power status", __FUNCTION__);
+    }
+}
+
+static bool oemcrypto_stdby(void * ctx) {
+
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     (void)ctx;
 
     STANDBY_CHECK_AUTOLOCK;
 
-    if (getpower) {
-      switch (powerStatus) {
-        case ePowerState_S0:
-        case ePowerState_S05:
-          // out of standby.
-          ALOGD("%s >> out of standby, new power state = %d", __FUNCTION__, powerStatus);
-          oemcrypto_in_shutdown = false;
-        break;
-        case ePowerState_S3:
-        case ePowerState_S4:
-        case ePowerState_S5:
-          oemcrypto_in_shutdown = true;
-          if (oemcrypto_initialized) {
-            ALOGD("%s >> New power state = [%d], releasing oemcrypto resources...", __FUNCTION__, powerStatus);
+    checkPowerStatus();
+
+    ALOGD("%s >> oemcrypto in shutdown = [%s]",__FUNCTION__, oemcrypto_in_shutdown?"true":"false" );
+    if (oemcrypto_in_shutdown) {
+        if (oemcrypto_initialized) {
+            ALOGD("%s >> releasing oemcrypto resources...", __FUNCTION__ );
             if (DRM_WVOemCrypto_UnInit((int*)&wvRc) == Drm_Success) {
-              oemcrypto_initialized = false;
-              ALOGI("%s: oemcrypto uninit success",__FUNCTION__);
+                oemcrypto_initialized = false;
+                ALOGI("%s: oemcrypto uninit success",__FUNCTION__);
             } else {
-              ALOGE("%s: oemcrypto uninit failed, wvRc=%d",__FUNCTION__,wvRc);
+                ALOGE("%s: oemcrypto uninit failed, wvRc=%d",__FUNCTION__,wvRc);
+                return false;
             }
-          } else {
-            ALOGD("%s >> New power state = [%d]. oemcrypto not initialized.", __FUNCTION__, powerStatus);
-          }
-        break;
-        case ePowerState_S1:
-        case ePowerState_S2:
-        default:
-          // no action required
-          ALOGD("%s >> no action required. new power state = %d", __FUNCTION__, powerStatus);
-       }
-    } else {
-      ALOGE("%s >> failed to get power status", __FUNCTION__);
+        } else {
+            ALOGD("%s >> oemcrypto not initialized.", __FUNCTION__);
+        }
     }
 
     return true;
@@ -173,18 +182,23 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     ALOGV("%s entered", __FUNCTION__);
 
-    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_INIT_FAILED);
+    STANDBY_CHECK_AUTOLOCK;
+    checkPowerStatus();
+    if (oemcrypto_in_shutdown) {
+       ALOGD("%s: Exit initialization, oemcrypto in shutdown.",__FUNCTION__);
+       return (OEMCrypto_ERROR_INIT_FAILED);
+    }
 
     if (oemcrypto_initialized) {
-        ALOGW("%s: oemcrypto already initialized.", __FUNCTION__);
-        return wvRc;
+       ALOGW("%s: oemcrypto already initialized.", __FUNCTION__);
+       return wvRc;
     }
 
     oemCryptoNxWrap = new NxWrap("BcmOemcrypto_Adapter");
     if (oemCryptoNxWrap) {
-          oemCryptoNxWrap->join(oemcrypto_stdby, NULL);
-          oemCryptoNxWrap->sraiClient();
-          oemCryptoNxWrapJoined = 1;
+       oemCryptoNxWrap->join(oemcrypto_stdby, NULL);
+       oemCryptoNxWrap->sraiClient();
+       oemCryptoNxWrapJoined = 1;
     } else {
        ALOGE("Adapter failed to create nxwrap");
        return OEMCrypto_ERROR_INIT_FAILED;
