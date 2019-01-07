@@ -37,6 +37,7 @@
 
  ******************************************************************************/
 
+//#define LOG_NDEBUG 0
 #define LOG_TAG "oemcrypto_cas_tl"
 
 #include <stdlib.h>
@@ -107,6 +108,74 @@ static void dump_hex(const char* name, const uint8_t* vector, size_t length)
 static NxWrap *oemCryptoNxWrap = NULL;
 static int oemCryptoNxWrapJoined = 0;
 
+static Mutex standbyLock;
+static bool oemcrypto_cas_initialized = false;
+static bool oemcrypto_cas_in_shutdown = false;
+#define STANDBY_CHECK_AUTOLOCK Mutex::Autolock autoLock(standbyLock)
+#define EXIT_IF_SHUTDOWN(wvRc) \
+    do {\
+        STANDBY_CHECK_AUTOLOCK; \
+        if (oemcrypto_cas_in_shutdown) { \
+            ALOGD("%s: Exiting function, oemcrypto in shutdown.",__FUNCTION__);\
+            return (wvRc); \
+        }\
+    } while (0)
+
+static void checkPowerStatus() {
+    nxwrap_pwr_state powerStatus;
+    bool getpower = nxwrap_get_pwr_info(&powerStatus, NULL);
+    if (getpower) {
+        ALOGV("%s >> power state = %d", __FUNCTION__, powerStatus);
+        switch (powerStatus) {
+            case ePowerState_S0:
+            case ePowerState_S05:
+                oemcrypto_cas_in_shutdown = false;
+            break;
+            case ePowerState_S3:
+            case ePowerState_S4:
+            case ePowerState_S5:
+                oemcrypto_cas_in_shutdown = true;
+            break;
+            case ePowerState_S1:
+            case ePowerState_S2:
+            default:
+                // no action required
+            break;
+        }
+    } else {
+        ALOGE("%s >> failed to get power status", __FUNCTION__);
+    }
+}
+
+static bool oemcrypto_cas_stdby(void * ctx) {
+
+    OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    (void)ctx;
+
+    STANDBY_CHECK_AUTOLOCK;
+
+    checkPowerStatus();
+
+    ALOGD("%s >> oemcrypto cas in shutdown = [%s]",__FUNCTION__, oemcrypto_cas_in_shutdown?"true":"false" );
+    if (oemcrypto_cas_in_shutdown) {
+        if (oemcrypto_cas_initialized) {
+            ALOGD("%s >> releasing oemcrypto cas resources...", __FUNCTION__);
+            if (DRM_WVOemCrypto_UnInit((int*)&wvRc) == Drm_Success) {
+                oemcrypto_cas_initialized = false;
+                ALOGI("%s: oemcrypto cas uninit success",__FUNCTION__);
+            } else {
+                ALOGE("%s: oemcrypto cas uninit failed, wvRc=%d",__FUNCTION__,wvRc);
+                return false;
+            }
+        } else {
+            ALOGD("%s >> oemcrypto cas not initialized.", __FUNCTION__);
+        }
+    }
+
+    return true;
+}
+
 OEMCryptoResult OEMCrypto_Initialize(void)
 {
     Drm_WVOemCryptoParamSettings_t WvOemCryptoParamSettings;
@@ -114,12 +183,23 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     ALOGV("%s entered", __FUNCTION__);
 
+    STANDBY_CHECK_AUTOLOCK;
+    checkPowerStatus();
+    if (oemcrypto_cas_in_shutdown) {
+       ALOGD("%s: Exit initialization, oemcrypto cas in shutdown.",__FUNCTION__);
+       return (OEMCrypto_ERROR_INIT_FAILED);
+    }
+
+    if (oemcrypto_cas_initialized) {
+        ALOGW("%s: oemcrypto cas already initialized.", __FUNCTION__);
+        return wvRc;
+    }
+
     oemCryptoNxWrap = new NxWrap("BcmOemcrypto_Adapter");
     if (oemCryptoNxWrap) {
-       if (oemCryptoNxWrap->client() == 0) {
-          oemCryptoNxWrap->join();
-          oemCryptoNxWrapJoined = 1;
-       }
+       oemCryptoNxWrap->join(oemcrypto_cas_stdby, NULL);
+       oemCryptoNxWrap->sraiClient();
+       oemCryptoNxWrapJoined = 1;
     } else {
        ALOGE("Adapter failed to create nxwrap");
        return OEMCrypto_ERROR_INIT_FAILED;
@@ -153,10 +233,18 @@ OEMCryptoResult OEMCrypto_Terminate(void)
 
     ALOGV("%s entered", __FUNCTION__);
 
-    if (DRM_WVOemCrypto_UnInit((int*)&wvRc) != Drm_Success)
-    {
-      ALOGV("%s: Terminate failed",__FUNCTION__);
-      goto out;
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_TERMINATE_FAILED);
+
+
+    if (oemcrypto_cas_initialized) {
+       if (DRM_WVOemCrypto_UnInit((int*)&wvRc) != Drm_Success)
+       {
+          ALOGV("%s: Terminate failed",__FUNCTION__);
+          goto out;
+       }
+       oemcrypto_cas_initialized = false;
+    } else {
+       ALOGD("%s: oemcrypto was not initialized",__FUNCTION__);
     }
 
     ALOGV("[OEMCrypto_Terminate(): success =========]");
@@ -180,6 +268,8 @@ OEMCryptoResult OEMCrypto_OpenSession(OEMCrypto_SESSION* session)
 
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_OPEN_SESSION_FAILED);
+
     if ((DRM_WVOemCrypto_OpenSession(&session_id, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
     {
         ALOGV("%s:Opensession failed",__FUNCTION__);
@@ -195,6 +285,8 @@ OEMCryptoResult OEMCrypto_CloseSession(OEMCrypto_SESSION session)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_CLOSE_SESSION_FAILED);
 
     if (drm_WVOemCrypto_CloseSession(session, (int*)&wvRc) != Drm_Success)
     {
@@ -212,6 +304,8 @@ OEMCryptoResult OEMCrypto_GenerateNonce(OEMCrypto_SESSION session, uint32_t* non
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     // Prevent nonce flood.
     static time_t last_nonce_time = 0;
@@ -246,6 +340,8 @@ OEMCryptoResult OEMCrypto_GenerateDerivedKeys(OEMCrypto_SESSION session,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (drm_WVOemCrypto_GenerateDerivedKeys(session, mac_key_context,
         mac_key_context_length, enc_key_context, enc_key_context_length,
         (int*)&wvRc) != Drm_Success)
@@ -266,6 +362,8 @@ OEMCryptoResult OEMCrypto_GenerateSignature(
 
     ALOGV("%s entered", __FUNCTION__);
     ALOGV("message length is %d",message_length);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if(!signature_length)
     {
@@ -320,6 +418,8 @@ OEMCryptoResult OEMCrypto_RefreshKeys(OEMCrypto_SESSION session,
 
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (message == NULL || message_length == 0 || signature == NULL ||
         signature_length == 0 || num_keys == 0)
     {
@@ -358,6 +458,9 @@ OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session, const uint8
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     ALOGV("Entered OEMCrypto_QueryKeyControl");
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     dump_hex("key_id", key_id, key_id_length);
 
     if (Drm_WVOemCrypto_QueryKeyControl(session, key_id, key_id_length,key_control_block,
@@ -380,6 +483,8 @@ OEMCryptoResult SetDestination(OEMCrypto_DestBufferDesc* out_buffer,
                                size_t* max_length,
                                Drm_WVOemCryptoBufferType_t *buffer_type)
 {
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (destination == NULL || data_length == 0 || out_buffer == NULL)
     {
         ALOGE("[SetDestination: OEMCrypto_ERROR_INVALID_CONTEXT]");
@@ -426,6 +531,8 @@ OEMCryptoResult OEMCrypto_IsKeyboxValid(void)
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (drm_WVOemCrypto_IsKeyboxValid((int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_IsKeyboxValid: failed]");
@@ -439,6 +546,8 @@ OEMCryptoResult OEMCrypto_GetDeviceID(uint8_t* deviceID, size_t* idLength)
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (drm_WVOemCrypto_GetDeviceID(deviceID, idLength, (int*)&wvRc) != Drm_Success)
     {
@@ -455,6 +564,8 @@ OEMCryptoResult OEMCrypto_GetKeyData(uint8_t* keyData, size_t* keyDataLength)
 
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (drm_WVOemCrypto_GetKeyData(keyData, keyDataLength, (int *)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_GetKeyData: failed]");
@@ -468,6 +579,8 @@ OEMCryptoResult OEMCrypto_GetRandom(uint8_t* randomData, size_t dataLength)
 {
 
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (!randomData) {
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
@@ -504,6 +617,8 @@ OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (wrapped_rsa_key_length == NULL) {
         ALOGE("[OEMCrypto_RewrapDeviceRSAKey(): OEMCrypto_ERROR_INVALID_CONTEXT]");
@@ -559,6 +674,8 @@ OEMCryptoResult OEMCrypto_LoadDeviceRSAKey(OEMCrypto_SESSION session,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (wrapped_rsa_key == NULL) {
         ALOGE("[OEMCrypto_LoadDeviceRSAKey(): OEMCrypto_ERROR_INVALID_CONTEXT]");
         return OEMCrypto_ERROR_INVALID_CONTEXT;
@@ -579,6 +696,8 @@ OEMCryptoResult OEMCrypto_GenerateRSASignature(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (message == NULL || message_length == 0)
     {
@@ -609,6 +728,8 @@ OEMCryptoResult OEMCrypto_DeriveKeysFromSessionKey(
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (drm_WVOemCrypto_IsKeyboxValid((int *)&wvRc) != Drm_Success)
     {
@@ -644,6 +765,8 @@ OEMCryptoResult OEMCrypto_GetHDCPCapability(OEMCrypto_HDCP_Capability *current,
 
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (current == NULL)
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
     if (maximum == NULL)
@@ -666,6 +789,8 @@ OEMCryptoResult OEMCrypto_Generic_Encrypt(OEMCrypto_SESSION session,
     OEMCrypto_Algorithm algorithm, uint8_t* out_buffer)
 {
     OEMCryptoResult wvRc= OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (in_buffer == NULL || buffer_length == 0 ||
         iv == NULL || out_buffer == NULL)
@@ -691,6 +816,8 @@ OEMCryptoResult OEMCrypto_Generic_Decrypt(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (in_buffer == NULL || buffer_length == 0 ||
         iv == NULL || out_buffer == NULL)
     {
@@ -714,6 +841,8 @@ OEMCryptoResult OEMCrypto_Generic_Sign(OEMCrypto_SESSION session,
     uint8_t* signature, size_t* signature_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if(!signature_length)
     {
@@ -749,6 +878,8 @@ OEMCryptoResult OEMCrypto_Generic_Verify(OEMCrypto_SESSION session,
     const uint8_t* signature, size_t signature_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (signature_length != SHA256_DIGEST_LENGTH) {
         return OEMCrypto_ERROR_UNKNOWN_FAILURE;
@@ -788,6 +919,8 @@ OEMCryptoResult OEMCrypto_Generic_Verify(OEMCrypto_SESSION session,
 bool OEMCrypto_SupportsUsageTable() {
     Sage_OEMCryptoResult wvRc = SAGE_OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(false);
+
     if (DRM_WVOemCrypto_SupportsUsageTable((int*)&wvRc) != Drm_Success)
     {
         ALOGE("[%s(): call FAILED (%d)]", __FUNCTION__, wvRc);
@@ -825,6 +958,8 @@ bool OEMCrypto_SupportsUsageTable() {
 OEMCryptoResult OEMCrypto_UpdateUsageTable()
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (DRM_WVOemCrypto_UpdateUsageTable((int*)&wvRc) != Drm_Success)
     {
@@ -870,6 +1005,8 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(OEMCrypto_SESSION session, const 
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
     (void)session;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (DRM_WVOemCrypto_Deactivate_Usage_Entry(session, (uint8_t *)pst, pst_length, (int*)&wvRc) != Drm_Success)
     {
@@ -959,6 +1096,8 @@ OEMCryptoResult OEMCrypto_ReportUsage(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_ReportUsage(session, pst, pst_length, (WvOEMCryptoPstReport*)buffer, buffer_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("[%s(): call FAILED (%d)]", __FUNCTION__, wvRc);
@@ -1028,6 +1167,8 @@ OEMCryptoResult OEMCrypto_DeleteUsageEntry(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (!RangeCheck(message, message_length, pst, pst_length, false)) {
         ALOGE("[OEMCrypto_DeleteUsageEntry(): range check.]");
         return OEMCrypto_ERROR_SIGNATURE_FAILURE;
@@ -1068,6 +1209,8 @@ OEMCryptoResult OEMCrypto_DeleteOldUsageTable()
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_DeleteUsageTable((int*)&wvRc) != Drm_Success)
     {
         ALOGE("[%s(): call FAILED (%d)]", __FUNCTION__, wvRc);
@@ -1086,6 +1229,8 @@ OEMCryptoResult OEMCrypto_GetNumberOfOpenSessions(size_t* count)
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     uint32_t numOfOpenSessions = 0;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if( count == NULL)
     {
@@ -1111,7 +1256,9 @@ OEMCryptoResult OEMCrypto_GetMaxNumberOfSessions(size_t* maximum)
     uint32_t numOfMaxSessions = 0;
     ALOGV("%s entered", __FUNCTION__);
 
-     if( maximum == NULL)
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
+    if( maximum == NULL)
     {
         ALOGE("[OEMCrypto_GetMaxNumberOfSessions: OEMCrypto_ERROR_INVALID_CONTEXT, input param maximum == NULL]");
         ALOGV("%s exiting..",__FUNCTION__);
@@ -1131,6 +1278,7 @@ OEMCryptoResult OEMCrypto_GetMaxNumberOfSessions(size_t* maximum)
 
 bool OEMCrypto_IsAntiRollbackHwPresent()
 {
+    EXIT_IF_SHUTDOWN(false);
     return DRM_WVOemCrypto_IsAntiRollbackHwPresent();
 }
 
@@ -1145,6 +1293,8 @@ OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t *data_addr,
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
 
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (data_addr == NULL )
     {
@@ -1183,6 +1333,8 @@ OEMCryptoResult OEMCrypto_InstallKeybox(const uint8_t* keybox, size_t keyBoxLeng
 {
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (drm_WVOemCrypto_InstallKeybox(keybox, keyBoxLength) != Drm_Success)
     {
         return OEMCrypto_ERROR_WRITE_KEYBOX;
@@ -1196,6 +1348,8 @@ OEMCryptoResult OEMCrypto_ForceDeleteUsageEntry(const uint8_t* pst,
                                                 size_t pst_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if ((pst == NULL )|| (pst_length == 0))
     {
@@ -1222,6 +1376,8 @@ uint8_t OEMCrypto_Security_Patch_Level()
     uint8_t security_patch_level = 0;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(security_patch_level);
+
     if (DRM_WVOemCrypto_Security_Patch_Level(&security_patch_level, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
@@ -1247,6 +1403,8 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
     uint32_t out_sz;
     size_t max_length = 0;
     OEMCryptoResult sts = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     sts = SetDestination(out_buffer, data_length, &destination,
                                        &max_length,&buffer_type);
@@ -1360,6 +1518,8 @@ OEMCryptoResult OEMCrypto_CreateUsageTableHeader(uint8_t* header_buffer,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Create_Usage_Table_Header(header_buffer, (uint32_t *)header_buffer_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
@@ -1374,6 +1534,8 @@ OEMCryptoResult OEMCrypto_LoadUsageTableHeader(const uint8_t* buffer,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Load_Usage_Table_Header(buffer, (uint32_t)buffer_length, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
@@ -1387,6 +1549,8 @@ OEMCryptoResult OEMCrypto_CreateNewUsageEntry(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (DRM_WVOemCrypto_Create_New_Usage_Entry(session, usage_entry_number, (int*)&wvRc) != Drm_Success)
     {
@@ -1403,6 +1567,8 @@ OEMCryptoResult OEMCrypto_LoadUsageEntry(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (DRM_WVOemCrypto_Load_Usage_Entry(session, index, buffer, (uint32_t)buffer_size, (int*)&wvRc) != Drm_Success)
     {
@@ -1421,6 +1587,8 @@ OEMCryptoResult OEMCrypto_UpdateUsageEntry(OEMCrypto_SESSION session,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Update_Usage_Entry(session, header_buffer, (uint32_t *)header_buffer_length, entry_buffer,
         (uint32_t *)entry_buffer_length, (int*)&wvRc) != Drm_Success)
     {
@@ -1437,6 +1605,8 @@ OEMCryptoResult OEMCrypto_ShrinkUsageTableHeader(uint32_t new_entry_count,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Shrink_Usage_Table_Header(new_entry_count, header_buffer, (uint32_t *)header_buffer_length,
         (int*)&wvRc) != Drm_Success)
     {
@@ -1452,6 +1622,8 @@ OEMCryptoResult OEMCrypto_MoveEntry(OEMCrypto_SESSION session,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Move_Entry(session, new_index, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("%s: failed (%d)",__FUNCTION__, wvRc);
@@ -1466,6 +1638,8 @@ OEMCryptoResult OEMCrypto_CopyOldUsageEntry(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (DRM_WVOemCrypto_Copy_Old_Usage_Entry(session, pst, (uint32_t)pst_length, (int*)&wvRc) != Drm_Success)
     {
@@ -1487,6 +1661,8 @@ OEMCryptoResult OEMCrypto_CreateOldUsageEntry(uint64_t time_since_license_receiv
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if (DRM_WVOemCrypto_Create_Old_Usage_Entry(time_since_license_received, time_since_first_decrypt,
         time_since_last_decrypt, status, server_mac_key, client_mac_key, pst, (uint32_t)pst_length, (int*)&wvRc) != Drm_Success)
     {
@@ -1502,6 +1678,8 @@ uint32_t OEMCrypto_GetAnalogOutputFlags()
     uint32_t analog_output_flags = 0;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(analog_output_flags);
+
     if(DRM_WVOemCrypto_GetAnalogOutputFlags(&analog_output_flags, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("%s: failed with error %d",__FUNCTION__, wvRc);
@@ -1514,6 +1692,8 @@ uint32_t OEMCrypto_GetAnalogOutputFlags()
 OEMCryptoResult OEMCrypto_LoadTestKeybox(const uint8_t *buffer, size_t length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if(drm_WVOemCrypto_LoadTestKeybox((uint8_t *)buffer, (uint32_t)length, (int*)&wvRc) != Drm_Success)
     {
@@ -1531,6 +1711,8 @@ OEMCryptoResult OEMCrypto_LoadEntitledContentKeys(OEMCrypto_SESSION session,
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     ALOGV("%s entered", __FUNCTION__);
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if(DRM_WVOemCrypto_LoadEntitledContentKeys(session, num_keys, (void*)key_array, (int*)&wvRc) != Drm_Success)
     {
         ALOGE("[DRM_WVOemCrypto_LoadEntitledContentKeys(SID=%08X): failed]", session);
@@ -1545,6 +1727,8 @@ OEMCryptoResult OEMCrypto_SelectKey(OEMCrypto_SESSION session,
                                     OEMCryptoCipherMode cipher_mode)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (drm_WVOemCrypto_SelectKey(session, content_key_id, content_key_id_length, cipher_mode, (int*)&wvRc) != Drm_Success)
     {
@@ -1568,6 +1752,8 @@ OEMCryptoResult OEMCrypto_LoadKeys(
     unsigned int i;
 
     ALOGV("%s entered", __FUNCTION__);
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     if (message == NULL || message_length == 0 ||
         signature == NULL || signature_length == 0 ||
@@ -1622,6 +1808,8 @@ OEMCryptoResult OEMCrypto_LoadCasECMKeys(OEMCrypto_SESSION session,
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
 
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
+
     if(DRM_WVOemCrypto_LoadCasECMKeys(session,
                                       program_id,
                                       (void *)even_key,
@@ -1650,6 +1838,8 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
     uint32_t out_sz;
     size_t max_length = 0;
     OEMCryptoResult sts = OEMCrypto_SUCCESS;
+
+    EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
     sts = SetDestination(out_buffer, data_length, &destination,
                                        &max_length,&buffer_type);
