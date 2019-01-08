@@ -183,7 +183,6 @@ OEMCryptoResult OEMCrypto_Initialize(void)
     ALOGV("%s entered", __FUNCTION__);
 
     STANDBY_CHECK_AUTOLOCK;
-    checkPowerStatus();
     if (oemcrypto_in_shutdown) {
        ALOGD("%s: Exit initialization, oemcrypto in shutdown.",__FUNCTION__);
        return (OEMCrypto_ERROR_INIT_FAILED);
