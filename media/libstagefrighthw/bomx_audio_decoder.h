@@ -245,6 +245,7 @@ protected:
     bool m_eosStandalone;
     bool m_eosReady;
     OMX_TICKS m_eosTimeStamp;
+    bool m_flushWithReset;
     bool m_formatChangePending;
     bool m_secureDecoder;
     bool m_allocNativeHandle;
