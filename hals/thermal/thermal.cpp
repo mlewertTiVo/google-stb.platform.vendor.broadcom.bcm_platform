@@ -40,12 +40,8 @@ static void *nxWrap = NULL;
 static NxClient_ThermalConfiguration nxThermalCfg;
 static bool nxThermal = false;
 
-// in practice, we only support a single thermal zone at the moment: cpu.
-const char *ZONE_LABEL[] = {"CPU", "UNK"};
-const size_t ZONE_LABEL_NUM = sizeof(ZONE_LABEL) / sizeof(ZONE_LABEL[0]);
-
-const char *CPU_LABEL[] = {"CPU0", "CPU1", "CPU2", "CPU3"};
-const size_t CPU_LABEL_NUM = sizeof(CPU_LABEL) / sizeof(CPU_LABEL[0]);
+void __attribute__ ((constructor)) thermal_module_load(void);
+void __attribute__ ((destructor)) thermal_module_unload(void);
 
 static void nexus_print_thermal_config(NxClient_ThermalConfiguration *config) {
    NxClient_ThermalStatus status;
@@ -76,6 +72,76 @@ static void nexus_print_thermal_config(NxClient_ThermalConfiguration *config) {
             status.priorityTable[i].inUse);
    }
 }
+
+static void nexus_thermal_callback(
+   void *context,
+   int param) {
+
+   (void)context;
+   (void)param;
+
+   ALOGE("nexus_thermal_callback called.");
+}
+
+static void nexus_config_callback(
+   void *context,
+   int param) {
+
+   (void)context;
+   (void)param;
+
+   // TODO: who did that?  we do not allow|expose this currently.
+   ALOGW("nexus thermal - configuration changed, really??");
+
+   // change in thermal configuration.
+   NxClient_ThermalStatus status;
+   NxClient_GetThermalStatus(&status);
+   NxClient_GetThermalConfiguration(status.activeTempThreshold, &nxThermalCfg);
+   nexus_print_thermal_config(&nxThermalCfg);
+}
+
+void thermal_module_load(void) {
+
+   NxClient_ThermalStatus s;
+   NxClient_CallbackThreadSettings cts;
+   NEXUS_Error rc;
+
+   void *nexus_client = nxwrap_create_client(&nxWrap);
+   if (nexus_client == NULL) {
+      ALOGE("failed to alloc thermal nexus client, aborting.");
+      return;
+   }
+
+   NxClient_GetThermalStatus(&s);
+   if (s.activeTempThreshold) {
+      rc = NxClient_GetThermalConfiguration(s.activeTempThreshold, &nxThermalCfg);
+      if (rc == 0) {
+         nxThermal = true;
+         nexus_print_thermal_config(&nxThermalCfg);
+      }
+   }
+
+   ALOGI("nexus thermal: %s.",
+         nxThermal ? "in use" : "invalid, using default");
+
+   NxClient_GetDefaultCallbackThreadSettings(&cts);
+   cts.coolingAgentChanged.callback  = nexus_thermal_callback;
+   cts.coolingAgentChanged.context   = (void *)nexus_client;
+   cts.thermalConfigChanged.callback = nexus_config_callback;
+   cts.thermalConfigChanged.context  = (void *)nexus_client;
+   rc = NxClient_StartCallbackThread(&cts);
+}
+
+void thermal_module_unload(void) {
+   return;
+}
+
+// in practice, we only support a single thermal zone at the moment: cpu.
+const char *ZONE_LABEL[] = {"CPU", "UNK"};
+const size_t ZONE_LABEL_NUM = sizeof(ZONE_LABEL) / sizeof(ZONE_LABEL[0]);
+
+const char *CPU_LABEL[] = {"CPU0", "CPU1", "CPU2", "CPU3"};
+const size_t CPU_LABEL_NUM = sizeof(CPU_LABEL) / sizeof(CPU_LABEL[0]);
 
 static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t size) {
     char file_name[MAX_LENGTH];
@@ -224,78 +290,8 @@ static ssize_t get_cooling_devices(thermal_module_t *, cooling_device_t *, size_
     return 0;
 }
 
-static void nexus_thermal_callback(
-   void *context,
-   int param) {
-
-   (void)context;
-   (void)param;
-
-   ALOGE("nexus_thermal_callback called.");
-}
-
-static void nexus_config_callback(
-   void *context,
-   int param) {
-
-   (void)context;
-   (void)param;
-
-   // TODO: who did that?  we do not allow|expose this currently.
-   ALOGW("nexus thermal - configuration changed, really??");
-
-   // change in thermal configuration.
-   NxClient_ThermalStatus status;
-   NxClient_GetThermalStatus(&status);
-   NxClient_GetThermalConfiguration(status.activeTempThreshold, &nxThermalCfg);
-   nexus_print_thermal_config(&nxThermalCfg);
-}
-
-static int thermal_open(
-   const hw_module_t* module,
-   const char* name,
-   hw_device_t** device) {
-
-   (void)module;
-
-   NxClient_ThermalStatus s;
-   NxClient_CallbackThreadSettings cts;
-   NEXUS_Error rc;
-
-   if (strcmp(name, THERMAL_HARDWARE_MODULE_ID) != 0)
-      return -EINVAL;
-
-   void *nexus_client = nxwrap_create_client(&nxWrap);
-   if (nexus_client == NULL) {
-      ALOGE("failed to alloc thermal nexus client, aborting.");
-      return -EINVAL;
-   }
-
-   NxClient_GetThermalStatus(&s);
-   if (s.activeTempThreshold) {
-      rc = NxClient_GetThermalConfiguration(s.activeTempThreshold, &nxThermalCfg);
-      if (rc == 0) {
-         nxThermal = true;
-         nexus_print_thermal_config(&nxThermalCfg);
-      }
-   }
-
-   ALOGI("nexus thermal: %s.",
-         nxThermal ? "in use" : "invalid, using default");
-
-   NxClient_GetDefaultCallbackThreadSettings(&cts);
-   cts.coolingAgentChanged.callback  = nexus_thermal_callback;
-   cts.coolingAgentChanged.context   = (void *)module;
-   cts.thermalConfigChanged.callback = nexus_config_callback;
-   cts.thermalConfigChanged.context  = (void *)module;
-   rc = NxClient_StartCallbackThread(&cts);
-
-   *device = NULL;
-   return 0;
-}
-
 static struct hw_module_methods_t thermal_module_methods = {
-    .open = thermal_open,
+    .open = NULL,
 };
 
 thermal_module_t HAL_MODULE_INFO_SYM
