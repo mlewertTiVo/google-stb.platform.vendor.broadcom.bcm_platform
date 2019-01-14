@@ -60,6 +60,7 @@
 
 #define BCM_PERSIST_AUDIO_DISABLE_ATMOS                    "persist.nx.disable_atmos"
 #define BCM_PERSIST_AUDIO_DIRECT_FORCE_PCM                 "persist.nx.direct_force_pcm"
+#define BCM_PERSIST_AUDIO_BUFFER_DURATION                  "persist.nx.audio_buffer_duration"
 
 #endif /* VENDOR_BCM_PROPS__AUDIO */
 

@@ -44,7 +44,7 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
-#define NEXUS_OUT_BUFFER_DURATION_MS    30
+#define NEXUS_OUT_BUFFER_DURATION_MS    10
 #define NEXUS_OUT_DEFAULT_LATENCY       10
 
 /* Supported stream out sample rate */
@@ -556,11 +556,12 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     bout->latencyPad = bout->latencyEstimate;
 
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
+
     bout->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
                                    popcount(config->channel_mask),
-                                   NEXUS_OUT_BUFFER_DURATION_MS);
+                                   property_get_int32(BCM_PERSIST_AUDIO_BUFFER_DURATION, NEXUS_OUT_BUFFER_DURATION_MS));
 
     /* Force PCM mode for MS11 */
     if (bout->bdev->dolby_ms == 11) {
