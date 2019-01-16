@@ -313,6 +313,9 @@ static const BOMX_VendorExtension g_vendorExtensions[] =
         {{B_VNDEXT_NAME_NRDP, B_VNDEXT_NRDP_KEY_VIDEO_PEEK, 1, BOMX_VideoDecoder_VndExtNrdpGet, BOMX_VideoDecoder_VndExtNrdpSet}};
 static const size_t g_numVendorExtensions = sizeof(g_vendorExtensions)/sizeof(BOMX_VendorExtension);
 
+/* OMX vendor extension event */
+static const OMX_EVENTTYPE OMX_EventVendorRealtimeForced = (OMX_EVENTTYPE)0x7FF00001; // Force any previous non-realtime OMX events to be sent now
+
 static bool g_nxStandBy = false;
 static Mutex g_mutexStandBy;
 
@@ -7210,7 +7213,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                }
             }
 
-            bool newRenderedFrame = false;
+            bool newRenderedFrame = false, realtimeNotification = false;
             bool displayed = (status.numIFramesDisplayed > 0 || status.numDisplayed > 0);
             if ( displayed && m_tunnelCurrentPts != status.pts )
             {
@@ -7220,17 +7223,22 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
                 }
 
-                if ( m_vndExtNrdpVidPeek > 0 && m_vidPeekState == VideoPeekState_ePaused && m_tunnelCurrentPts == B_TUNNEL_PTS_INVALID_VALUE )
+                if ( m_vndExtNrdpVidPeek > 0 && m_tunnelCurrentPts == B_TUNNEL_PTS_INVALID_VALUE )
                 {
-                    // Align to the exact first video peek frame
-                    errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, status.pts);
-                    if ( errCode != NEXUS_SUCCESS )
+                    realtimeNotification = true;
+
+                    if ( m_vidPeekState == VideoPeekState_ePaused )
                     {
-                        ALOGE("Error setting start pts %d", errCode);
-                    }
-                    else
-                    {
-                        ALOGV("Align to the first PTS:%u", status.pts);
+                        // Align to the exact first video peek frame
+                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, status.pts);
+                        if ( errCode != NEXUS_SUCCESS )
+                        {
+                            ALOGE("Error setting start pts %d", errCode);
+                        }
+                        else
+                        {
+                            ALOGV("Align to the first PTS:%u", status.pts);
+                        }
                     }
                 }
 
@@ -7248,7 +7256,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             }
 
             if (newRenderedFrame) {
-                m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, false);
+                m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, false, realtimeNotification);
                 ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Rendering ts=%lld pts=%u now=%" PRIu64 "",
                         omxHeader.nTimeStamp, status.pts, now);
 
@@ -8738,7 +8746,7 @@ BOMX_VideoDecoder::BOMX_RenderedFrameHandler::BOMX_RenderedFrameHandler(BOMX_Vid
 {
 }
 
-void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::NewRenderedFrame(OMX_S64 timestamp, bool isEos)
+void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::NewRenderedFrame(OMX_S64 timestamp, bool isEos, bool realtime /*=false*/)
 {
     OMX_VIDEO_RENDEREVENTTYPE renderEvent;
     bool reportRenderedFrame = true;
@@ -8763,11 +8771,16 @@ void BOMX_VideoDecoder::BOMX_RenderedFrameHandler::NewRenderedFrame(OMX_S64 time
 
     if ( reportRenderedFrame || isEos )
     {
-        ALOGV("%s: rendering event, frame with ts:%lld, eos:%d", __FUNCTION__, timestamp, isEos);
+        ALOGV("%s: rendering event, frame with ts:%lld, eos:%d rt:%d", __FUNCTION__, timestamp, isEos, realtime);
         renderEvent.nSystemTimeNs = systemTime(SYSTEM_TIME_MONOTONIC);
         renderEvent.nMediaTimeUs = timestamp;
         (void)m_pParent->m_callbacks.EventHandler((OMX_HANDLETYPE)m_pParent->m_pComponentType,
             m_pParent->m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+        if ( realtime )
+        {
+            (void)m_pParent->m_callbacks.EventHandler((OMX_HANDLETYPE)m_pParent->m_pComponentType,
+                m_pParent->m_pComponentType->pApplicationPrivate, OMX_EventVendorRealtimeForced, 0, 0, NULL);
+        }
     }
 }
 

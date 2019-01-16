@@ -585,7 +585,7 @@ protected:
         const size_t MAX_FRAMES_REPORTED_AFTER_EOS = 48;
         BOMX_RenderedFrameHandler(BOMX_VideoDecoder *parent);
         ~BOMX_RenderedFrameHandler() {};
-        void NewRenderedFrame(OMX_S64 timestamp, bool isEos);
+        void NewRenderedFrame(OMX_S64 timestamp, bool isEos, bool realtime = false);
         void Reset();
 
     private:

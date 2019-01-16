@@ -438,7 +438,7 @@ static void *proactive_runner_task(void *argv)
     }
     /* reset heap grow mechanism if using dtu. */
     if (property_get_bool(BCM_RO_NX_CAPABLE_DTU, 0) &&
-        property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
+        property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, false)) {
        gfx_heap_grow_size = 0;
        gfx_heap_shrink_threshold = 0;
     }
@@ -1222,7 +1222,7 @@ static nxserver_t init_nxserver(void)
     }
 
     if ((!cmdline_settings.dtu ||
-          (cmdline_settings.dtu && !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)))
+          (cmdline_settings.dtu && !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, false)))
         && property_get(BCM_RO_NX_HEAP_GROW, value, NULL)) {
        if (strlen(value)) {
           /* -growHeapBlockSize XXy */
@@ -1401,7 +1401,7 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (settings.growHeapBlockSize || !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
+    if (settings.growHeapBlockSize || !property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, false)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        g_app.dcma_index = settings.heaps.dynamicHeap;
        platformSettings.heap[g_app.dcma_index].heapType |= NX_ASHMEM_NEXUS_DCMA_MARKER;
@@ -1422,7 +1422,7 @@ static nxserver_t init_nxserver(void)
        int fhi = -1;
        char addr[PROPERTY_VALUE_MAX];
        char size[PROPERTY_VALUE_MAX];
-       if (property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, true)) {
+       if (property_get_bool(BCM_RO_NX_HEAP_DTU_USER_SET, false)) {
           memset(addr, 0, sizeof(addr));
           memset(size, 0, sizeof(size));
           property_get(BCM_RO_NX_HEAP_DTU_USER_ADDR, addr, "0xAC000000");

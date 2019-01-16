@@ -6996,7 +6996,7 @@ static void hwc2_hb_ntfy(
    case HWC_BINDER_NTFY_NO_VIDEO_CLIENT:
       ALOGV("[ext]: no more active video client.");
       if (!hwc2_enabled(hwc2_tweak_forced_eotf)) {
-         hwc2_eotf(hwc2->ext, HWC2_EOTF_SDR);
+         hwc2_eotf(hwc2->ext, HWC2_EOTF_INPUT);
       }
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:

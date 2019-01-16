@@ -185,11 +185,6 @@ OEMCryptoResult OEMCrypto_Initialize(void)
 
     STANDBY_CHECK_AUTOLOCK;
 
-    if (oemcrypto_cas_in_shutdown) {
-       ALOGD("%s: Exit initialization, oemcrypto cas in shutdown.",__FUNCTION__);
-       return (OEMCrypto_ERROR_INIT_FAILED);
-    }
-
     if (oemcrypto_cas_initialized) {
         ALOGW("%s: oemcrypto cas already initialized.", __FUNCTION__);
         return wvRc;
@@ -202,7 +197,13 @@ OEMCryptoResult OEMCrypto_Initialize(void)
        oemCryptoNxWrapJoined = 1;
     } else {
        ALOGE("Adapter failed to create nxwrap");
-       return OEMCrypto_ERROR_INIT_FAILED;
+       goto ErrorExit;
+    }
+
+    checkPowerStatus();
+    if (oemcrypto_cas_in_shutdown) {
+       ALOGD("%s: Exit initialization, oemcrypto cas in shutdown.",__FUNCTION__);
+       goto ErrorExit;
     }
 
     DRM_WVOEMCrypto_GetDefaultParamSettings(&WvOemCryptoParamSettings);
@@ -213,18 +214,23 @@ OEMCryptoResult OEMCrypto_Initialize(void)
     if ((DRM_WVOemCrypto_Initialize(&WvOemCryptoParamSettings, (int*)&wvRc) != Drm_Success)||(wvRc!=OEMCrypto_SUCCESS))
     {
        ALOGE("%s: Initialize failed",__FUNCTION__);
-       if (oemCryptoNxWrapJoined) {
-          oemCryptoNxWrapJoined = 0;
-          oemCryptoNxWrap->leave();
-       }
-       delete oemCryptoNxWrap;
-       oemCryptoNxWrap = NULL;
-
-       return OEMCrypto_ERROR_INIT_FAILED;
+       goto ErrorExit;
     }
 
+    oemcrypto_cas_initialized = true;
     ALOGV("[OEMCrypto_Initialize(): success]");
-    return wvRc;
+    return OEMCrypto_SUCCESS;
+
+ErrorExit:
+    if (oemCryptoNxWrapJoined) {
+       oemCryptoNxWrapJoined = 0;
+       oemCryptoNxWrap->leave();
+    }
+    if (oemCryptoNxWrap != NULL) {
+       delete oemCryptoNxWrap;
+       oemCryptoNxWrap = NULL;
+    }
+    return OEMCrypto_ERROR_INIT_FAILED;
 }
 
 OEMCryptoResult OEMCrypto_Terminate(void)
