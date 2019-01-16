@@ -4159,7 +4159,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        ALOGV("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
+        ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_PORT), "Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         if ( portIndex == m_videoPortBase )
         {
             // Input port
