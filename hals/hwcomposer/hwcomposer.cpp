@@ -4690,6 +4690,14 @@ static void hwc2_z_order(
    }
    lyr[cnt-1]->next = NULL;
 
+   if (hwc2->lm & LOG_Z_DEBUG) {
+      for (i = 0 ; i < cnt ; i++) {
+         ALOGI("[%s]:[z-order]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%d->z:%u",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            dsp->pres, dsp->post, lyr[i]->hdl, i, lyr[i]->z);
+      }
+   }
+
    free(lyr);
 }
 
