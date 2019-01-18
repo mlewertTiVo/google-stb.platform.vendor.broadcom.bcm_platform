@@ -380,7 +380,7 @@ static void gather_mmu_clients(int *candidate) {
                 selected = count;
              }
              if ((selected != NX_INVALID) &&
-                 (g_app.clients[count].score > g_app.clients[selected].score)) {
+                 (g_app.mmu_cli[count].score > g_app.mmu_cli[selected].score)) {
                 selected = count;
              }
           }
