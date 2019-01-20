@@ -2392,7 +2392,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
             ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        ALOGV("%d Flushing %s port", m_instanceNum, pPort->GetDir() == OMX_DirInput ? "input" : "output");
+        ALOGD_IF((m_logMask & B_LOG_ADEC_TRANS_PORT), "%d Flushing %s port %s", m_instanceNum, pPort->GetDir() == OMX_DirInput ? "input" : "output", m_eosDelivered ? "EOS delivered" : "");
         if ( portIndex == m_audioPortBase )
         {
             // Input port
@@ -3416,7 +3416,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
 
     ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
 
-    ALOGV("Fill Buffer, comp:%s %d ts %u us pInfo %p HDR %p", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
+    ALOGD_IF((m_logMask & B_LOG_ADEC_OUTPUT), "Fill Buffer, comp:%s %d ts %u us pInfo %p HDR %p state %d nxOwn %d", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader, m_decoderState, pInfo->nexusOwned);
     // Determine what to do with the buffer
     pBuffer->Reset();
 
