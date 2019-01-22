@@ -90,6 +90,8 @@
 #define BCM_RO_NX_HD_OUT_OBR                          "ro.nx.vidout.obr"
 #define BCM_RO_NX_AP_NUM                              "ro.nx.audio.pbk"
 #define BCM_RO_NX_AP_FIFO_SZ                          "ro.nx.audio.pbkfifosz"
+#define BCM_RO_NX_AP_FIFO_THRESHOLD                   "ro.nx.audio.pbkfifoth"
+#define BCM_RO_NX_AP_START_THRESHOLD                  "ro.nx.audio.pbkstart"
 #define BCM_RO_NX_BPCM_NUM                            "ro.nx.audio.bpcm"
 #define BCM_RO_NX_PBAND                               "ro.nx.trpt.pband"
 #define BCM_RO_NX_PPUMP                               "ro.nx.trpt.ppump"

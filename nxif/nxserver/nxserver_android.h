@@ -70,6 +70,8 @@
 #define NX_NOGRAB_MAGIC                "AWnG"
 #define EVM_CNT_DEF                    (14)
 #define MMU_MAX_CLIENTS                (32) /* 16 in reality at the moment. */
+#define NX_AP_FIFO_SZ_DEF              "16k"
+#define NX_AP_FIFO_THRESHOLD_DEF       "1024"
 
 typedef enum {
    SVP_MODE_NONE,

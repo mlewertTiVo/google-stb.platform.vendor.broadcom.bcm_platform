@@ -370,7 +370,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
     start_settings.dataCallback.context = bout;
     start_settings.dataCallback.param = (int)(intptr_t)event;
 
-    start_settings.startThreshold = 128;
+    start_settings.startThreshold = property_get_int32(BCM_RO_NX_AP_START_THRESHOLD, 4096);
 
     ret = NEXUS_SimpleAudioPlayback_Start(simple_playback,
                                           &start_settings);
@@ -480,19 +480,6 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
         return ret;
     }
 
-    /* Remove audio delay */
-    for (;;) {
-        NEXUS_SimpleAudioPlaybackStatus status;
-
-        NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-        if (!status.started) {
-            break;
-        }
-        if (status.queuedBytes < bout->buffer_size * 4) {
-            break;
-        }
-        BKNI_Sleep(10);
-    }
     return bytes_written;
 }
 
