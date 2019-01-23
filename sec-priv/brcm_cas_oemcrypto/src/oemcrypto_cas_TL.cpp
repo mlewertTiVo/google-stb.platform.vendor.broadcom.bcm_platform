@@ -485,7 +485,9 @@ OEMCryptoResult OEMCrypto_QueryKeyControl(OEMCrypto_SESSION session, const uint8
 /*WV v10 changes*/
 
 OEMCryptoResult SetDestination(OEMCrypto_DestBufferDesc* out_buffer,
-                               size_t data_length, uint8_t** destination,
+                               size_t data_length,
+                               uint8_t** destination,
+                               size_t* dest_offset,
                                size_t* max_length,
                                Drm_WVOemCryptoBufferType_t *buffer_type)
 {
@@ -503,18 +505,20 @@ OEMCryptoResult SetDestination(OEMCrypto_DestBufferDesc* out_buffer,
             *buffer_type = Drm_WVOEMCrypto_BufferType_Clear;
             *destination = out_buffer->buffer.clear.address;
             *max_length = out_buffer->buffer.clear.max_length;
+            *dest_offset = 0;
             break;
         case OEMCrypto_BufferType_Secure:
              ALOGV("%s: outbuffer is Secure",__FUNCTION__);
             *buffer_type = Drm_WVOEMCrypto_BufferType_Secure;
-            *destination = (uint8_t*)(out_buffer->buffer.secure.handle)
-                           + out_buffer->buffer.secure.offset;
+            *destination = (uint8_t*)(out_buffer->buffer.secure.handle);
+            *dest_offset = out_buffer->buffer.secure.offset;
             *max_length = out_buffer->buffer.secure.max_length;
             break;
         default:
         case OEMCrypto_BufferType_Direct:
             *buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
             *destination = NULL;
+            *dest_offset = 0;
             break;
     }
 
@@ -1294,6 +1298,7 @@ OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t *data_addr,
                                   uint8_t subsample_flags)
 {
     uint8_t* destination = NULL;
+    size_t dest_offset = 0;
     size_t max_length = 0;
     OEMCryptoResult sts = OEMCrypto_SUCCESS;
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
@@ -1316,7 +1321,7 @@ OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t *data_addr,
         return OEMCrypto_ERROR_INVALID_CONTEXT;
     }
 
-    sts = SetDestination(out_buffer, data_length, &destination,
+    sts = SetDestination(out_buffer, data_length, &destination, &dest_offset,
                                        &max_length,&buffer_type);
     if (sts != OEMCrypto_SUCCESS)
     {
@@ -1325,7 +1330,7 @@ OEMCryptoResult OEMCrypto_CopyBuffer(const uint8_t *data_addr,
     }
     if (destination != NULL)
     {
-        if ((Drm_WVOemCrypto_CopyBuffer(destination,data_addr, data_length, buffer_type, subsample_flags) != Drm_Success))
+        if ((Drm_WVOemCrypto_CopyBuffer(destination, dest_offset, data_addr, data_length, buffer_type, subsample_flags) != Drm_Success))
        {
             ALOGE("[OEMCrypto_CopyBuffer(): failed]");
             return OEMCrypto_ERROR_UNKNOWN_FAILURE;
@@ -1406,13 +1411,14 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     uint8_t* destination = NULL;
+    size_t dest_offset = 0;
     uint32_t out_sz;
     size_t max_length = 0;
     OEMCryptoResult sts = OEMCrypto_SUCCESS;
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    sts = SetDestination(out_buffer, data_length, &destination,
+    sts = SetDestination(out_buffer, data_length, &destination, &dest_offset,
                                        &max_length,&buffer_type);
     if (sts != OEMCrypto_SUCCESS)
     {
@@ -1423,7 +1429,7 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
     dump_hex((const char*)"enc data:", data_addr, data_length);
 
     if (DRM_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
-        is_encrypted, buffer_type, iv, block_offset, destination, &out_sz,
+        is_encrypted, buffer_type, iv, block_offset, destination, dest_offset, &out_sz,
         (void *)pattern, subsample_flags, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_DecryptCENC(SID=%08X): failed]", session);
@@ -1841,13 +1847,14 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
     Drm_WVOemCryptoBufferType_t buffer_type = Drm_WVOEMCrypto_BufferType_Direct;
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
     uint8_t* destination = NULL;
+    size_t dest_offset = 0;
     uint32_t out_sz;
     size_t max_length = 0;
     OEMCryptoResult sts = OEMCrypto_SUCCESS;
 
     EXIT_IF_SHUTDOWN(OEMCrypto_ERROR_UNKNOWN_FAILURE);
 
-    sts = SetDestination(out_buffer, data_length, &destination,
+    sts = SetDestination(out_buffer, data_length, &destination, &dest_offset,
                                        &max_length,&buffer_type);
     if (sts != OEMCrypto_SUCCESS)
     {
@@ -1858,7 +1865,7 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
     dump_hex((const char*)"enc data:", data_addr, data_length);
 
     if (DRM_WVOemCrypto_DecryptCENC(session, data_addr, data_length,
-        is_encrypted, buffer_type, iv, block_offset, destination, &out_sz,
+        is_encrypted, buffer_type, iv, block_offset, destination, dest_offset, &out_sz,
         (void *)pattern, subsample_flags, (int*)&wvRc) != Drm_Success)
     {
         ALOGV("[OEMCrypto_DecryptCAS(SID=%08X): failed]", session);
