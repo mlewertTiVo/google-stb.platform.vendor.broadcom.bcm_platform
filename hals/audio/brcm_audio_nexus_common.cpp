@@ -140,8 +140,10 @@ NEXUS_Error nexus_common_mute_and_pause(struct brcm_device *bdev,
         return NEXUS_SUCCESS;
     }
 
-    if (mute_duration >= 0) {
-        nexus_common_set_volume(bdev, simple_decoder, 0, &old_level, mute_duration, sleep_after_mute);
+    if (bdev->dolby_ms == 12) {
+        if (mute_duration >= 0) {
+            nexus_common_set_volume(bdev, simple_decoder, 0, &old_level, mute_duration, sleep_after_mute);
+        }
     }
 
     trickState.rate = 0;
@@ -155,8 +157,10 @@ NEXUS_Error nexus_common_mute_and_pause(struct brcm_device *bdev,
                 if (tries == 0) {
                     ALOGE("%s: Giving up after %d tries", __FUNCTION__, MAX_TRICKRATE_TRIES);
 
-                    ALOGV("%s: Restoring volume to: %d", __FUNCTION__, old_level);
-                    nexus_common_set_volume(bdev, simple_decoder, old_level, NULL, -1, -1);
+                    if (bdev->dolby_ms == 12) {
+                        ALOGV("%s: Restoring volume to: %d", __FUNCTION__, old_level);
+                        nexus_common_set_volume(bdev, simple_decoder, old_level, NULL, -1, -1);
+                    }
                 }
             }
         }
@@ -222,10 +226,13 @@ NEXUS_Error nexus_common_resume_and_unmute(struct brcm_device *bdev,
         }
     }
 
-    if (unmute_duration >= 0) {
-        nexus_common_set_volume(bdev, simple_decoder, level, NULL, unmute_duration, -1);
-        ALOGV("%s unmuted %d", __FUNCTION__, rc);
+    if (bdev->dolby_ms == 12) {
+        if (unmute_duration >= 0) {
+            nexus_common_set_volume(bdev, simple_decoder, level, NULL, unmute_duration, -1);
+            ALOGV("%s unmuted %d", __FUNCTION__, rc);
+        }
     }
+
     return NEXUS_SUCCESS;
 }
 
