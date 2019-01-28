@@ -559,6 +559,7 @@ static keymaster_error_t km_config(
       return km_berr_2_kmerr(km_err);
    }
 
+   KM_Tag_DeleteContext(km_params);
    return KM_ERROR_OK;
 }
 
