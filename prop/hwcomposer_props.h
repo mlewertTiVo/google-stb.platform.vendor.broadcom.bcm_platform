@@ -79,7 +79,8 @@
 #define BCM_DYN_HWC2_TWEAK_EOTF                        "dyn.nx.hwc2.tweak.eotf"
 #define BCM_DYN_HWC2_TWEAK_PLMOFF                      "dyn.nx.hwc2.tweak.plmoff"
 #define BCM_DYN_HWC2_TWEAK_SGLES                       "dyn.nx.hwc2.tweak.sgles"
-#define BCM_DYN_HWC2_TWEAK_ONE_CFG                     "dyn.nx.hwc2.tweak.onecfg"
+
+#define BCM_PERSIST_HWC2_TWEAK_ONE_CFG                 "persist.nx.hwc2.tweak.onecfg"
 
 #endif /* VENDOR_BCM_PROPS__HWCOMPOSER */
 

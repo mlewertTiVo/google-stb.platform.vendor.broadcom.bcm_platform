@@ -283,7 +283,7 @@ static bool hwc2_enabled(
       r = (bool)property_get_bool(BCM_RO_HWC2_TWEAK_ODVAH, 1);
    break;
    case hwc2_tweak_one_cfg:
-      r = (bool)property_get_bool(BCM_DYN_HWC2_TWEAK_ONE_CFG, 0);
+      r = (bool)property_get_bool(BCM_PERSIST_HWC2_TWEAK_ONE_CFG, 0);
    break;
    default:
    break;
