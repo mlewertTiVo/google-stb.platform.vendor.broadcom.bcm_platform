@@ -52,6 +52,7 @@
 #include "bomx_aac_parser.h"
 #include <stdio.h>
 #include <media/hardware/HardwareAPI.h>
+#include <utils/List.h>
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
@@ -103,6 +104,25 @@ enum BOMX_AudioDecoderState
     BOMX_AudioDecoderState_eStarted,
     BOMX_AudioDecoderState_eSuspended,
     BOMX_AudioDecoderState_eMax
+};
+
+class BOMX_PESDataTracker
+{
+public:
+    BOMX_PESDataTracker();
+    ~BOMX_PESDataTracker() {};
+    void AddEntry(unsigned pts, size_t size);
+    void SetLastReturnedPts(unsigned pts);
+    size_t GetAccummulatedSize();
+    void Reset();
+
+private:
+    typedef struct TrackerEntry{
+      unsigned pts;
+      size_t size;
+    } TrackerEntry;
+    List<TrackerEntry> m_ptsTracker;
+    size_t m_numInputBuffers;
 };
 
 class BOMX_AudioDecoder : public BOMX_Component
@@ -258,6 +278,7 @@ protected:
     unsigned m_numPcmChannels;
     int m_codecDelayAdjusted;
     bool m_inputFlushing;
+    BOMX_PESDataTracker m_pesTracker;
 
     // These parameters are specific only to AAC handling
     BOMX_AAC_ASCInfo m_ascInfo;
@@ -320,7 +341,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, bool bForceReturn, unsigned buffersToReturn = 0);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them
