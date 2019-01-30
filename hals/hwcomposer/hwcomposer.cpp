@@ -4815,8 +4815,8 @@ static bool hwc2_lyr_adj(
    if (memcmp(&o, &dsp->op, sizeof(o))) {
       if ((ds == NULL) ||
           ((ds != NULL) && (dsp->u.ext.cb == cbs_e_bypass))) {
-         p->x += (int16_t)dsp->op.x;
-         p->y += (int16_t)dsp->op.y;
+         p->x = (int16_t)dsp->op.x + (int16_t)(((int)p->x * (w+dsp->op.w))/w);
+         p->y = (int16_t)dsp->op.y + (int16_t)(((int)p->y * (h+dsp->op.h))/h);
          p->width = (uint16_t)((int)p->width + (((int)p->width * dsp->op.w)/w));
          p->height = (uint16_t)((int)p->height + (((int)p->height * dsp->op.h)/h));
       }
@@ -4988,14 +4988,14 @@ static int32_t hwc2_preDsp(
                        (int16_t)lyr->fr.top,
                        (uint16_t)(lyr->fr.right - lyr->fr.left),
                        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  hwc2_lyr_adj(dsp, &c, &p, NULL);
                   if ((lyr->lpf == HWC2_RLPF) ||
                       (lyr->z != dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z) ||
-                      memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp)) != 0 ||
-                      memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr)) != 0) {
+                      memcmp((void *)&c, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp)) != 0 ||
+                      memcmp((void *)&p, (void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr)) != 0) {
                      dsp->u.ext.vid[vid-HWC2_VID_MAGIC].z = lyr->z;
-                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr));
-                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp));
-                     hwc2_lyr_adj(dsp, &c, &p, NULL);
+                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr, (void *)&c, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].fr));
+                     memcpy((void *)&dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp, (void *)&p, sizeof(dsp->u.ext.vid[vid-HWC2_VID_MAGIC].crp));
                      fr.x = p.x;
                      fr.y = p.y;
                      fr.w = p.width;
