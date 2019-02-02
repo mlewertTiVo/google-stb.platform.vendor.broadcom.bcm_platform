@@ -1567,8 +1567,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     av_header.reset();
     current_buff.reset();
 
-    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE,
-        bout->nexus.tunnel.pcm_format?false:true);
+    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE,true);
     bout->nexus.tunnel.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
     bout->nexus.tunnel.soft_unmuting = property_get_int32(BCM_RO_AUDIO_SOFT_UNMUTING, 30);
     bout->nexus.tunnel.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
