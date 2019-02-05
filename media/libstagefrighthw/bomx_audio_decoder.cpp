@@ -77,7 +77,7 @@
 #define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
 #define B_AAC_ADTS_HEADER_LEN (7)
-
+#define B_RAVE_PACKET_SIZE    (188)
 #define B_MAX_AUDIO_DECODERS (2)
 #define B_MAX_SECURE_AUDIO_DECODERS (1)
 
@@ -528,6 +528,61 @@ static OMX_ERRORTYPE BOMX_AudioDecoder_InitMimeType(OMX_AUDIO_CODINGTYPE eCompre
     }
     strncpy(pMimeType, pMimeTypeStr, OMX_MAX_STRINGNAME_SIZE);
     return err;
+}
+
+BOMX_PESDataTracker::BOMX_PESDataTracker()
+{
+    Reset();
+}
+
+void BOMX_PESDataTracker::AddEntry(unsigned pts, size_t size)
+{
+    TrackerEntry entry;
+    entry.pts = pts;
+    entry.size = size;
+    m_ptsTracker.push_back(entry);
+    ++m_numInputBuffers;
+}
+
+// Evaluates to true if (a < b)
+// Very simple unsigned comparison taking into account possible
+// wrap-around. The assumption is that no consecutive frames
+// will have a delta timestamp value larger than UINT_MAX/2
+#define UNSIGNED_LESS_THAN(a, b) ( ((b) - (a)) <  ((a) - (b)) )
+
+void BOMX_PESDataTracker::SetLastReturnedPts(unsigned pts)
+{
+    unsigned erasedFrames = 0;
+
+    List<TrackerEntry>::iterator it = m_ptsTracker.begin();
+    while ( it != m_ptsTracker.end() ) {
+       if ( it->pts == pts || UNSIGNED_LESS_THAN(it->pts, pts) ) {
+          it = m_ptsTracker.erase(it);
+          ++erasedFrames;
+       } else {
+          ++it;
+       }
+    }
+}
+
+size_t BOMX_PESDataTracker::GetAccummulatedSize()
+{
+    if (m_ptsTracker.empty())
+      return 0;
+
+    List<TrackerEntry>::iterator it = m_ptsTracker.begin();
+    size_t totalSize = 0;
+    for (; it != m_ptsTracker.end(); ++it) {
+      totalSize += it->size;
+    }
+
+    return totalSize;
+}
+
+void BOMX_PESDataTracker::Reset()
+{
+    m_ptsTracker.clear();
+    m_numInputBuffers = 0;
 }
 
 BOMX_AudioDecoder::BOMX_AudioDecoder(
@@ -1935,6 +1990,7 @@ NEXUS_Error BOMX_AudioDecoder::StopDecoder()
         m_eosReady = false;
         m_pBufferTracker->Flush();
         InputBufferCounterReset();
+        m_pesTracker.Reset();
         m_decoderState = BOMX_AudioDecoderState_eStopped;
         ReturnPortBuffers(m_pAudioPorts[0]);
         return BERR_SUCCESS;
@@ -3210,7 +3266,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGD_IF((m_logMask & B_LOG_ADEC_IN_FEED), "%s, comp:%s %d, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), m_instanceNum, pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGD_IF((m_logMask & B_LOG_ADEC_IN_FEED), "%s, comp:%s %d, buff:%p len:%d ts:%d flags:0x%x, pesTotal:%d", __FUNCTION__, GetName(), m_instanceNum, pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_pesTracker.GetAccummulatedSize());
 
     if ( m_pInputFile )
     {
@@ -3289,6 +3345,12 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
             if ( numRequested > 0 )
             {
                 unsigned i;
+                unsigned totalPes = 0;
+
+                for ( i = 0; i < numRequested; i++ )
+                  totalPes += desc[i].length;
+
+                m_pesTracker.AddEntry(pInfo->pts, totalPes);
                 // Log data to file if requested
                 if ( NULL != m_pPesFile )
                 {
@@ -3336,6 +3398,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         if ( err )
         {
             return BOMX_ERR_TRACE(err);
+        }
+        if ( (m_AvailInputBuffers == 0) && (m_pesTracker.GetAccummulatedSize() < B_RAVE_PACKET_SIZE) )
+        {
+            ReturnInputBuffers(0, true, 1);
         }
     }
     else
@@ -3584,7 +3650,7 @@ void BOMX_AudioDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pAudioPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll)
+void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bForceReturn, unsigned buffersToReturn)
 {
     uint32_t count = 0;
     BOMX_AudioDecoderInputBufferInfo *pInfo;
@@ -3602,7 +3668,7 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll)
             break;
         }
 
-        if ( bReturnAll || pReturnBuffer == NULL )
+        if ( bForceReturn || pReturnBuffer == NULL )
         {
             pReturnBuffer = pBuffer;
         }
@@ -3617,8 +3683,10 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll)
 
     if ( pReturnBuffer != NULL )
     {
+        unsigned limit = ( bForceReturn && (buffersToReturn > 0)) ?
+                           buffersToReturn : m_pAudioPorts[0]->GetDefinition()->nBufferCountActual;
         pBuffer = m_pAudioPorts[0]->GetBuffer();
-        while ( pBuffer != pReturnBuffer )
+        while ( pBuffer != pReturnBuffer && (count < limit) )
         {
             pNextBuffer = m_pAudioPorts[0]->GetNextBuffer(pBuffer);
 
@@ -3634,7 +3702,7 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool bReturnAll)
         }
 
         // The last returned buffer
-        if ( ReturnInputPortBuffer(pBuffer) )
+        if ( (count < limit) && ReturnInputPortBuffer(pBuffer) )
         {
             ++count;
         }
@@ -4013,6 +4081,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 ReturnInputBuffers(pHeader->nTimeStamp, false);
                 // Consume this from the decoder's queue
                 NEXUS_AudioDecoder_ConsumeDecodedFrames(m_hAudioDecoder, 1);
+                m_pesTracker.SetLastReturnedPts(m_pFrameStatus[i].pts);
             }
         }
         if ( m_eosPending && ( m_eosStandalone || m_eosReady ) )
