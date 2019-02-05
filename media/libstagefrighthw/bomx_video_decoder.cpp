@@ -7283,12 +7283,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if ( !m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync ) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                if ( stcSync != B_STC_SYNC_INVALID_VALUE )
+                if ( (stcSync != B_STC_SYNC_INVALID_VALUE) && (stcSync != m_stcSyncValue) )
                 {
                     m_stcSyncValue = stcSync;
-	                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+	                  ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
                     // Audio PTS received, resume STC
                     ResumeAfterVideoPeek();
                 }
