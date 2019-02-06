@@ -6482,10 +6482,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if (!m_waitingForStc && !m_stcResumePending) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                m_stcSyncValue = stcSync;
-                ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                if ( (stcSync != B_STC_SYNC_INVALID_VALUE) && (stcSync != m_stcSyncValue) )
+                {
+                    m_stcSyncValue = stcSync;
+                    ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                }
             }
         }
 
