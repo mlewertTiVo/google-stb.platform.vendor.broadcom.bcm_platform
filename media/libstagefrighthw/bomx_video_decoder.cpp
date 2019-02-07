@@ -4000,12 +4000,20 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                 m_outputFlushing = false;
                 // Handle possible timestamp discontinuity (seeking) after a flush command
-                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ) && !m_waitingForStc)
+                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ) )
                 {
                     NEXUS_VideoDecoderTrickState vdecTrickState;
                     NEXUS_Error errCode;
 
                     m_waitingForStc = true;
+                    if ( m_stcResumePending )
+                    {
+                        // If we're here, it means this discontinuity is interrupting another one
+                        // currenty in progress, so start over
+                        errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
+                        if (errCode != NEXUS_SUCCESS)
+                            ALOGW("%s: error setting stc rate to 1", __FUNCTION__);
+                    }
                     m_stcResumePending = false;
 
                     // Pause decoder until a valid stc is available
@@ -6474,10 +6482,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if (!m_waitingForStc && !m_stcResumePending) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                m_stcSyncValue = stcSync;
-                ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                if ( (stcSync != B_STC_SYNC_INVALID_VALUE) && (stcSync != m_stcSyncValue) )
+                {
+                    m_stcSyncValue = stcSync;
+                    ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
+                }
             }
         }
 
