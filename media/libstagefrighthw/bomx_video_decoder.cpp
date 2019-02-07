@@ -4208,31 +4208,35 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 {
                     m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
                     m_vidPeekState = VideoPeekState_eDisabled;
+                    NEXUS_VideoDecoderTrickState vdecTrickState;
+                    NEXUS_Error errCode;
 
-                    if ( !m_waitingForStc )
+                    m_waitingForStc = true;
+                    if ( m_stcResumePending )
                     {
-                        NEXUS_VideoDecoderTrickState vdecTrickState;
-                        NEXUS_Error errCode;
+                         // If we're here, it means this discontinuity is interrupting another one
+                         // currently in process, so start over.
+                         errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
+                         if (errCode != NEXUS_SUCCESS)
+                            ALOGW("%s: error setting stc rate to 1", __FUNCTION__);
+                    }
+                    m_stcResumePending = false;
 
-                        m_waitingForStc = true;
-                        m_stcResumePending = false;
+                    // Pause decoder until a valid stc is available
+                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    vdecTrickState.rate = 0;
+                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    if (errCode != NEXUS_SUCCESS)
+                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
 
-                        // Pause decoder until a valid stc is available
-                        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                        vdecTrickState.rate = 0;
-                        errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                        if (errCode != NEXUS_SUCCESS)
-                            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-
-                        // Reset stc sync only if it hasn't changed its last value.
-                        uint32_t stcSync;
-                        NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
-                        if (stcSync == m_stcSyncValue)
-                        {
-                            NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
-                            ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Setting sync stc to invalid value");
-                        }
+                    // Reset stc sync only if it hasn't changed its last value.
+                    uint32_t stcSync;
+                    NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                    ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
+                    if (stcSync == m_stcSyncValue)
+                    {
+                        NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Setting sync stc to invalid value");
                     }
                 }
             }
@@ -7279,13 +7283,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if (!m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+            if ( !m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync ) {
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                if ( stcSync != B_STC_SYNC_INVALID_VALUE )
+                if ( (stcSync != B_STC_SYNC_INVALID_VALUE) && (stcSync != m_stcSyncValue) )
                 {
                     m_stcSyncValue = stcSync;
-	                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
-
+	                  ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
                     // Audio PTS received, resume STC
                     ResumeAfterVideoPeek();
                 }

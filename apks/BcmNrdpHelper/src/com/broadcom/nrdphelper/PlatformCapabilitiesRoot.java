@@ -66,15 +66,21 @@ public class PlatformCapabilitiesRoot {
    @Expose
    private String videoPeekTunnelFramesToSend;
 
+   @SerializedName("audioMinBufferSizePcm")
+   @Expose
+   private String audioMinBufferSizePcm;
+
    PlatformCapabilitiesRoot(Boolean vp9Disabled,
                             String hdrOutputType,
                             String formatNotificationType,
                             String tunnelModeWithBTSetting,
-                            String videoPeekTunnelFramesToSend) {
+                            String videoPeekTunnelFramesToSend,
+                            String audioMinBufferSizePcm) {
        this.vp9Disabled = vp9Disabled;
        this.hdrOutputType = hdrOutputType;
        this.formatNotificationType = formatNotificationType;
        this.tunnelModeWithBTSetting = tunnelModeWithBTSetting;
        this.videoPeekTunnelFramesToSend = videoPeekTunnelFramesToSend;
+       this.audioMinBufferSizePcm = audioMinBufferSizePcm;
    }
 }
