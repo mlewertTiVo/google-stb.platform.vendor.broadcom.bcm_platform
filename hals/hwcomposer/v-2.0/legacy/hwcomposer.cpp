@@ -1357,9 +1357,8 @@ static int hwc2_vsync2igrp(
 static void hwc2_set_acfg(
    struct hwc2_dsp_t *dsp) {
    NxClient_DisplaySettings settings;
-
+   NEXUS_Error rc = NEXUS_SUCCESS;
    NEXUS_VideoFormat fmt = NEXUS_VideoFormat_eUnknown;
-   NxClient_GetDisplaySettings(&settings);
 
    NEXUS_VideoFormat ordered_720_grp[] = {
       NEXUS_VideoFormat_e720p,
@@ -1410,21 +1409,24 @@ static void hwc2_set_acfg(
    }
    pthread_mutex_unlock(&dsp->mtx_cfg);
 
-   if (fmt != NEXUS_VideoFormat_eUnknown && settings.format != fmt) {
-      char fmt_str[32];
-      ALOGI("[%s]:display-format::%d->%d",
-         (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
-         settings.format, fmt);
-      settings.format = fmt;
-      /* prevent automatic selection of 'better' display resolution.
-       */
-      sprintf(fmt_str, "%d", fmt);
-      property_set(HWC2_VIDOUT_FMT, fmt_str);
-      NxClient_SetDisplaySettings(&settings);
-      /* the resulting display change callback should take care of updating
-       * the composition mode.
-       */
-   }
+   do {
+      NxClient_GetDisplaySettings(&settings);
+      if (fmt != NEXUS_VideoFormat_eUnknown && settings.format != fmt) {
+         char fmt_str[32];
+         ALOGI("[%s]:display-format::%d->%d",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            settings.format, fmt);
+         settings.format = fmt;
+         /* prevent automatic selection of 'better' display resolution.
+          */
+         sprintf(fmt_str, "%d", fmt);
+         property_set(HWC2_VIDOUT_FMT, fmt_str);
+         rc = NxClient_SetDisplaySettings(&settings);
+         /* the resulting display change callback should take care of updating
+          * the composition mode.
+          */
+      }
+   } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 }
 
 static int32_t hwc2_regCb(
