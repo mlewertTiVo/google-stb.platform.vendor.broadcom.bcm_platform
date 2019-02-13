@@ -268,6 +268,9 @@ static int32_t hwc2_setting(
    case hwc2_tweak_dump_this:
       r = property_get_int32(HWC2_DUMP_NOW, 0);
    break;
+   case hwc2_tweak_one_cfg:
+      r = (bool)property_get_bool("persist.nx.hwc2.tweak.onecfg", 0);
+   break;
    default:
    break;
    }
@@ -482,6 +485,7 @@ static void hwc2_cfg_collect(
    struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL, *cfg_s = NULL;
    int i, j;
    bool skip;
+   bool one_cfg = hwc2_enabled(hwc2_tweak_one_cfg);
 
    NEXUS_VideoFormat ordered_fps[] = {
       NEXUS_VideoFormat_e4096x2160p60hz,
@@ -547,6 +551,21 @@ static void hwc2_cfg_collect(
    }
    cfg_c = dsp->cfgs;
 
+   if (dsp->aCfg) {
+      ALOGI_IF(one_cfg || (dsp->lm & LOG_CFGS_DEBUG),
+               "[%s]:[%s-cfg]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
+               (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+               one_cfg ? "one" : "act",
+               (uint64_t)(intptr_t)dsp,
+               dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->ew, dsp->aCfg->eh,
+               hwc2_vsync2fps(dsp->aCfg->vsync));
+   } else if (one_cfg) {
+      /* can't be good. */
+      ALOGE("[%s]:%" PRIu64 ": no active configuration on single profile!",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            (uint64_t)(intptr_t)dsp);
+   }
+
    /* now we grow with all the format supported part of our list.
     */
    i = 0;
@@ -572,7 +591,7 @@ static void hwc2_cfg_collect(
             }
             cfg_s = skip ? NULL : cfg_s->next;
          };
-         if (skip) {
+         if (skip || one_cfg) {
             i++;
             continue;
          }
