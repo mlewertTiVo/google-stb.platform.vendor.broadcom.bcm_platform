@@ -2281,7 +2281,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        // Enable tunneling hfr only for secure decoding. We also increase the input buffers fast return
        // watermark as it helps preventing decoder underflows when doing high fps svp decoding
        m_tunnelHfr = ( property_get_int32(BCM_RO_MEDIA_TUNNELED_HFRVIDEO, 0) != 0 ) && m_secureDecoder;
-       m_minNumInputBuffers = m_tunnelHfr ? B_MIN_QUEUED_INPUT_BUFFERS_TUNN_SVP : B_MIN_QUEUED_INPUT_BUFFERS;
+       m_minNumInputBuffers = m_secureDecoder ? B_MIN_QUEUED_INPUT_BUFFERS_TUNN_SVP : B_MIN_QUEUED_INPUT_BUFFERS;
     }
     else
     {
