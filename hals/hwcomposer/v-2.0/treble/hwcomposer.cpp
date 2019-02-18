@@ -260,7 +260,7 @@ static bool hwc2_enabled(
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.fbcomp", 0);
    break;
    case hwc2_tweak_pip_alpha_hole:
-      r = !!HWC2_PAH;
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.pipah", 0);
    break;
    case hwc2_tweak_bypass_disable:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
@@ -273,6 +273,9 @@ static bool hwc2_enabled(
    break;
    case hwc2_tweak_forced_eotf:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.force_eotf", 1);
+   break;
+   case hwc2_tweak_odv_alpha_hole:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.odvah", 1);
    break;
    case hwc2_tweak_one_cfg:
       r = (bool)property_get_bool("persist.nx.hwc2.tweak.onecfg", 0);
@@ -5971,6 +5974,7 @@ static void hwc2_ext_cmp_frame(
    int blt, vl = 0;
    size_t ccli = 0;
    NEXUS_Rect pah = {0,0,0,0};
+   NEXUS_Rect odv = {0,0,0,0};
    enum hwc2_seeding_e ms = hwc2_seeding_none;
    uint32_t aw = 0;
    uint32_t ah = 0;
@@ -6237,26 +6241,51 @@ static void hwc2_ext_cmp_frame(
          }
       case HWC2_COMPOSITION_DEVICE:
          if (is_video) {
+            bool use_odv = false;
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
-            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
-               if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
-                   (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-                  NEXUS_Rect c, p;
-                  c = {(int16_t)lyr->crp.left,
-                       (int16_t)lyr->crp.top,
-                       (uint16_t)(lyr->crp.right - lyr->crp.left),
-                       (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
-                  p = {(int16_t)lyr->fr.left,
-                       (int16_t)lyr->fr.top,
-                       (uint16_t)(lyr->fr.right - lyr->fr.left),
-                       (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
-                  hwc2_lyr_adj(dsp, &c, &p, NULL);
-                  pah = p;
+            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole) ||
+                hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
+               NEXUS_Rect cr, p;
+               cr = {(int16_t)lyr->crp.left,
+                     (int16_t)lyr->crp.top,
+                     (uint16_t)(lyr->crp.right - lyr->crp.left),
+                     (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               p = {(int16_t)lyr->fr.left,
+                    (int16_t)lyr->fr.top,
+                    (uint16_t)(lyr->fr.right - lyr->fr.left),
+                    (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               hwc2_lyr_adj(dsp, &cr, &p, NULL);
+               /* odv-alpha-hole: carved if a composition has already happened to ensure
+                * the background of the result is transparent to allow the video punch thru,
+                * this is the preferred mode of usage.
+                */
+               if (c && hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
+                  odv = p;
+                  /* reset pah if set on a precedent layer. */
+                  pah.width  = 0;
+                  pah.height = 0;
                   ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
-                           "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
-                           dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
+                           "[ext]:[odv-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                           dsp->pres, dsp->post, odv.x, odv.y, odv.width, odv.height);
+                  hwc2_pah(hwc2, d, &odv);
+                  hwc2_chkpt(hwc2);
+                  use_odv = true;
+               }
+               /* pip-alpha-hole: carved at the top of the composition stack to ensure a video
+                * punch thru can be seen, however it is less ideal than odv-alpha-hole as it may
+                * also remove valid composed area of the graphics (thus disabled by default).
+                */
+               if (!use_odv &&
+                   hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+                  if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
+                      (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
+                     pah = p;
+                     ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                              "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                              dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
+                  }
                }
             }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -6295,23 +6324,30 @@ static void hwc2_ext_cmp_frame(
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
-         if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+         /* odv-alpha-hole: carved if a composition has already happened to ensure
+          * the background of the result is transparent to allow the video punch thru.
+          * because this is sideband, we would expect the application driving it to
+          * ensure the alpha-hole is present, but we do it anyway.
+          */
+         if (c && hwc2_enabled(hwc2_tweak_odv_alpha_hole)) {
             if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= aw/HWC2_PAH_DIV &&
                 (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= ah/HWC2_PAH_DIV) {
-               NEXUS_Rect c, p;
-               c = {(int16_t)lyr->crp.left,
-                    (int16_t)lyr->crp.top,
-                    (uint16_t)(lyr->crp.right - lyr->crp.left),
-                    (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+               NEXUS_Rect cr, p;
+               cr = {(int16_t)lyr->crp.left,
+                     (int16_t)lyr->crp.top,
+                     (uint16_t)(lyr->crp.right - lyr->crp.left),
+                     (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
                p = {(int16_t)lyr->fr.left,
                     (int16_t)lyr->fr.top,
                     (uint16_t)(lyr->fr.right - lyr->fr.left),
                     (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
-               hwc2_lyr_adj(dsp, &c, &p, NULL);
-               pah = p;
+               hwc2_lyr_adj(dsp, &cr, &p, NULL);
+               odv = p;
                ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
-                        "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
-                        dsp->pres, dsp->post, aw/HWC2_PAH_DIV, ah/HWC2_PAH_DIV);
+                        "[ext]:[odv-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                        dsp->pres, dsp->post, odv.x, odv.y, odv.width, odv.height);
+               hwc2_pah(hwc2, d, &odv);
+               hwc2_chkpt(hwc2);
             }
          }
 
