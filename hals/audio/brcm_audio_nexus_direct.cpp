@@ -920,10 +920,25 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 const uint8_t *syncframe1 = NULL;
                 const uint8_t *syncframe2 = NULL;
                 eac3_frame_hdr_info info;
+                eac3_frame_hdr_info info2;
                 syncframe1 = nexus_find_eac3_independent_frame((uint8_t *)buffer, bytes, 0, &info);
                 if (syncframe1) {
-                    syncframe2 = nexus_find_eac3_independent_frame(syncframe1 + 2,
-                        bytes - (syncframe1 - (uint8_t *)buffer) - 2, 0, &info);
+                    const uint8_t *search = syncframe1 + 2;
+                    size_t bytes_left = bytes - (syncframe1 - (uint8_t *)buffer) - 2;
+                    syncframe2 = nexus_find_eac3_independent_frame(search, bytes_left, 0, &info2);
+                    while (syncframe2) {
+                        if ((info.sample_rate == info2.sample_rate) &&
+                            (info.num_audio_blks == info2.num_audio_blks))
+                            break;
+
+                        search = syncframe2 + 2;
+                        bytes_left = bytes - (syncframe2 - (uint8_t *)buffer) - 2;
+                        syncframe2 = NULL;
+                        if (bytes_left <= 2)
+                            break;
+
+                        syncframe2 = nexus_find_eac3_independent_frame(search, bytes_left, 0, &info2);
+                    }
                 }
                 if (syncframe1 && syncframe2) {
                     size_t frame_size = syncframe2 - syncframe1;
