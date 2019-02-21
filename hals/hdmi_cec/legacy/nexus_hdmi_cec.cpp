@@ -1042,7 +1042,12 @@ status_t NexusHdmiCecDevice::getConnectedState(int *pIsConnected)
    NEXUS_HdmiOutputHandle hdmi;
    NEXUS_HdmiOutputStatus hstatus;
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+   if (!hdmi) {
+      ALOGE("%s: Could not get HDMI output handle", __FUNCTION__);
+      return UNKNOWN_ERROR;
+   }
    NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+   NEXUS_HdmiOutput_Close(hdmi);
    if (hstatus.connected) {
       *pIsConnected = HDMI_CONNECTED;
    } else {
