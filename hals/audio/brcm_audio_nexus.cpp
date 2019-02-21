@@ -46,6 +46,7 @@
 
 #define NEXUS_OUT_BUFFER_DURATION_MS    20
 #define NEXUS_OUT_DEFAULT_LATENCY       10
+#define NEXUS_OUT_MS_LATENCY            80
 
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
@@ -665,9 +666,14 @@ static int nexus_bout_dump(struct brcm_stream_out *bout, int fd)
 
 static uint32_t nexus_bout_get_latency(struct brcm_stream_out *bout)
 {
-    (void)bout;
-    /* See SWANDROID-4627 for calculation */
-    return NEXUS_OUT_DEFAULT_LATENCY;
+    /* The reported latency affects default buffer sizes used in AudioFlinger's audio tracks.
+     * Most applications specify sizes based on application needs.  However if OpenSL is used,
+     * the default size is used.  For MS enabled devices, the buffer size needs to be increased
+     * to prevent the AudioTrack from underrunning. */
+    return property_get_int32(BCM_RO_AUDIO_OUTPUT_LATENCY,
+                              ((bout->bdev->dolby_ms == 11) || (bout->bdev->dolby_ms == 12)) ?
+                                  NEXUS_OUT_MS_LATENCY :
+                                  NEXUS_OUT_DEFAULT_LATENCY);
 }
 
 static int nexus_bout_get_next_write_timestamp(struct brcm_stream_out *bout, int64_t *timestamp)
