@@ -1107,9 +1107,15 @@ static nxserver_t init_nxserver(void)
        /* problem? TBD. */
     }
     memset(value, 0, sizeof(value));
-    if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NULL)) {
+    if (property_get(BCM_RO_NX_AP_FIFO_SZ, value, NX_AP_FIFO_SZ_DEF)) {
        if (strlen(value)) {
           settings.audioPlayback.fifoSize = calc_heap_size(value);
+       }
+    }
+    memset(value, 0, sizeof(value));
+    if (property_get(BCM_RO_NX_AP_FIFO_THRESHOLD, value, NX_AP_FIFO_THRESHOLD_DEF)) {
+       if (strlen(value)) {
+          settings.audioPlayback.threshold = calc_heap_size(value);
        }
     }
     ix = property_get_int32(BCM_RO_NX_BPCM_NUM, 0);

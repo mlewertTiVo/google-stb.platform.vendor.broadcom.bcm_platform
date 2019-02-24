@@ -49,6 +49,7 @@
 #define BCM_RO_AUDIO_DIRECT_FORCE_PCM                      "ro.nx.media.direct_force_pcm"
 #define BCM_RO_AUDIO_DOLBY_MS                              "ro.nx.dolby.ms"
 #define BCM_RO_AUDIO_DISABLE_ATMOS                         "ro.nx.media.disable_atmos"
+#define BCM_RO_AUDIO_OUTPUT_LATENCY                        "ro.nx.audio.output_latency"
 #define BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY                  "ro.nx.audio.mixer_latency"
 #define BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH        "ro.nx.media.disable_ac3_passthru"
 #define BCM_RO_AUDIO_DIRECT_DOLBY_DRC_MODE                 "ro.nx.media.direct_drc_mode"
