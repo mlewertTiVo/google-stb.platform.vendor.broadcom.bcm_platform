@@ -370,7 +370,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
     start_settings.dataCallback.context = bout;
     start_settings.dataCallback.param = (int)(intptr_t)event;
 
-    start_settings.startThreshold = property_get_int32(BCM_RO_NX_AP_START_THRESHOLD, 4096);
+    start_settings.startThreshold = property_get_int32(BCM_RO_NX_AP_START_THRESHOLD, 8192);
 
     ret = NEXUS_SimpleAudioPlayback_Start(simple_playback,
                                           &start_settings);
