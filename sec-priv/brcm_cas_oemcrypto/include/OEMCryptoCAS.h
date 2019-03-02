@@ -204,6 +204,7 @@ typedef struct {
  * key_data_iv - the IV for performing AES-256-CBC decryption of the key data.
  * key_data - encrypted content key data.
  * key_data_length - length of key_data - 16 or 32 depending on intended use.
+ * content_iv - the 16 byte iv used to decrypt content.
  */
 typedef struct {
   const uint8_t* entitlement_key_id;
@@ -213,6 +214,7 @@ typedef struct {
   const uint8_t* content_key_data_iv;
   const uint8_t* content_key_data;
   size_t content_key_data_length;
+  const uint8_t* content_iv;
 } OEMCrypto_EntitledContentKeyObject;
 
 /*
@@ -326,6 +328,7 @@ typedef enum OEMCrypto_HDCP_Capability {
   HDCP_V2    = 2,               // HDCP version 2.0 Type 1.
   HDCP_V2_1  = 3,               // HDCP version 2.1 Type 1.
   HDCP_V2_2  = 4,               // HDCP version 2.2 Type 1.
+  HDCP_V2_3  = 5,               // HDCP version 2.3 Type 1.
   HDCP_NO_DIGITAL_OUTPUT = 0xff // No digital output.
 } OEMCrypto_HDCP_Capability;
 
@@ -337,6 +340,15 @@ typedef enum OEMCrypto_ProvisioningMethod {
   OEMCrypto_Keybox = 2,        // Device has factory installed unique keybox.
   OEMCrypto_OEMCertificate = 3 // Device has factory installed OEM certificate.
 } OEMCrypto_ProvisioningMethod;
+
+typedef struct {
+  // A handle to a descrambler assigned to be used to process ECM data and
+  // descramble.
+  uint32_t descrambler_handle;
+  // An optional channel index. This is provided to pass in an index to a
+  // descrambler channel if required by the soc’s hardware.
+  uint32_t descrambler_channel_index;
+} OEMCrypto_CasSocData;
 
 /*
  * Flags indicating RSA keys supported.
@@ -437,6 +449,7 @@ typedef enum OEMCrypto_ProvisioningMethod {
 #define OEMCrypto_SelectKey                   _ocas81
 #define OEMCrypto_LoadKeys                    _ocas82
 #define OEMCrypto_LoadCasECMKeys              _ocas83
+#define OEMCrypto_SetCasSocData               _ocas84
 
 /*
  * OEMCrypto_Initialize
@@ -3518,6 +3531,30 @@ OEMCryptoResult OEMCrypto_CopyOldUsageEntry(OEMCrypto_SESSION session,
  *   This method is new in API version 14.
  */
 uint32_t OEMCrypto_GetAnalogOutputFlags();
+
+/*
+ * OEMCrypto_SetCasSocData
+ *
+ * Description:
+ *   This is an optional method allowing platform specific descrambler
+ *   information to be passed to the TEE.
+ *
+ * Parameters:
+ *   [in] session: handle for the session to be used.
+ *   [in] es_stream_id: the stream id to set with the soc data.
+ *   [in] cas_soc_data: a pointer to soc specific data.
+ *
+ * Returns:
+ *   OEMCrypto_SUCCESS success
+ *   OEMCrypto_ERROR_NOT_IMPLEMENTED
+ *   OEMCrypto_ERROR_INVALID_SESSION
+ *
+ * Version:
+ *   This method is new in API version 14.1.
+ */
+OEMCryptoResult OEMCrypto_SetCasSocData(
+  OEMCrypto_SESSION session, uint16_t es_stream_id,
+  const OEMCrypto_CasSocData* cas_soc_data);
 
 #ifdef __cplusplus
 }

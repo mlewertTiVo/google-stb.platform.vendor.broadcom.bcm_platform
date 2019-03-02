@@ -1869,3 +1869,14 @@ OEMCryptoResult OEMCrypto_DecryptCAS(OEMCrypto_SESSION session,
 
     return wvRc;
 }
+
+OEMCryptoResult OEMCrypto_SetCasSocData(
+  OEMCrypto_SESSION session, uint16_t es_stream_id,
+  const OEMCrypto_CasSocData* cas_soc_data)
+{
+    BSTD_UNUSED(session);
+    BSTD_UNUSED(es_stream_id);
+    BSTD_UNUSED(cas_soc_data);
+
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
+}
