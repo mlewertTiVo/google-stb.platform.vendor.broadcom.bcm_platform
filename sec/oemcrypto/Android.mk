@@ -32,8 +32,16 @@ RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
 RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
 
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+ifeq ($(NEXUS_SECURITY_API_VERSION),2)
+SECVER := secv2
+else
+SECVER := secv1
+endif
+
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(SECVER)/$(LOCAL_MODULE).so))
+$(info "SEC: using prebuilts from ${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/${SECVER} for oemcrypto")
 # use prebuilt library if one exists
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
@@ -43,8 +51,8 @@ LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 # fix me!
-LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(SECVER)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(SECVER)/$(LOCAL_MODULE).so
 else
 ifeq ($(LOCAL_ARM_AARCH64_NOT_ABI_COMPATIBLE),y)
 LOCAL_MODULE_TARGET_ARCH := arm
@@ -52,8 +60,8 @@ else
 LOCAL_MODULE_TARGET_ARCH := ${P_REFSW_DRV_ARCH}
 endif
 # fix me!
-LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
-LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm64 := ../../../$(RELEASE_PREBUILTS)/$(SECVER)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../$(RELEASE_PREBUILTS)/$(SECVER)/$(LOCAL_MODULE).so
 endif
 include $(BUILD_PREBUILT)
 else

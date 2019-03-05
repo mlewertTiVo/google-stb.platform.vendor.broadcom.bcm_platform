@@ -23,11 +23,20 @@ RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
 RELEASE_PREBUILTS := ${RELEASE_PREBUILTS}_treble
 
-ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so),)
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+ifeq ($(NEXUS_SECURITY_API_VERSION),2)
+SECVER := secv2
+else
+SECVER := secv1
+endif
+
+ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(SECVER)/libwvdrmengine.so),)
+
+# $(info "WV: using prebuilts from ${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/${SECVER} for widevine")
 
 PRODUCT_COPY_FILES += \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvdrmengine.so:$(TARGET_COPY_OUT_VENDOR)/lib/mediadrm/libwvdrmengine.so:widevine \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/libwvhidl.so:$(TARGET_COPY_OUT_VENDOR)/lib/libwvhidl.so:widevine
+   $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/$(SECVER)/libwvdrmengine.so:$(TARGET_COPY_OUT_VENDOR)/lib/mediadrm/libwvdrmengine.so:widevine \
+   $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/$(SECVER)/libwvhidl.so:$(TARGET_COPY_OUT_VENDOR)/lib/libwvhidl.so:widevine
 
 PRODUCT_COPY_FILES += \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/${RELEASE_PREBUILTS}/android.hardware.drm@1.1-service.widevine:$(TARGET_COPY_OUT_VENDOR)/bin/hw/android.hardware.drm@1.1-service.widevine:widevine \
