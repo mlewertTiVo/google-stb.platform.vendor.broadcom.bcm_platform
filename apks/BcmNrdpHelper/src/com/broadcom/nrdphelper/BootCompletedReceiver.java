@@ -69,7 +69,7 @@ public class BootCompletedReceiver extends BroadcastReceiver {
     private static final String NRDPHELPER_HDMI_AUDIO_PLUG_SERVICE = "com.broadcom.nrdphelper.HdmiAudioPlugService";
 
     public final void setCapabilities(Context context) {
-       String jsonString = new Gson().toJson(new PlatformCapabilitiesRoot(false, "always", "none", "disable", "4", "16384"));
+       String jsonString = new Gson().toJson(new PlatformCapabilitiesRoot(false, "always", "none", "disable", "7", "16384"));
 
        Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, jsonString);
        Log.i(TAG, nrdpSettingKey + " set to " + jsonString);

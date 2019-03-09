@@ -3785,9 +3785,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( vdecStatus.started )
             {
                 // Paused -> Executing = Resume
-                NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
                 if ( errCode )
                 {
                     return BOMX_BERR_TRACE(errCode);
@@ -3950,9 +3948,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( vdecStatus.started )
             {
                 // Executing -> Paused = Pause
-                NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                vdecTrickState.rate = 0;
-                errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                errCode = SetDecodeRate(0);
                 if ( errCode )
                 {
                     return BOMX_BERR_TRACE(errCode);
@@ -4257,9 +4253,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     m_stcResumePending = false;
 
                     // Pause decoder until a valid stc is available
-                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                    vdecTrickState.rate = 0;
-                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    errCode = SetDecodeRate(0);
                     if (errCode != NEXUS_SUCCESS)
                         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
 
@@ -6216,15 +6210,34 @@ void BOMX_VideoDecoder::StreamChangedEvent()
     }
 }
 
+NEXUS_Error BOMX_VideoDecoder::SetDecodeRate(int rate)
+{
+    NEXUS_VideoDecoderTrickState vdecTrickState;
+    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+    if ( rate == vdecTrickState.rate )
+    {
+        return NEXUS_SUCCESS;
+    }
+    vdecTrickState.rate = rate;
+    return NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+}
+
 void BOMX_VideoDecoder::FirstPtsPassedEvent()
 {
     // Pause on the very first frame when video peek is enabled
     if ( m_vndExtNrdpVidPeek > 0 && m_vidPeekState == VideoPeekState_eInputReceived )
     {
-        NEXUS_VideoDecoderTrickState vdecTrickState;
-        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-        vdecTrickState.rate = 0;
-        NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        NEXUS_Error errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
+        if ( errCode != NEXUS_SUCCESS )
+        {
+            ALOGE("Error pausing STC %d", errCode);
+        }
+        else
+        {
+            m_vidPeekState = VideoPeekState_ePaused;
+        }
+
+        errCode = SetDecodeRate(0);
         if ( errCode != NEXUS_SUCCESS )
         {
             ALOGE("Error pausing video decoder for first PTS %d", errCode);
@@ -6232,6 +6245,10 @@ void BOMX_VideoDecoder::FirstPtsPassedEvent()
         else
         {
             m_vidPeekState = VideoPeekState_ePaused;
+        }
+
+        if ( m_vidPeekState == VideoPeekState_ePaused )
+        {
             ALOGV("Pause on video peek");
         }
     }
@@ -7150,18 +7167,20 @@ void BOMX_VideoDecoder::ResumeAfterVideoPeek()
 
     if ( m_vidPeekState == VideoPeekState_ePaused )
     {
-        NEXUS_VideoDecoderTrickState vdecTrickState;
+        m_vidPeekState = VideoPeekState_eFinished;
 
-        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-        vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-        NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+        NEXUS_Error errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
         if ( errCode != NEXUS_SUCCESS )
         {
             ALOGE("Error resuming after video peek %d", errCode);
+            m_vidPeekState = VideoPeekState_ePaused;
         }
-        else
+
+        errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
+        if ( errCode != NEXUS_SUCCESS )
         {
-            m_vidPeekState = VideoPeekState_eFinished;
+            ALOGE("Error resuming STC %d", errCode);
+            m_vidPeekState = VideoPeekState_ePaused;
         }
 
         ALOGI_IF(m_vidPeekState != VideoPeekState_ePaused, "Resume after video peek");
@@ -7207,8 +7226,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
             if ( m_waitingForStc )
             {
-                NEXUS_VideoDecoderTrickState vdecTrickState;
-
                 if ( m_vidPeekState != VideoPeekState_eWaitForInput )
                 {
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
@@ -7232,9 +7249,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             ALOGE("%s: error setting start pts", __FUNCTION__);
                         }
 
-                        NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                        vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                        errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                        errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
                         if (errCode != NEXUS_SUCCESS)
                             ALOGE("%s: error setting trick state", __FUNCTION__);
                     }
@@ -7245,9 +7260,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     m_waitingForStc = false;
                     m_stcResumePending = false;
 
-                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                    vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
                     if ( errCode != NEXUS_SUCCESS )
                     {
                         ALOGE("Error resuming decoder at video peek %d", errCode);
@@ -7281,18 +7294,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 if ( m_vndExtNrdpVidPeek > 0 && m_tunnelCurrentPts == B_TUNNEL_PTS_INVALID_VALUE )
                 {
                     realtimeNotification = true;
-
-                    if ( m_vidPeekState == VideoPeekState_ePaused )
+                    if ( m_vidPeekState == VideoPeekState_eInputReceived && !status.firstPtsPassed )
                     {
-                        // Align to the exact first video peek frame
-                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, status.pts);
+                        // First frame available so slow down the decoder to avoid displaying next frame
+                        errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE / 10);
                         if ( errCode != NEXUS_SUCCESS )
                         {
-                            ALOGE("Error setting start pts %d", errCode);
+                            ALOGE("Error slowing down decoder %d", errCode);
                         }
                         else
                         {
-                            ALOGV("Align to the first PTS:%u", status.pts);
+                            ALOGV("Decoder slowed down at PTS %u", status.pts);
                         }
                     }
                 }

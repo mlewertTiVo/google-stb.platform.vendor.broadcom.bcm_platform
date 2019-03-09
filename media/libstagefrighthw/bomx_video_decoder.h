@@ -557,6 +557,7 @@ protected:
     BOMX_Buffer *AssociateOutVdec2Omx(BOMX_VideoDecoderFrameBuffer *pVdecBuffer, bool &shouldResetPort);
     void RemoveAllVdecOmxAssociation();
     void ResumeAfterVideoPeek();
+    NEXUS_Error SetDecodeRate(int rate);
 
     // These functions are used to pace the input buffers rate
     void ReturnInputBuffers(InputReturnMode mode = InputReturnMode_eDefault);
