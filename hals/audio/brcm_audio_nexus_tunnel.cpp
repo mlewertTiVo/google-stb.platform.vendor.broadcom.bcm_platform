@@ -971,6 +971,11 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         pthread_mutex_unlock(&bout->lock);
                         ret = BKNI_WaitForEvent(event, 50);
                         pthread_mutex_lock(&bout->lock);
+                        // Suspend check when relocking
+                        if (bout->suspended) {
+                            ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                            return -ENOSYS;
+                        }
                         if (ret == BERR_TIMEOUT) {
                             ret = 0;
                             goto done;
@@ -1000,6 +1005,11 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                             pthread_mutex_unlock(&bout->lock);
                             ret = BKNI_WaitForEvent(event, 50);
                             pthread_mutex_lock(&bout->lock);
+                            // Suspend check when relocking
+                            if (bout->suspended) {
+                                ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                                return -ENOSYS;
+                            }
                             if (ret == BERR_TIMEOUT) {
                                 ret = 0;
                                 goto done;
@@ -1332,13 +1342,16 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 pthread_mutex_unlock(&bout->lock);
                 ret = BKNI_WaitForEvent(event, 500);
                 pthread_mutex_lock(&bout->lock);
-
+                // Suspend check when relocking
+                if (bout->suspended) {
+                    ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                    return -ENOSYS;
+                }
                 // Sanity check when relocking
                 audio_decoder = bout->nexus.tunnel.audio_decoder;
                 playpump = bout->nexus.tunnel.playpump;
                 ALOG_ASSERT(audio_decoder == prev_audio_decoder);
                 ALOG_ASSERT(playpump == prev_playpump);
-                ALOG_ASSERT(!bout->suspended);
 
                 if (ret != BERR_SUCCESS) {
                     NEXUS_Playpump_GetStatus(playpump, &ppStatus);

@@ -963,6 +963,11 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                     pthread_mutex_unlock(&bout->lock);
                     ret = BKNI_WaitForEvent(event, 50);
                     pthread_mutex_lock(&bout->lock);
+                    // Suspend check when relocking
+                    if (bout->suspended) {
+                        ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                        return -ENOSYS;
+                    }
                     if (ret == BERR_TIMEOUT) {
                         return bytes_written;
                     } else {
@@ -983,6 +988,12 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                         pthread_mutex_unlock(&bout->lock);
                         ret = BKNI_WaitForEvent(event, 50);
                         pthread_mutex_lock(&bout->lock);
+                        // Suspend check when relocking
+                        if (bout->suspended) {
+                            ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                            return -ENOSYS;
+                        }
+
                         if (ret == BERR_TIMEOUT) {
                             return bytes_written;
                         } else {
@@ -1082,6 +1093,11 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             ret = BKNI_WaitForEvent(event, 750);
             pthread_mutex_lock(&bout->lock);
 
+            // Suspend check when relocking
+            if (bout->suspended) {
+                ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                return -ENOSYS;
+            }
             // Sanity check when relocking
             simple_decoder = bout->nexus.direct.simple_decoder;
             ALOG_ASSERT(simple_decoder == prev_simple_decoder);
@@ -1089,8 +1105,6 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 playpump = bout->nexus.direct.playpump;
                 ALOG_ASSERT(playpump == prev_playpump);
             }
-            ALOG_ASSERT(!bout->suspended);
-
             if (ret != BERR_SUCCESS) {
                 ALOGE("%s: at %d, decoder timeout, ret = %d",
                      __FUNCTION__, __LINE__, ret);

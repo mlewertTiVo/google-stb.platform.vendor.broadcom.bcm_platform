@@ -456,12 +456,15 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
             pthread_mutex_lock(&bout->lock);
-
+            // Suspend check when relocking
+            if (bout->suspended) {
+                ALOGE("%s: at %d, device already suspended\n",
+                     __FUNCTION__, __LINE__);
+                return -ENOSYS;
+            }
             // Sanity check when relocking
             simple_playback = bout->nexus.primary.simple_playback;
             ALOG_ASSERT(simple_playback == prev_simple_playback);
-            ALOG_ASSERT(!bout->suspended);
-
             if (ret != BERR_SUCCESS) {
                 ALOGE("%s: at %d, playback timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);

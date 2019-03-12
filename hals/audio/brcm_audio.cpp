@@ -472,22 +472,30 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
     int ret = 0;
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_get_presentation_position(bout, frames);
-    if (ret) {
-        ALOGE("%s: at %d, get position failed",
-             __FUNCTION__, __LINE__);
-        pthread_mutex_unlock(&bout->lock);
-        return ret;
-    }
 
-    if (*frames == bout->last_pres_frame) {
+    if (!bout->suspended) {
+        ret = bout->ops.do_bout_get_presentation_position(bout, frames);
+        if (ret) {
+            ALOGE("%s: at %d, get position failed",
+                 __FUNCTION__, __LINE__);
+            pthread_mutex_unlock(&bout->lock);
+            return ret;
+        }
+
+        if (*frames == bout->last_pres_frame) {
+            *timestamp = bout->last_pres_ts;
+        }
+        else {
+            clock_gettime(CLOCK_MONOTONIC, timestamp);
+
+            bout->last_pres_frame = *frames;
+            bout->last_pres_ts = *timestamp;
+        }
+    } else {
+        // device suspended, no frames to return
         *timestamp = bout->last_pres_ts;
-    }
-    else {
-        clock_gettime(CLOCK_MONOTONIC, timestamp);
-
-        bout->last_pres_frame = *frames;
-        bout->last_pres_ts = *timestamp;
+        *frames = 0;
+        return 0;
     }
 
     pthread_mutex_unlock(&bout->lock);
