@@ -259,6 +259,13 @@ static int bout_set_parameters(struct audio_stream *stream,
         str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK)) {
         pthread_mutex_lock(&bout->lock);
 
+        if (!bout->started || bout->suspended) {
+            ALOGE("%s: device already suspended.", __FUNCTION__);
+            pthread_mutex_unlock(&bout->lock);
+            str_parms_destroy(parms);
+            return -EINVAL;
+        }
+
         if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
             char value[8];
             ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
@@ -274,6 +281,7 @@ static int bout_set_parameters(struct audio_stream *stream,
                 }
             }
         }
+
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
             int hw_sync_id = 0;
@@ -378,7 +386,12 @@ static int bout_set_volume(struct audio_stream_out *aout,
          __FUNCTION__, __LINE__, aout, left, right);
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_set_volume(bout, left, right);
+    if (!bout->started || bout->suspended) {
+        ALOGE("%s: device already suspended.", __FUNCTION__);
+        ret = -ENOSYS;
+    } else {
+        ret = bout->ops.do_bout_set_volume(bout, left, right);
+    }
     pthread_mutex_unlock(&bout->lock);
 
     return ret;
@@ -440,9 +453,16 @@ static int bout_get_render_position(const struct audio_stream_out *aout,
     int ret;
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_get_render_position(bout, dsp_frames);
-    ALOGV("%s: stream:%p, frames:%u",__FUNCTION__, aout, *dsp_frames);
+    if (!bout->started || bout->suspended) {
+        *dsp_frames = 0;
+        ret = 0;
+    } else {
+        ret = bout->ops.do_bout_get_render_position(bout, dsp_frames);
+    }
     pthread_mutex_unlock(&bout->lock);
+
+    ALOGV("%s: stream:%p, frames:%u",__FUNCTION__, aout, *dsp_frames);
+
     return ret;
 }
 
@@ -473,7 +493,11 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
 
     pthread_mutex_lock(&bout->lock);
 
-    if (!bout->suspended) {
+    if (!bout->started || bout->suspended) {
+        // device suspended, no frames to return
+        *timestamp = bout->last_pres_ts;
+        *frames = 0;
+    } else {
         ret = bout->ops.do_bout_get_presentation_position(bout, frames);
         if (ret) {
             ALOGE("%s: at %d, get position failed",
@@ -491,11 +515,6 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
             bout->last_pres_frame = *frames;
             bout->last_pres_ts = *timestamp;
         }
-    } else {
-        // device suspended, no frames to return
-        *timestamp = bout->last_pres_ts;
-        *frames = 0;
-        return 0;
     }
 
     pthread_mutex_unlock(&bout->lock);
@@ -516,7 +535,12 @@ static int bout_pause(struct audio_stream_out *aout)
     }
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_pause(bout);
+    if (!bout->started || bout->suspended) {
+        ALOGE("%s: device already suspended.", __FUNCTION__);
+        ret = -ENOSYS;
+    } else {
+        ret = bout->ops.do_bout_pause(bout);
+    }
     pthread_mutex_unlock(&bout->lock);
 
     return ret;
@@ -532,7 +556,13 @@ static int bout_resume(struct audio_stream_out *aout)
     }
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_resume(bout);
+    if (!bout->started || bout->suspended) {
+        ALOGE("%s: device already suspended.", __FUNCTION__);
+        ret = -ENOSYS;
+    } else {
+        ret = bout->ops.do_bout_resume(bout);
+        ALOGV("%s: res=%d", __FUNCTION__, ret);
+    }
     pthread_mutex_unlock(&bout->lock);
 
     return ret;
@@ -548,10 +578,15 @@ static int bout_drain(struct audio_stream_out *aout, audio_drain_type_t type)
     }
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_drain(bout, (int)type);
+    if (!bout->started || bout->suspended) {
+        ALOGE("%s: device already suspended.", __FUNCTION__);
+        ret = -ENOSYS;
+    } else {
+        ret = bout->ops.do_bout_drain(bout, (int)type);
+        ALOGV("%s: type=%d res=%d", __FUNCTION__, type, ret);
+    }
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGV("%s: type=%d res=%d", __FUNCTION__, type, ret);
     return ret;
 }
 
@@ -565,10 +600,15 @@ static int bout_flush(struct audio_stream_out *aout)
     }
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_flush(bout);
+    if (!bout->started || bout->suspended) {
+        ALOGE("%s: device already suspended.", __FUNCTION__);
+        ret = -ENOSYS;
+    } else {
+        ret = bout->ops.do_bout_flush(bout);
+        ALOGV("%s: res=%d", __FUNCTION__, ret);
+    }
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGV("%s: res=%d", __FUNCTION__, ret);
     return ret;
 }
 
