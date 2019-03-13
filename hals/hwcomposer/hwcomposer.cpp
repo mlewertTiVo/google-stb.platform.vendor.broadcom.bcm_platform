@@ -795,10 +795,11 @@ static int64_t hwc2_tick(void) {
    return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
 }
 
-static int32_t hwc2_pwrMode(
+static int32_t hwc2_pwrMode_l(
    hwc2_device_t* device,
    hwc2_display_t display,
-   int32_t /*hwc2_power_mode_t*/ mode) {
+   int32_t /*hwc2_power_mode_t*/ mode,
+   bool locked) {
 
    hwc2_error_t ret = HWC2_ERROR_NONE;
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
@@ -817,7 +818,9 @@ static int32_t hwc2_pwrMode(
    }
 
    if (kind == HWC2_DSP_EXT) {
-      if (!pthread_mutex_lock(&hwc2->mtx_pwr)) {
+      if (locked) {
+         dsp->pmode = (hwc2_power_mode_t)mode;
+      } else if (!pthread_mutex_lock(&hwc2->mtx_pwr)) {
          ALOGI("[ext][%" PRIu64 "]: pmode %s -> %s",
                display,
                getPowerModeName(dsp->pmode),
@@ -831,6 +834,14 @@ out:
    return ret;
 }
 
+static int32_t hwc2_pwrMode(
+   hwc2_device_t* device,
+   hwc2_display_t display,
+   int32_t /*hwc2_power_mode_t*/ mode) {
+
+   return hwc2_pwrMode_l(device, display, mode, false);
+}
+
 static bool hwc2_stdby_mon(
    void *context)
 {
@@ -842,15 +853,16 @@ static bool hwc2_stdby_mon(
       goto out;
    }
    pmode = hwc2->ext->pmode; /* applies to 'ext' display only. */
-   pthread_mutex_unlock(&hwc2->mtx_pwr);
 
    if (pmode == HWC2_POWER_MODE_ON) {
-      hwc2_pwrMode((hwc2_device_t*)context,
+      hwc2_pwrMode_l((hwc2_device_t*)context,
                    (hwc2_display_t)(intptr_t)hwc2->ext,
-                   HWC2_POWER_MODE_OFF);
+                   HWC2_POWER_MODE_OFF,
+                   true);
    } else {
       standby = (pmode == HWC2_POWER_MODE_OFF);
    }
+   pthread_mutex_unlock(&hwc2->mtx_pwr);
 
 out:
    return standby;
