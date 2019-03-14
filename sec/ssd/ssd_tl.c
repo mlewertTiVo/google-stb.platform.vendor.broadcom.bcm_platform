@@ -77,7 +77,11 @@ static bool isRunning = true;
 static int failedDevOpsCnt = 0;
 
 static BKNI_EventHandle indication_event = NULL;/* used for indication event */
+static BKNI_MutexHandle standbyLock;
 static void  SSDTl_priv_indication_cb(SRAI_ModuleHandle module, uint32_t arg, uint32_t id, uint32_t value);
+
+static BERR_Code SSDTl_P_Init(ssdd_Settings *ssdd_settings);
+static void SSDTl_P_Uninit(void);
 
 void SSDTl_Get_Default_Settings(ssdd_Settings *ssdd_settings)
 {
@@ -165,7 +169,7 @@ static BERR_Code SSDTl_Perform_Full_Operation_Cycle(int *SSD_TA_rc)
 
         rc = SSDTl_Operation(SSD_CommandId_eOperationResult, rc, SSD_TA_rc);
         if ((rc != BERR_SUCCESS) || (*SSD_TA_rc != BERR_SUCCESS)) {
-            ALOGE("Error sending result command (%d), TA result (%d)\n", rc, SSD_TA_rc);
+            ALOGE("Error sending result command (%d), TA result (%d)\n", rc, *SSD_TA_rc);
             goto errorExit;
         }
 
@@ -190,7 +194,7 @@ static void SSDTl_TATerminateCallback (uint32_t platformId) {
     TA_Terminate_Event = true;
 }
 
-BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
+static BERR_Code SSDTl_P_Init(ssdd_Settings *ssdd_settings)
 {
     BERR_Code rc = BERR_SUCCESS;
     BERR_Code SSD_TA_rc = BERR_SUCCESS;
@@ -226,12 +230,10 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     vfs_settings.fs_path = settings.vfs_path;
     SSD_VFS_Init(&vfs_settings);
 
-    rc = BKNI_CreateEvent(&indication_event);
     if (rc != BERR_SUCCESS) {
-        ALOGW("%s - Error Creating BKNI Event handle", BSTD_FUNCTION);
+        ALOGW("%s - Error Creating BKNI Mutex", BSTD_FUNCTION);
         goto errorExit;
     }
-
     /* Ensure NEXUS Heaps are correctly setup for NxClient mode */
     SRAI_GetSettings(&sraiSettings);
     sraiSettings.generalHeapIndex = NXCLIENT_FULL_HEAP;
@@ -257,12 +259,6 @@ BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
     rc = SRAI_Management_Register(&interface);
     if (rc != BERR_SUCCESS) {
         ALOGE("%s - Error registering terminate callback (0x%08x)", BSTD_FUNCTION, rc);
-        goto errorExit;
-    }
-
-    sage_operation = (ssd_sage_operation_t *) SRAI_Memory_Allocate(sizeof(*sage_operation), SRAI_MemoryType_Shared);
-    if (sage_operation == NULL) {
-        ALOGE("%s - Error allocating sage operation structure\n", BSTD_FUNCTION);
         goto errorExit;
     }
 
@@ -365,18 +361,68 @@ errorExit:
     if (!hasInit) {
         // clean up any allocated resources
         ALOGW("%s - Error Exit cleanup\n", BSTD_FUNCTION);
-        SSDTl_Uninit();
+        SSDTl_P_Uninit();
     }
 
     return rc;
 }
 
-void SSDTl_Uninit(void)
+BERR_Code SSDTl_Init(ssdd_Settings *ssdd_settings)
+{
+    BERR_Code rc = BERR_SUCCESS;
+
+    sage_operation = (ssd_sage_operation_t *) SRAI_Memory_Allocate(sizeof(*sage_operation), SRAI_MemoryType_Shared);
+    if (sage_operation == NULL) {
+        ALOGE("%s - Error allocating sage operation structure\n", BSTD_FUNCTION);
+        goto errorExit;
+    }
+
+    rc = BKNI_CreateEvent(&indication_event);
+    if (rc != BERR_SUCCESS) {
+        ALOGW("%s - Error Creating BKNI Event handle", BSTD_FUNCTION);
+        goto errorExit;
+    }
+
+    rc = BKNI_CreateMutex(&standbyLock);
+    if (rc != BERR_SUCCESS) {
+        ALOGW("%s - Error Creating BKNI Mutex", BSTD_FUNCTION);
+        goto errorExit;
+    }
+
+    rc = SSDTl_P_Init(ssdd_settings);
+    if (rc != BERR_SUCCESS) {
+    }
+
+errorExit:
+    if (rc != BERR_SUCCESS) {
+        if (sage_operation) {
+            SRAI_Memory_Free((uint8_t *) sage_operation);
+            sage_operation = NULL;
+        }
+
+        if (indication_event != NULL) {
+            BKNI_DestroyEvent(indication_event);
+            indication_event =  NULL;
+        }
+
+        if (standbyLock != NULL) {
+            BKNI_DestroyMutex(standbyLock);
+        }
+    }
+    return rc;
+}
+
+static void SSDTl_P_Uninit(void)
 {
     BERR_Code rc = BERR_SUCCESS;
     BSAGElib_InOutContainer *container = NULL;
 
     ALOGD("Uninitialising SSD TA\n");
+
+    if (!hasInit) {
+        ALOGW("SSD TA not ininitialised, no work required\n");
+        goto errorExit;
+    }
 
     container = SRAI_Container_Allocate();
     if (container != NULL) {
@@ -416,11 +462,6 @@ void SSDTl_Uninit(void)
         rpmb_frames = NULL;
     }
 
-    if (sage_operation) {
-        SRAI_Memory_Free((uint8_t *) sage_operation);
-        sage_operation = NULL;
-    }
-
     rc = SRAI_Management_Unregister(&interface);
     if (rc != BERR_SUCCESS) {
         ALOGW("%s - Error unregistering terminate callback (0x%08x)", BSTD_FUNCTION, rc);
@@ -431,8 +472,31 @@ void SSDTl_Uninit(void)
         indication_event =  NULL;
     }
 
+
     ALOGD("Uninitialised SSD TA\n");
     hasInit = false;
+
+errorExit:
+    return;
+}
+
+void SSDTl_Uninit(void)
+{
+    SSDTl_P_Uninit();
+
+    if (sage_operation) {
+        SRAI_Memory_Free((uint8_t *) sage_operation);
+        sage_operation = NULL;
+    }
+
+    if (indication_event != NULL) {
+        BKNI_DestroyEvent(indication_event);
+        indication_event =  NULL;
+    }
+
+    if (standbyLock != NULL) {
+        BKNI_DestroyMutex(standbyLock);
+    }
 }
 
 void SSDTl_Wait_For_Operations(void)
@@ -447,16 +511,16 @@ void SSDTl_Wait_For_Operations(void)
 
         if (exitOnDeviceOpsFailure) {
            ALOGE("too many consecutive device operations failure, exiting...");
-           SSDTl_Uninit();
+           SSDTl_P_Uninit();
            goto errorExit;
         }
 
         if (TA_Terminate_Event) {
-            SSDTl_Uninit();
+            SSDTl_P_Uninit();
+            rc = SSDTl_P_Init(&settings);
 
-            rc = SSDTl_Init(&settings);
             if (rc != BERR_SUCCESS){
-                ALOGE("ERROR SSDTl_Init %x\n", rc);
+                ALOGE("ERROR SSDTl_P_Init %x\n", rc);
                 goto errorExit;
             }
 
@@ -472,9 +536,11 @@ void SSDTl_Wait_For_Operations(void)
 
         if (rc == BERR_SUCCESS) {
 
+            BKNI_AcquireMutex(standbyLock);
             rc = SSDTl_Operation(SSD_CommandId_eOperationGet, rc, &SSD_TA_rc);
             if (rc != BERR_SUCCESS) {
                 ALOGE("Error getting operation\n");
+                BKNI_ReleaseMutex(standbyLock);
                 continue;
             }
 
@@ -482,10 +548,12 @@ void SSDTl_Wait_For_Operations(void)
                 rc = SSDTl_Perform_Full_Operation_Cycle(&SSD_TA_rc);
                 if (rc != BERR_SUCCESS) {
                     ALOGE("Error occurred completing operation cycle\n");
+                    BKNI_ReleaseMutex(standbyLock);
                     continue;
                 }
 
                 if (SSD_TA_rc != BERR_SUCCESS) {
+                    BKNI_ReleaseMutex(standbyLock);
                     ALOGE("Operation cycle failed\n");
                 }
 
@@ -498,6 +566,8 @@ void SSDTl_Wait_For_Operations(void)
                    checkAgain = true;
                 }
             }
+            BKNI_ReleaseMutex(standbyLock);
+
         } else {
             ALOGE("BKNI_WaitForEvent failed (rc=%d)\n", rc);
             goto errorExit;
@@ -526,5 +596,8 @@ void SSDTl_Shutdown(void)
     ALOGD("Shutting down");
     isRunning = false;
     BKNI_SetEvent(indication_event);
-    SSDTl_Uninit();
+
+    BKNI_AcquireMutex(standbyLock);
+    SSDTl_P_Uninit();
+    BKNI_ReleaseMutex(standbyLock);
 }
