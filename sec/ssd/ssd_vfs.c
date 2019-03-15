@@ -45,6 +45,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <sys/endian.h>
+#include <string.h>
 
 #include "ssd_vfs.h"
 #include "ssd_rpmb.h"
@@ -122,7 +123,7 @@ BERR_Code SSD_VFS_Operation(ssd_rpmb_frame_t *frames, unsigned int blockCount) {
 
     switch (rpmb_type) {
     case MMC_RPMB_WRITE:
-        for (int i = 0; i < blockCount; i++) {
+        for (int i = 0; i < (int)blockCount; i++) {
             size = fwrite(frames[i].data, SSD_VFS_BLOCK_SIZE, 1, file_fd);
             if (size != 1) {
                 ALOGE("Error writing to VFS partition\n");
@@ -133,7 +134,7 @@ BERR_Code SSD_VFS_Operation(ssd_rpmb_frame_t *frames, unsigned int blockCount) {
         break;
 
     case MMC_RPMB_READ:
-        for (int i = 0; i < blockCount; i++) {
+        for (int i = 0; i < (int)blockCount; i++) {
             size = fread(frames[i].data, SSD_VFS_BLOCK_SIZE, 1, file_fd);
             if (size != 1) {
                 // Silent error. Most likely read passed existing EOF. Return NULL.

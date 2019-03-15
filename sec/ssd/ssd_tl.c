@@ -57,6 +57,7 @@
 #include "nexus_memory.h"
 
 #include <log/log.h>
+#include <cutils/properties.h>
 
 /* infinite timeout waiting for sage to asks us to do something. */
 #define SSD_WAIT_TIMEOUT (-1)
@@ -105,7 +106,7 @@ void SSDTl_Get_Default_Settings(ssdd_Settings *ssdd_settings)
 static ssd_sage_operation_t *sage_operation;
 static ssd_rpmb_frame_t *rpmb_frames;
 
-static BERR_Code SSDTl_Operation(int commandId, int deviceResult, int *SSD_TA_rc)
+static BERR_Code SSDTl_Operation(int commandId, int deviceResult, BERR_Code *SSD_TA_rc)
 {
     BERR_Code rc = BERR_SUCCESS;
     BSAGElib_InOutContainer *container = SRAI_Container_Allocate();
@@ -153,7 +154,7 @@ errorExit:
     return rc;
 }
 
-static BERR_Code SSDTl_Perform_Full_Operation_Cycle(int *SSD_TA_rc)
+static BERR_Code SSDTl_Perform_Full_Operation_Cycle(BERR_Code *SSD_TA_rc)
 {
     BERR_Code rc = BERR_SUCCESS;
 
@@ -580,7 +581,6 @@ errorExit:
 /*Callback for indication event*/
 static void  SSDTl_priv_indication_cb(SRAI_ModuleHandle module, uint32_t arg, uint32_t id, uint32_t value)
 {
-    BERR_Code rc = BERR_SUCCESS;
     BSTD_UNUSED(arg);
     BSTD_UNUSED(value);
 

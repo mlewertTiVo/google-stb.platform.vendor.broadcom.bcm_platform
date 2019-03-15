@@ -338,7 +338,6 @@ ErrorExit:
         SSD_ModuleUninit(tmpModuleHandle);
     }
 
-End:
     BDBG_LEAVE(SSD_ModuleInit);
     return rc;
 }
@@ -463,7 +462,7 @@ BERR_Code SSD_P_TA_Install(char * ta_bin_filename)
     char ta_name[512];
 
     if (path == NULL) {
-       sprintf(ta_name, "./%s", path, ta_bin_filename);
+       sprintf(ta_name, "./%s", ta_bin_filename);
     } else {
        sprintf(ta_name, "%s/%s", path, ta_bin_filename);
     }
