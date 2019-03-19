@@ -67,6 +67,8 @@
 #include <bcm/hardware/dpthak/1.0/IDptHak.h>
 #include "vendor_bcm_props.h"
 
+extern "C" void nxwrap_rmlmk(void *w);
+
 using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::dpthak::V1_0;
@@ -82,7 +84,8 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_MIN_QUEUED_PTS_DIFF (11250)       // Nexus pts units (250 msec)
 #define B_INPUT_BUFFERS_FAST_RATE (16)
 #define B_INPUT_BUFFERS_SLOW_RATE (24)
-#define B_INPUT_BUFFERS_HIGH_WATERMARK (24)
+#define B_INPUT_BUFFERS_HIGH_WATERMARK (90)
+#define B_INPUT_PTSDIFF_HIGH_WATERMARK (45000 * 2) // 2 seconds
 #define B_MIN_DECODER_WIDTH (128)           // Minimum dimension required by Nexus AVD
 #define B_MIN_DECODER_HEIGHT (64)
 #define B_STREAM_ID 0xe0
@@ -3868,7 +3871,22 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
-                    return BOMX_BERR_TRACE(errCode);
+                    if ( errCode == BERR_OUT_OF_DEVICE_MEMORY )
+                    {
+                        /* give another try after attempting a round of rmlmk, if
+                         * rmlmk fails (e.g. not enough memory could be freed up),
+                         * that's game over.
+                         */
+                        ALOGW("decoder start: running rmlmk to free up memory");
+                        nxwrap_rmlmk(m_pNxWrap);
+                        BKNI_Sleep(5); /* give settling time for rmlmk. */
+                        errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
+                    }
+
+                    if ( errCode )
+                    {
+                        return BOMX_BERR_TRACE(errCode);
+                    }
                 }
                 if (!property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
                 {
@@ -6021,9 +6039,12 @@ void BOMX_VideoDecoder::ReturnInputBuffers(InputReturnMode mode)
             // just returned here.
             unsigned fpsRate = (m_frameRate != NEXUS_VideoFrameRate_eUnknown) ?
                                 BOMX_VideoDecoder_GetFrameInterval(m_frameRate) : 0;
-            unsigned slowRate = (fpsRate > 0 && fpsRate < B_INPUT_BUFFERS_SLOW_RATE) ?
+            bool reachedHighWm = ((queuedInputBuffers + m_AvailInputBuffers) >= B_INPUT_BUFFERS_HIGH_WATERMARK)
+                                 && (ptsDiff >= B_INPUT_PTSDIFF_HIGH_WATERMARK);
+            unsigned slowRate = (fpsRate > 0 && (fpsRate < B_INPUT_BUFFERS_SLOW_RATE || reachedHighWm)) ?
                                  fpsRate : B_INPUT_BUFFERS_SLOW_RATE;
-            // use slower rate if a buffer was just returned
+            // Use fast rate if framework has no available input buffers to prevent falling below steady point.
+            // Use fpsRate always once reaching the high WM.
             returnRate = (m_AvailInputBuffers > 0) ? slowRate : B_INPUT_BUFFERS_FAST_RATE;
             m_inputBuffersTimerId = StartTimer(returnRate,
                                     BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
