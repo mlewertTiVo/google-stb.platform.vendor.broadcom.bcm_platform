@@ -662,13 +662,17 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
       case HAL_PIXEL_FORMAT_YV12:
-      case HAL_PIXEL_FORMAT_YCbCr_420_888:
          // force alignment according to (android) format definition.
          *alignment = 16;
          // use y-stride: ALIGN(w, 16)
          *pStride = (w + (*alignment-1)) & ~(*alignment-1);
          // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
+      break;
+      case HAL_PIXEL_FORMAT_YCbCr_420_888:
+         *pStride = w;
+         // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: y-stride/2
+         *size = (*pStride * h) + (h * (*pStride/2));
       break;
       case HAL_PIXEL_FORMAT_BLOB:
          *pStride = 1;

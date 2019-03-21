@@ -4495,7 +4495,6 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     width = pSharedData->container.width;
     height = pSharedData->container.height;
     stride = pSharedData->container.stride;
-    ALOGV("InputBufferType_eNative: pSharedData:%p", pSharedData);
 
     // create source surface with gralloc buffer
     ALOGV("%s: pShareData:%p, width:%u, height:%u, format:%u, stride:%u", __FUNCTION__,
@@ -4516,7 +4515,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
             stride = (width + (alignment-1)) & ~(alignment-1);
             cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
             cr_offset = stride * height;
-            cb_offset = (height/2) * cstride;
+            cb_offset = ((height/2) * cstride) + cr_offset;
             size = cr_offset + (cstride * height);
         }
         else
@@ -4525,7 +4524,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
             stride = width;
             cstride = stride / 2;
             cb_offset = stride * height;
-            cr_offset = (height/2) * cstride;
+            cr_offset = ((height/2) * cstride) + cb_offset;
             size = cb_offset + (cstride * height);
         }
         ALOGV("%s: %s (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,

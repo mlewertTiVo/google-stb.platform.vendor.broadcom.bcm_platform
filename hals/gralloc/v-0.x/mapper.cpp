@@ -250,7 +250,12 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
 
    memset(ycbcr, 0, sizeof(struct android_ycbcr));
    ycbcr->ystride = pSharedData->container.stride;
-   ycbcr->cstride = (pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1);
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+      ycbcr->cstride = (pSharedData->container.stride/2);
+   } else {
+      // HAL_PIXEL_FORMAT_YV12
+      ycbcr->cstride = (pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1);
+   }
    ycbcr->chroma_step = 1;
 
    block_handle = pSharedData->container.block;
@@ -262,10 +267,17 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
          hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
-      ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
-      ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
-                            ((pSharedData->container.height/2) *
-                             ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+      if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+         ycbcr->cb = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+         ycbcr->cr = (void *) ((uint8_t *)ycbcr->cb +
+                               ((pSharedData->container.height/2) * (pSharedData->container.stride/2)));
+      } else {
+         // HAL_PIXEL_FORMAT_YV12
+         ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+         ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
+                               ((pSharedData->container.height/2) *
+                                ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+      }
    } else {
       // if first time use, allocate the backing.
       if (!pSharedData->container.destriped && !pSharedData->container.block && pSharedData->container.size) {
@@ -292,10 +304,17 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
             hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
-            ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
-            ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
-                                  ((pSharedData->container.height/2) *
-                                   ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+            if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+               ycbcr->cb = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+               ycbcr->cr = (void *) ((uint8_t *)ycbcr->cb +
+                                     ((pSharedData->container.height/2) * (pSharedData->container.stride/2)));
+            } else {
+               // HAL_PIXEL_FORMAT_YV12
+               ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+               ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
+                                     ((pSharedData->container.height/2) *
+                                      ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+            }
          }
       }
       if (block_handle == NULL) {
