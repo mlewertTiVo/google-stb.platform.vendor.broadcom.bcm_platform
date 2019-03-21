@@ -1075,7 +1075,7 @@ void NexusHdmiCecDevice::fireHotplugCallback(int connected)
 
     hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
     hdmiCecEvent.dev = mHdmiCecDevice;
-    hdmiCecEvent.hotplug.port_id = 0;
+    hdmiCecEvent.hotplug.port_id = 1; // Android ports are based on 1 (HDMI1)
     hdmiCecEvent.hotplug.connected = connected;
     mHotplugConnected = connected;
 
