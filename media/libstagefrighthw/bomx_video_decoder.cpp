@@ -325,8 +325,18 @@ static Mutex g_mutexStandBy;
 #define ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY \
    {  /* scope for the lock. */                                 \
       Mutex::Autolock autoLock(g_mutexStandBy);                 \
-      if (g_nxStandBy)                                          \
+      if (g_nxStandBy) {                                        \
+         ALOGE("%s: device already in standby", __FUNCTION__);   \
          return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources); \
+      }                                                         \
+   }
+#define EXIT_ON_NEXUS_ACTIVE_STANDBY \
+   {  /* scope for the lock. */                                 \
+      Mutex::Autolock autoLock(g_mutexStandBy);                 \
+      if (g_nxStandBy){                                         \
+         ALOGE("%s: device already in standby", __FUNCTION__);  \
+         return;                                                \
+      }                                                         \
    }
 
 extern "C" bool BOMX_VideoDecoder_StandbyMon(void *ctx)
@@ -2330,6 +2340,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
 
+    Mutex::Autolock autoLock(g_mutexStandBy);
+
     if ( m_hDisplayThread )
     {
         m_displayThreadStop = true;
@@ -3498,6 +3510,8 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
 
 NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_PORT), "Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
@@ -3958,6 +3972,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 
 NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     // The Output port for video decoder is a logical construct and not
     // related to the actual decoder output except through an indirect
     // Queue.  For format changes, we need to be able to control this logical
@@ -6465,6 +6481,8 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
     NEXUS_Rect framePosition, frameClip;
     unsigned frameSerial, frameWidth, frameHeight, framezOrder;
 
+    EXIT_ON_NEXUS_ACTIVE_STANDBY;
+
     B_Mutex_Lock(m_hDisplayMutex);
     if (!m_displayFrameAvailable) {
       // It may happen when component is being stopped or when a
@@ -6677,6 +6695,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
         OMX_IN  OMX_INDEXTYPE nIndex,
         OMX_IN  OMX_PTR pComponentConfigStructure)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     switch ( (int)nIndex )
     {
     case OMX_IndexParamDescribeHdrColorInfo:
@@ -6894,6 +6914,12 @@ bool BOMX_BufferCompareFunction_Vdec2GrallocMapping(BOMX_Buffer *pOmxBuffer, voi
    NEXUS_StripedSurfaceHandle ss;
    NEXUS_StripedSurfaceCreateSettings cs;
    NEXUS_Addr csAddr, lsAddr;
+
+    Mutex::Autolock autoLock(g_mutexStandBy);
+    if (g_nxStandBy){
+       ALOGE("%s: device already in standby", __FUNCTION__);
+       goto out;
+    }
 
    if (pOmxBuffer == NULL || pVdecBuffer == NULL) {
       ALOGV("BOMX_BufferCompareFunction_Vdec2GrallocMapping: null input, ignoring.");
@@ -7120,6 +7146,8 @@ void BOMX_VideoDecoder::RemoveAllVdecOmxAssociation()
 
 void BOMX_VideoDecoder::ResumeAfterVideoPeek()
 {
+    EXIT_ON_NEXUS_ACTIVE_STANDBY;
+
     if ( m_vidPeekState == VideoPeekState_ePaused )
     {
         NEXUS_VideoDecoderTrickState vdecTrickState;
@@ -7148,6 +7176,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     NEXUS_Error errCode;
     unsigned numFrames=0;
     unsigned i;
+
+    // g_mutexStandBy should already have been taken when this function is called
 
     if ( NULL == m_hSimpleVideoDecoder )
     {
@@ -7845,6 +7875,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     NEXUS_VideoDecoderStatus status;
     unsigned outstandingFrames = 0;
 
+    // g_mutexStandBy should already have been taken when this function is called
+
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
     {
@@ -8148,6 +8180,12 @@ bool BOMX_VideoDecoder::GraphicsCheckpoint()
     NEXUS_Error errCode;
     bool ret = true;
 
+    Mutex::Autolock autoLock(g_mutexStandBy);
+    if (g_nxStandBy){
+        ALOGE("%s: device already in standby", __FUNCTION__);
+        return false;
+    }
+
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
@@ -8177,6 +8215,8 @@ void BOMX_VideoDecoder::CopyAlignedSurfaceToClient(uint8_t *pClientMemory, const
 
 void BOMX_VideoDecoder::CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo)
 {
+    EXIT_ON_NEXUS_ACTIVE_STANDBY;
+
     if ( pInfo &&
          pInfo->type == BOMX_VideoDecoderOutputBufferType_eStandard &&
          pInfo->typeInfo.standard.pClientMemory )
@@ -8602,6 +8642,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    void *slock;
    NEXUS_Error nxCode;
 
+   ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
    if (m_hGraphics2d == NULL) {
       ALOGE("DestripeToYV12: no gfx2d.");
       errCode = OMX_ErrorInsufficientResources;
@@ -8737,6 +8779,8 @@ err_gfx2d:
 
 NEXUS_Error BOMX_VideoDecoder::OpenPidChannel(uint32_t pid)
 {
+    ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
+
     if ( m_hPlaypump )
     {
         ALOG_ASSERT(NULL == m_hPidChannel);
@@ -8755,6 +8799,8 @@ NEXUS_Error BOMX_VideoDecoder::OpenPidChannel(uint32_t pid)
 
 void BOMX_VideoDecoder::ClosePidChannel()
 {
+    // g_mutexStandBy should already have been taken when this function is called
+
     if ( m_hPidChannel )
     {
         ALOG_ASSERT(NULL != m_hPlaypump);
