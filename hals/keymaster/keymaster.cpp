@@ -82,11 +82,8 @@ struct bcm_km {
 struct km_op_s {
    km_operation_handle_t  op; /* operation handle. */
    NEXUS_KeySlotHandle    ks; /* keyslot allocated for op. */
-   keymaster_algorithm_t  a;
    keymaster_block_mode_t b;
-   keymaster_digest_t     d;
    keymaster_purpose_t    p;
-   int32_t                s; /* key size in bytes. */
    uint8_t                *bb;
    int32_t                bs;
 };
@@ -1559,40 +1556,6 @@ static keymaster_error_t km_begin(
       return km_berr_2_kmerr(km_err);
    }
 
-   set.GetTagValue(TAG_ALGORITHM, &km_op->a);
-   set.GetTagValue(TAG_DIGEST, &km_op->d);
-   int km_key_size = 0;
-   if ((km_op->a == KM_ALGORITHM_HMAC) &&
-       ((km_op->d == KM_DIGEST_SHA1) ||
-        (km_op->d == KM_DIGEST_SHA_2_224) ||
-        (km_op->d == KM_DIGEST_SHA_2_256))) {
-      KeymasterTl_GetKeyCharacteristicsSettings km_characs;
-      KeymasterTl_GetDefaultKeyCharacteristicsSettings(&km_characs);
-      km_characs.in_key_blob.buffer = (uint8_t *)key->key_material;
-      km_characs.in_key_blob.size = key->key_material_size;
-      km_characs.in_params = km_params;
-      km_err = BERR_OS_ERROR;
-      if (!pthread_mutex_lock(&km_hdl->mtx)) {
-         if (km_hdl->handle)
-            km_err = KeymasterTl_GetKeyCharacteristics(km_hdl->handle, &km_characs);
-         pthread_mutex_unlock(&km_hdl->mtx);
-      }
-      if (km_err == BERR_SUCCESS) {
-         km_tag_value_t* km_t = KM_Tag_FindFirst(km_characs.out_hw_enforced, SKM_TAG_KEY_SIZE);
-         if (km_t) {
-            km_key_size = km_t->value.integer;
-         } else {
-            km_t = KM_Tag_FindFirst(km_characs.out_sw_enforced, SKM_TAG_KEY_SIZE);
-            if (km_t) {
-               km_key_size = km_t->value.integer;
-            }
-         }
-         KM_Tag_DeleteContext(km_characs.out_hw_enforced);
-         KM_Tag_DeleteContext(km_characs.out_sw_enforced);
-      }
-   }
-   km_op->s = (int32_t)km_key_size;
-
    KeymasterTl_CryptoBeginSettings km_cbs;
    km_operation_handle_t km_out_hdl;
    KeymasterTl_GetDefaultCryptoBeginSettings(&km_cbs);
@@ -1698,39 +1661,6 @@ static keymaster_error_t km_update(
       return KM_ERROR_KEYMASTER_NOT_CONFIGURED;
    }
 
-   // intercept cases which require buffering prior to final operation to hardware.
-   if (input->data_length && (km_op->a == KM_ALGORITHM_HMAC)) {
-      if ( ((km_op->d == KM_DIGEST_SHA1) && (km_op->s/KM_KS_DIV == KM_KS_SHA1_DG)) ||
-           ((km_op->d == KM_DIGEST_SHA_2_224) && (km_op->s/KM_KS_DIV == KM_KS_SHA224_DG)) ||
-           ((km_op->d == KM_DIGEST_SHA_2_256) && (km_op->s/KM_KS_DIV == KM_KS_SHA256_DG)) ) {
-         ALOGI_IF(KM_LOG_ALL_IN, "km_update: hw-op-%" PRIu64 " (HMAC:%d|SHA:%d|DGS:%d) buffering %zu bytes.",
-            km_op->op, km_op->a, km_op->d, km_op->s/KM_KS_DIV, input->data_length);
-         // create|copy into bounce buffer as appropriate.
-         if (km_op->bb == NULL) {
-            km_op->bb = (uint8_t *)malloc(sizeof(uint8_t)*input->data_length);
-            if (km_op->bb) {
-               memcpy(km_op->bb, input->data, input->data_length);
-               km_op->bs = input->data_length;
-            }
-         } else {
-            uint8_t *bb = (uint8_t *)malloc(sizeof(uint8_t)*(km_op->bs+input->data_length));
-            if (bb) {
-               memcpy(bb, km_op->bb, km_op->bs);
-               memcpy(bb+km_op->bs, input->data, input->data_length);
-               free(km_op->bb);
-               km_op->bb = bb;
-               km_op->bs += input->data_length;
-            }
-         }
-         // all consumed and no output.
-         *input_consumed = input->data_length;
-         if (output) {
-            output->data_length = 0;
-         }
-         return KM_ERROR_OK;
-      }
-   }
-
    AuthorizationSet set;
    set.Reinitialize(*in_params);
    if (set.is_valid() != keymaster::AuthorizationSet::OK) {
@@ -1759,8 +1689,16 @@ static keymaster_error_t km_update(
    KeymasterTl_CryptoUpdateSettings km_cus;
    KeymasterTl_GetDefaultCryptoUpdateSettings(&km_cus);
    km_cus.in_params = km_params;
-   km_cus.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
-   km_cus.in_data.size = input->data_length;
+   if (km_op->bb == NULL) {
+      km_cus.in_data.buffer = km_dup_2_srai(input->data, input->data_length);
+      km_cus.in_data.size = input->data_length;
+   } else {
+      km_cus.in_data.buffer = km_2dup_2_srai(
+         km_op->bb, km_op->bs, /* bounce buffer content copied first. */
+         input->data, input->data_length);
+      km_cus.in_data.size = km_op->bs + input->data_length;
+      km_bb_free(km_op);
+   }
    km_cus.out_data.buffer = (uint8_t *)SRAI_Memory_Allocate(KM_OUT_DATA_SZ, SRAI_MemoryType_Shared);
    km_cus.out_data.size = KM_OUT_DATA_SZ;
    if ((!km_cus.in_data.buffer && input->data_length) ||
@@ -1779,6 +1717,11 @@ static keymaster_error_t km_update(
          km_err = KeymasterTl_CryptoUpdate(km_hdl->handle, km_op->op, &km_cus);
       pthread_mutex_unlock(&km_hdl->mtx);
    }
+   if (km_err == BERR_NOT_SUPPORTED) {
+       km_err = BERR_SUCCESS;
+       km_cus.out_input_consumed = 0;
+       km_cus.out_data.size = 0;
+   }
    if (km_err != BERR_SUCCESS) {
       km_ks_free(km_op->ks);
       km_bb_free(km_op);
@@ -1790,9 +1733,27 @@ static keymaster_error_t km_update(
          km_err, km_berr_2_kmerr(km_err));
       return km_berr_2_kmerr(km_err);
    }
+   if (km_cus.out_input_consumed != km_cus.in_data.size) {
+      uint32_t rem = (km_cus.out_input_consumed < km_cus.in_data.size) ?
+         km_cus.in_data.size - km_cus.out_input_consumed : 0;
+      if (rem) {
+         uint8_t *bb = (uint8_t *)malloc(sizeof(uint8_t)*rem);
+         if (bb) {
+            memcpy(bb, km_cus.in_data.buffer+km_cus.out_input_consumed, rem);
+            km_op->bb = bb;
+            km_op->bs = rem;
+         } else {
+            // let the op fail naturally later on.
+            ALOGW("update (s-op): failed allocating bounce (sz:%u) - expect failure.", rem);
+         }
+      } else {
+         ALOGW("update: consumed (%u) vs input (%u) mismatch?!",
+            km_cus.out_input_consumed, km_cus.in_data.size);
+      }
+   }
    if (km_cus.in_data.buffer) SRAI_Memory_Free(km_cus.in_data.buffer);
    if (km_cus.in_params) KM_Tag_DeleteContext(km_cus.in_params);
-   *input_consumed = km_cus.out_input_consumed;
+   *input_consumed = input->data_length;
    if (km_cus.out_params && KM_Tag_GetNumPairs(km_cus.out_params)) {
       if (out_params) {
          uint32_t serial_size;
