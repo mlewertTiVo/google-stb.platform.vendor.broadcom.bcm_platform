@@ -52,12 +52,11 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
-extern "C" void *nxwrap_create_client(void **wrap);
-extern "C" void nxwrap_destroy_client(void *wrap);
-extern "C" void nxwrap_rmlmk(void *wrap);
+#include <nxwrap.h>
+static NxWrap *grNxWrap = NULL;
+static int grNxWrapJoined = 0;
+static bool gralloc_in_shutdown = false;
 
-static void *nxwrap = NULL;
-static void *nexus_client = NULL;
 static int gralloc_mgmt_mode = -1;
 static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
@@ -92,13 +91,63 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_MMA_MGMT_MODE_DEF    "locked"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
+
+static void checkPowerStatus() {
+   nxwrap_pwr_state powerStatus;
+   bool getpower = nxwrap_get_pwr_info(&powerStatus, NULL);
+   if (getpower) {
+      ALOGV("%s: power state = %d", __FUNCTION__, powerStatus);
+      switch (powerStatus) {
+         case ePowerState_S0:
+         case ePowerState_S05:
+            gralloc_in_shutdown = false;
+         break;
+         case ePowerState_S3:
+         case ePowerState_S4:
+         case ePowerState_S5:
+            gralloc_in_shutdown = true;
+         break;
+         case ePowerState_S1:
+         case ePowerState_S2:
+         default:
+           // no action required
+         break;
+      }
+   } else {
+      ALOGE("%s: failed to get power status", __FUNCTION__);
+   }
+}
+
+
+static bool gralloc_stdby(void * ctx) {
+
+   (void)ctx;
+
+   pthread_mutex_t *pMutex = &g2dLock;
+
+   if (pMutex == NULL) {
+      return true;
+   }
+   pthread_mutex_lock(pMutex);
+   checkPowerStatus();
+   pthread_mutex_unlock(pMutex);
+
+   ALOGD("%s: gralloc in shutdown = [%s]",__FUNCTION__, gralloc_in_shutdown?"true":"false" );
+
+   return true;
+}
+
+
 static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
 
-   nexus_client = nxwrap_create_client(&nxwrap);
-   if (nexus_client == NULL) {
-      ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
+   grNxWrap = new NxWrap("BcmGrallocHal");
+   if (grNxWrap) {
+      grNxWrap->join(gralloc_stdby, NULL);
+      grNxWrapJoined = 1;
+   } else {
+      ALOGE("Adapter failed to create nxwrap");
    }
 
    if (property_get(BCM_RO_GR_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
@@ -166,12 +215,14 @@ void gralloc_g2d_hdl_end(void)
 
 void gralloc_explicit_unload(void)
 {
-   if (nxwrap) {
-      nxwrap_destroy_client(nxwrap);
-      nexus_client = NULL;
-      nxwrap = NULL;
+   if (grNxWrapJoined) {
+      grNxWrapJoined = 0;
+      grNxWrap->leave();
    }
-
+   if (grNxWrap != NULL) {
+      delete grNxWrap;
+      grNxWrap = NULL;
+   }
    if (hCheckpointEvent) {
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
@@ -201,11 +252,6 @@ int gralloc_align(void)
    return gralloc_default_align;
 }
 
-void * gralloc_v3d_get_nexus_client_context(void)
-{
-   return nexus_client;
-}
-
 NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 {
    NEXUS_Error rc;
@@ -217,6 +263,13 @@ NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
       return NULL;
    }
    pthread_mutex_lock(pMutex);
+
+   if (gralloc_in_shutdown) {
+      ALOGE("%s: gralloc in shutdown",__FUNCTION__ );
+      hGraphics = NULL;
+      pthread_mutex_unlock(pMutex);
+      return NULL;
+   }
 
    if (hCheckpointEvent == NULL) {
       hGraphics = NULL;
@@ -797,7 +850,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                 */
                int rmlmk_cnt = 0;
                while (rmlmk_cnt < GR_RMLMK_RETRY) {
-                  nxwrap_rmlmk(nxwrap);
+                  grNxWrap->rmlmk(grNxWrap->client());
                   BKNI_Sleep(GR_RMLMK_DELAY); /* give settling time for rmlmk. */
                   ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
                   if ((ret >= 0) && ashmem_getmem.hdl) {
