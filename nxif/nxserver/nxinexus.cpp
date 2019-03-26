@@ -612,6 +612,14 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
    NEXUS_DisplayCapabilities caps;
    Vector<struct HpdCb>::const_iterator v;
 
+   char value[PROPERTY_VALUE_MAX];
+   bool adv_4k = true;
+   if (property_get(BCM_RO_NX_TRIM_4KDEC, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         adv_4k = false;
+      }
+   }
+
    rc = NxClient_GetDisplayStatus(&status);
    if (rc) {
       ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
@@ -672,9 +680,13 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
             case NEXUS_VideoFormat_e3840x2160p25hz:
             case NEXUS_VideoFormat_e4096x2160p24hz:
             case NEXUS_VideoFormat_e3840x2160p24hz:
-               property_set(BCM_VDR_DISPLAY_SIZE, "3840x2160");
-               property_set(BCM_DYN_NX_DISPLAY_SIZE, "3840x2160");
-            break;
+               if (adv_4k) {
+                  property_set(BCM_VDR_DISPLAY_SIZE, "3840x2160");
+                  property_set(BCM_DYN_NX_DISPLAY_SIZE, "3840x2160");
+                  break;
+               } else {
+                  /* FALL THRU */
+               }
             default:
                property_set(BCM_VDR_DISPLAY_SIZE, "1920x1080");
                property_set(BCM_DYN_NX_DISPLAY_SIZE, "1920x1080");
