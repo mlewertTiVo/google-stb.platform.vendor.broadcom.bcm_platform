@@ -159,6 +159,7 @@ struct hwc2_bcm_device_t {
    NEXUS_Graphics2DHandle       hg2d;
    pthread_mutex_t              mtx_g2d;
    NEXUS_Graphics2DCapabilities g2dc;
+   bool                         g2d;
    bool                         sgl;
 };
 
@@ -847,8 +848,7 @@ static int32_t hwc2_pwrMode(
 }
 
 static bool hwc2_stdby_mon(
-   void *context)
-{
+   void *context) {
    bool standby = false;
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)context;
    hwc2_power_mode_t pmode;
@@ -868,8 +868,42 @@ static bool hwc2_stdby_mon(
    }
    pthread_mutex_unlock(&hwc2->mtx_pwr);
 
+   if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+      ALOGW("[%s]:%" PRIu64 ": cannot mark g2d presence, likely standby failure.",
+         (hwc2->ext->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+         (uint64_t)(intptr_t)hwc2->ext);
+      goto out;
+   }
+   if (standby) {
+      hwc2->g2d = false;
+   } else if (hwc2->hg2d) {
+      hwc2->g2d = true;
+   }
+   pthread_mutex_unlock(&hwc2->mtx_g2d);
+
 out:
    return standby;
+}
+
+static void hwc2_stdchg_mon(
+   void *context,
+   int param) {
+   (void)param;
+   struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)context;
+   nxwrap_pwr_state pwr_s;
+   bool pwr = nxwrap_get_pwr_info(&pwr_s, NULL);
+   if (pwr && (pwr_s <= ePowerState_S2)) {
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         ALOGW("[%s]:%" PRIu64 ": cannot mark g2d available.",
+            (hwc2->ext->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            (uint64_t)(intptr_t)hwc2->ext);
+         return;
+      }
+      if (hwc2->hg2d) {
+         hwc2->g2d = true;
+      }
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+   }
 }
 
 static void hwc2_chkpt_cb(
@@ -909,7 +943,8 @@ static int hwc2_chkpt(
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
       return HWC2_INVALID;
    }
-   rc = hwc2_chkpt_l(hwc2);
+   if (hwc2->g2d) rc = hwc2_chkpt_l(hwc2);
+   else rc = HWC2_INVALID;
    pthread_mutex_unlock(&hwc2->mtx_g2d);
    return rc;
 }
@@ -1718,7 +1753,7 @@ static void hwc2_fill_blend(
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
-      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      if (hwc2->g2d) NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
       ALOGI_IF((hwc2->lm & LOG_SEED_DEBUG),
                "[seed]: %p fill/blend with color %08x\n", s, color);
@@ -1742,7 +1777,7 @@ static void hwc2_fb_seed(
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
-      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      if (hwc2->g2d) NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
       ALOGI_IF((hwc2->lm & LOG_SEED_DEBUG),
                "[seed]: %p with color %08x\n", s, color);
@@ -5383,7 +5418,10 @@ static void hwc2_bcm_close(
    BKNI_DestroyEvent(hwc2->vsync);
    BKNI_DestroyEvent(hwc2->g2dchk);
 
-   NEXUS_Graphics2D_Close(hwc2->hg2d);
+   if (hwc2->hg2d) {
+      NEXUS_Graphics2D_Close(hwc2->hg2d);
+      hwc2->g2d = false;
+   }
 
    pthread_mutex_destroy(&hwc2->mtx_pwr);
    pthread_mutex_destroy(&hwc2->mtx_idse);
@@ -5432,7 +5470,7 @@ static void hwc2_dim(
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
-      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      if (hwc2->g2d) NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
       ALOGI_IF((hwc2->lm & LOG_DIM_DEBUG),
                "[dim]: %p with color %08x\n", s, fs.color);
@@ -5457,7 +5495,7 @@ static void hwc2_pah(
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
-      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      if (hwc2->g2d) NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
    }
 }
@@ -5625,6 +5663,11 @@ int hwc2_blit_yv12(
       blt = HWC2_INVALID;
       goto out;
    } else {
+      if (!hwc2->g2d) {
+         blt = HWC2_INVALID;
+         pthread_mutex_unlock(&hwc2->mtx_g2d);
+         goto out;
+      }
       NEXUS_Graphics2D_GetPacketBuffer(hwc2->hg2d, &buffer, &size, 1024);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
 
@@ -5766,6 +5809,11 @@ int hwc2_blit_yv12(
          blt = HWC2_INVALID;
          goto out;
       } else {
+         if (!hwc2->g2d) {
+            blt = HWC2_INVALID;
+            pthread_mutex_unlock(&hwc2->mtx_g2d);
+            goto out;
+         }
          rc = NEXUS_Graphics2D_PacketWriteComplete(hwc2->hg2d, (uint8_t*)next - (uint8_t*)buffer);
          rc = hwc2_chkpt_l(hwc2);
          if (rgba != d) {
@@ -5862,6 +5910,11 @@ int hwc2_blit_gpx_pm(
       blt = HWC2_INVALID;
       goto out;
    } else {
+      if (!hwc2->g2d) {
+         blt = HWC2_INVALID;
+         pthread_mutex_unlock(&hwc2->mtx_g2d);
+         goto out;
+      }
       rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
       if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
          rc = hwc2_chkpt_l(hwc2);
@@ -6068,6 +6121,11 @@ int hwc2_blit_gpx(
       blt = HWC2_INVALID;
       goto out;
    } else {
+      if (!hwc2->g2d) {
+         blt = HWC2_INVALID;
+         pthread_mutex_unlock(&hwc2->mtx_g2d);
+         goto out;
+      }
       rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
       if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
          rc = hwc2_chkpt_l(hwc2);
@@ -7124,6 +7182,7 @@ static void hwc2_bcm_open(
    NEXUS_Graphics2DSettings g2dCfg;
    NEXUS_Error rc;
    uint64_t c;
+   NxClient_CallbackThreadSettings cts;
 
    hwc2_setup_memif(hwc2);
 
@@ -7132,7 +7191,11 @@ static void hwc2_bcm_open(
       LOG_ALWAYS_FATAL("failed to instantiate nexus wrap.");
       return;
    }
-   hwc2->nxi->join(hwc2_stdby_mon, (void *)hwc2);
+   hwc2->nxi->join_v(hwc2_stdby_mon, (void *)hwc2);
+   NxClient_GetDefaultCallbackThreadSettings(&cts);
+   cts.standbyStateChanged.callback = hwc2_stdchg_mon;
+   cts.standbyStateChanged.context = (void *)hwc2;
+   NxClient_StartCallbackThread(&cts);
 
    NEXUS_Platform_GetClientConfiguration(&nxCliCfg);
    NEXUS_Heap_GetStatus(NEXUS_Platform_GetFramebufferHeap(0), &status);
@@ -7191,6 +7254,7 @@ static void hwc2_bcm_open(
       return;
    }
    NEXUS_Graphics2D_GetCapabilities(hwc2->hg2d, &hwc2->g2dc);
+   hwc2->g2d = true;
 }
 
 static int hwc2_open(
