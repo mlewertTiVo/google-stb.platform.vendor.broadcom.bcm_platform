@@ -72,6 +72,7 @@ public class HdmiAudioPlugService extends Service {
 
     private final String propertyKey = "ro.nx.dolby.ms";
     private final String nrdpAudioSettingKey = "nrdp_audio_platform_capabilities";
+    private final String atmosPropertyKey = "ro.nx.media.disable_atmos";
 
     public final void setAudioCapabilities(boolean ms12, boolean atmos) {
        AudioCapability pcmCap = new AudioCapability();
@@ -124,10 +125,11 @@ public class HdmiAudioPlugService extends Service {
                 if (intent.getIntExtra(AudioManager.EXTRA_AUDIO_PLUG_STATE, 0) != 0) {
                     int formats[] = intent.getIntArrayExtra(AudioManager.EXTRA_ENCODINGS);
                     boolean atmos;
+                    boolean atmosDisabled = android.os.SystemProperties.getBoolean(atmosPropertyKey, false);
 
                     // Assume no ATMOS as default
                     atmos = false;
-                    if (formats != null) {
+                    if ((!atmosDisabled) && (formats != null)) {
                         for (int i = 0; i < formats.length; i++) {
                             if (formats[i] == AudioFormat.ENCODING_E_AC3_JOC) {
                                 // ATMOS supported

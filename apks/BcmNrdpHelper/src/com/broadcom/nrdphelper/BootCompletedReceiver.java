@@ -63,13 +63,15 @@ public class BootCompletedReceiver extends BroadcastReceiver {
     private static final String TAG = TAG_WITH_CLASS_NAME ?
             "BootCompletedReceiver" : TAG_BCM_NRDPHELPER;
 
+    private final String forceEotfPropertyKey = "ro.nx.hwc2.tweak.force_eotf";
     private final String nrdpSettingKey = "nrdp_platform_capabilities";
 
     private static final String NRDPHELPER_PACKAGE = "com.broadcom.nrdphelper";
     private static final String NRDPHELPER_HDMI_AUDIO_PLUG_SERVICE = "com.broadcom.nrdphelper.HdmiAudioPlugService";
 
     public final void setCapabilities(Context context) {
-       String jsonString = new Gson().toJson(new PlatformCapabilitiesRoot(false, "always", "none", "disable", "7", "16384"));
+       String hdrOutputTypeStr = getHdrOutputTypeStr();
+       String jsonString = new Gson().toJson(new PlatformCapabilitiesRoot(false, hdrOutputTypeStr, "none", "disable", "7", "16384"));
 
        Settings.Global.putString(context.getContentResolver(), nrdpSettingKey, jsonString);
        Log.i(TAG, nrdpSettingKey + " set to " + jsonString);
@@ -84,5 +86,19 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         Intent localIntent = new Intent();
         localIntent.setComponent(new ComponentName(NRDPHELPER_PACKAGE, NRDPHELPER_HDMI_AUDIO_PLUG_SERVICE));
         context.startService(localIntent);
+    }
+
+    /**
+     *  Support NRDP HdrOutputTypes:
+     *    - "always": Force the mode to HDR always, regardless of the source data.
+     *    - "input": Let the sink output mode track the input.
+     */
+    private String getHdrOutputTypeStr() {
+        String nrdpHdrOutputTypeStr = "always";
+        boolean forceEotf = android.os.SystemProperties.getBoolean(forceEotfPropertyKey, true);
+        if (!forceEotf) {
+            nrdpHdrOutputTypeStr = "input";
+        }
+        return nrdpHdrOutputTypeStr;
     }
 }
