@@ -819,6 +819,10 @@ static int32_t hwc2_pwrMode_l(
 
    if (kind == HWC2_DSP_EXT) {
       if (locked) {
+         ALOGI("[ext][%" PRIu64 "]: (locked) pmode %s -> %s",
+               display,
+               getPowerModeName(dsp->pmode),
+               getPowerModeName((hwc2_power_mode_t)mode));
          dsp->pmode = (hwc2_power_mode_t)mode;
       } else if (!pthread_mutex_lock(&hwc2->mtx_pwr)) {
          ALOGI("[ext][%" PRIu64 "]: pmode %s -> %s",
