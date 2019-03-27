@@ -165,6 +165,7 @@ public:
     inline size_t GetNumEntries();
     void SetLastReturnedPts(unsigned pts);
     unsigned GetMaxDeltaPts();
+    void GetFirstAndLastPts(unsigned& smallest, unsigned& largest);
     unsigned GetLastAddedPts();
     void PrintStats();
     void Reset();
@@ -402,10 +403,16 @@ protected:
     bool m_tunnelHfr;
     int m_enableHdrForNonVp9;
     native_handle_t *m_pTunnelNativeHandle;
+    enum SeekingState {
+      Seek_Idle,
+      Seek_WaitForStc,
+      Seek_WaitForData,
+      Seek_WaitForTargetPts,
+      Seek_WaitForDecodePts
+    };
+    SeekingState m_seekingState;
     uint32_t m_tunnelCurrentPts;
-    bool m_waitingForStc;
     unsigned m_stcSyncValue;
-    bool m_stcResumePending;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;

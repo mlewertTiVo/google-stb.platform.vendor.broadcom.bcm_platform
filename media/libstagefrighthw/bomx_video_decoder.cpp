@@ -1394,6 +1394,14 @@ unsigned BOMX_InputDataTracker::GetMaxDeltaPts()
     if (m_ptsTracker.empty())
       return 0;
 
+    GetFirstAndLastPts(smallest, largest);
+    return (largest - smallest);
+}
+
+void BOMX_InputDataTracker::GetFirstAndLastPts(unsigned& smallest, unsigned& largest)
+{
+    ALOG_ASSERT(!m_ptsTracker.empty());
+
     List<unsigned>::iterator it = m_ptsTracker.begin();
     smallest = largest = *it;
     for (; it != m_ptsTracker.end(); ++it) {
@@ -1403,7 +1411,6 @@ unsigned BOMX_InputDataTracker::GetMaxDeltaPts()
             largest = *it;
         }
     }
-    return (largest - smallest);
 }
 
 unsigned BOMX_InputDataTracker::GetLastAddedPts()
@@ -1511,10 +1518,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelHfr(false),
     m_enableHdrForNonVp9(0),
     m_pTunnelNativeHandle(NULL),
+    m_seekingState(Seek_Idle),
     m_tunnelCurrentPts(B_TUNNEL_PTS_INVALID_VALUE),
-    m_waitingForStc(false),
     m_stcSyncValue(B_STC_SYNC_INVALID_VALUE),
-    m_stcResumePending(false),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -3576,10 +3582,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_formatChangeState = FCState_eNone;
             CancelTimerId(m_inputBuffersTimerId);
             CancelTimerId(m_formatChangeTimerId);
-            m_waitingForStc = false;
-            if (m_stcResumePending) {
+            if ( m_seekingState != Seek_Idle ) {
                 // resume stc if we left it paused
-                m_stcResumePending = false;
+                m_seekingState = Seek_Idle;
                 ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Restoring stc channel");
                 NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
             }
@@ -4241,16 +4246,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     NEXUS_VideoDecoderTrickState vdecTrickState;
                     NEXUS_Error errCode;
 
-                    m_waitingForStc = true;
-                    if ( m_stcResumePending )
+                    if ( m_seekingState != Seek_Idle )
                     {
                          // If we're here, it means this discontinuity is interrupting another one
                          // currently in process, so start over.
                          errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                          if (errCode != NEXUS_SUCCESS)
-                            ALOGW("%s: error setting stc rate to 1", __FUNCTION__);
+                            ALOGW("%s: error resuming stc, playback may stall..", __FUNCTION__);
                     }
-                    m_stcResumePending = false;
+                    m_seekingState = Seek_WaitForStc;
 
                     // Pause decoder until a valid stc is available
                     errCode = SetDecodeRate(0);
@@ -7222,63 +7226,95 @@ void BOMX_VideoDecoder::PollDecodedFrames()
         {
             OMX_BUFFERHEADERTYPE omxHeader;
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
-            uint32_t stcSync;
 
-            if ( m_waitingForStc )
+            if ( (m_seekingState == Seek_WaitForStc) && (m_vidPeekState == VideoPeekState_eWaitForInput) )
             {
-                if ( m_vidPeekState != VideoPeekState_eWaitForInput )
+                ALOGV("Video peek is enabled, disable seek handling");
+                m_seekingState = Seek_Idle;
+                errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
+                if ( errCode != NEXUS_SUCCESS )
                 {
-                    NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                    if ( stcSync != B_STC_SYNC_INVALID_VALUE ) {
-                        m_stcSyncValue = stcSync;
-                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
-
-                        m_waitingForStc = false;
-                        m_stcResumePending = true;
-
-                        errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
-                        if (errCode != NEXUS_SUCCESS)
-                        {
-                            ALOGE("%s: error setting stc rate to 0", __FUNCTION__);
-                        }
-
-                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
-                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u", __FUNCTION__, stcSync);
-                        if (errCode != NEXUS_SUCCESS)
-                        {
-                            ALOGE("%s: error setting start pts", __FUNCTION__);
-                        }
-
-                        errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
-                        if (errCode != NEXUS_SUCCESS)
-                            ALOGE("%s: error setting trick state", __FUNCTION__);
-                    }
-                }
-                else
-                {
-                    ALOGV("Video peek is enabled. No STC sync is needed");
-                    m_waitingForStc = false;
-                    m_stcResumePending = false;
-
-                    errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
-                    if ( errCode != NEXUS_SUCCESS )
-                    {
-                        ALOGE("Error resuming decoder at video peek %d", errCode);
-                    }
+                    ALOGE("Error resuming decoder at video peek %d", errCode);
                 }
             }
 
-            if (m_stcResumePending) {
-               NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-               ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u", status.pts, stcSync);
-               if (status.pts >= stcSync) {
+            switch (m_seekingState)
+            {
+            case Seek_Idle:
+                break;
+
+            case Seek_WaitForStc:
+            {
+                uint32_t stcSync;
+
+                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                if (stcSync == B_STC_SYNC_INVALID_VALUE)
+                    break;
+
+                m_stcSyncValue = stcSync;
+                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: target pts:%u", __FUNCTION__, stcSync);
+
+                // Pause stc while we reach targer pts
+                errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
+                if (errCode != NEXUS_SUCCESS) {
+                    ALOGE("%s: error setting stc rate to 0!", __FUNCTION__);
+                    // Abort seeking.
+                    SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
+                    m_seekingState = Seek_Idle;
+                    break;
+                }
+
+                 m_seekingState = Seek_WaitForData;
+                // fall thru
+            }
+            case Seek_WaitForData:
+            {
+                if ( m_inputDataTracker.GetNumEntries() > 0 ) {
+                    unsigned first, last;
+
+                    m_seekingState = Seek_WaitForDecodePts;
+                    m_inputDataTracker.GetFirstAndLastPts(first, last);
+                    if ( UNSIGNED_LESS_THAN(m_stcSyncValue, first) || (m_stcSyncValue == first) ) {
+                        // No need to call SetStartPts as frames are ahead of target pts
+                    } else {
+                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, m_stcSyncValue);
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u",
+                              __FUNCTION__, m_stcSyncValue);
+                        if (errCode != NEXUS_SUCCESS)
+                            ALOGE("%s: error setting start pts", __FUNCTION__);
+                    }
+                }
+
+                if (m_seekingState != Seek_WaitForDecodePts)
+                  break;
+
+                // Resume decoder as frames still need to be decoded and possibly discarded
+                // when trying to reach target pts
+                errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
+                if (errCode != NEXUS_SUCCESS) {
+                    ALOGE("%s: error resuming decoder, playback may stall..", __FUNCTION__);
+                }
+
+                // fall thru
+            }
+            case Seek_WaitForDecodePts:
+               ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u",
+                                                      status.pts, m_stcSyncValue);
+               if ( UNSIGNED_LESS_THAN(m_stcSyncValue, status.pts) || (m_stcSyncValue == status.pts) ) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
-                       ALOGE("%s: error setting stc rate to 1", __FUNCTION__);
-                   else {
-                       m_stcResumePending = false;
-                   }
+                       ALOGE("%s: error resuming stc, playback may stall...", __FUNCTION__);
+
+                   ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: resuming on pts:%u",
+                                                          __FUNCTION__, status.pts);
+                   m_seekingState = Seek_Idle;
                }
+
+               break;
+
+            default:
+               break;
+
             }
 
             bool newRenderedFrame = false, realtimeNotification = false;
@@ -7340,13 +7376,14 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Reporting eos, ts=%lld pts=%u now=%" PRIu64 "",
                             omxHeader.nTimeStamp, status.pts, now);
                 }
-            } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
+            } else if ( (m_seekingState != Seek_Idle) && (m_AvailInputBuffers == 0)) {
                 // when we're in the process of dropping frames to reach the start pts, return as many
                 // input buffers as possible to speed up the task
                 ReturnInputBuffers(InputReturnMode_eAll);
             }
 
-            if ( !m_waitingForStc && !m_stcResumePending && m_tunnelStcChannelSync ) {
+            if ( (m_seekingState == Seek_Idle) && m_tunnelStcChannelSync ) {
+                uint32_t stcSync;
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 if ( (stcSync != B_STC_SYNC_INVALID_VALUE) && (stcSync != m_stcSyncValue) )
                 {
