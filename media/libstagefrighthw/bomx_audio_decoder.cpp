@@ -3931,7 +3931,7 @@ void BOMX_AudioDecoder::RemoveOutputBuffers()
         return;
     }
 
-    ALOGV("%d Removing %u output buffers from nexus", m_instanceNum, numFrames);
+    ALOGV("%d Removing %u output buffers from nexus, queue %u %s", m_instanceNum, numFrames, m_pAudioPorts[1]->QueueDepth(), bFlush ? "for flushing" : "");
 
     for ( i = 0; i < numFrames; i++ )
     {
@@ -3984,10 +3984,13 @@ void BOMX_AudioDecoder::PollDecodedFrames()
             if ( m_pFrameStatus[i].sampleRate != m_sampleRate && m_pFrameStatus[i].filledBytes > 0 )
             {
                 ALOGI("Sample rate change %u->%u", m_sampleRate, m_pFrameStatus[i].sampleRate);
-                m_formatChangePending = true;
+                m_formatChangePending = (m_sampleRate != 0) ? true : false;
                 m_sampleRate = m_pFrameStatus[i].sampleRate;
-                PortFormatChanged(m_pAudioPorts[1]);
-                return;
+                if ( m_formatChangePending )
+                {
+                    PortFormatChanged(m_pAudioPorts[1]);
+                    return;
+                }
             }
 
             pBuffer = m_pAudioPorts[1]->FindBuffer(FindBufferFromBlock, (void *)m_pMemoryBlocks[i]);
