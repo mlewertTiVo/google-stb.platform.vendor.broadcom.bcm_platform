@@ -2016,6 +2016,8 @@ NEXUS_Error BOMX_AudioDecoder::StopDecoder()
         NEXUS_Playpump_Stop(m_hPlaypump);
         NEXUS_AudioDecoder_Stop(m_hAudioDecoder);
 
+        RemoveOutputBuffers();
+
         m_submittedDescriptors = 0;
         m_eosPending = false;
         m_eosDelivered = false;
@@ -2532,6 +2534,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
                     NEXUS_AudioDecoder_Flush(m_hAudioDecoder);
                     RemoveOutputBuffers();
                     m_pBufferTracker->Flush();
+                    RemoveOutputBuffers();
                     m_eosDelivered = false;
                     m_eosReceived = false;
                     m_eosReady = false;
@@ -3921,6 +3924,7 @@ static bool FindBufferFromBlock(BOMX_Buffer *pBuffer, void *pData)
 void BOMX_AudioDecoder::RemoveOutputBuffers()
 {
     NEXUS_Error errCode;
+    BOMX_Buffer *pBuffer;
     unsigned numFrames=0;
     unsigned i;
 
@@ -3931,11 +3935,12 @@ void BOMX_AudioDecoder::RemoveOutputBuffers()
         return;
     }
 
-    ALOGV("%d Removing %u output buffers from nexus, queue %u %s", m_instanceNum, numFrames, m_pAudioPorts[1]->QueueDepth(), bFlush ? "for flushing" : "");
+    ALOGV("%d Removing %u output buffers from nexus, queue %u", m_instanceNum, numFrames, m_pAudioPorts[1]->QueueDepth());
 
+    // Clear the NEXUS owned flags for the corresponding output buffers in the buffer list
     for ( i = 0; i < numFrames; i++ )
     {
-        BOMX_Buffer *pBuffer = m_pAudioPorts[1]->FindBuffer(FindBufferFromBlock, (void *)m_pMemoryBlocks[i]);
+        pBuffer = m_pAudioPorts[1]->FindBuffer(FindBufferFromBlock, (void *)m_pMemoryBlocks[i]);
         if ( NULL != pBuffer )
         {
             BOMX_AudioDecoderOutputBufferInfo *pInfo;
@@ -3948,6 +3953,16 @@ void BOMX_AudioDecoder::RemoveOutputBuffers()
     if ( numFrames > 0 )
     {
         NEXUS_AudioDecoder_ConsumeDecodedFrames(m_hAudioDecoder, numFrames);
+    }
+
+    // Clear the NEXUS owned flags for all the output buffers available in the buffer queue
+    for ( pBuffer = m_pAudioPorts[1]->GetBuffer();
+          NULL != pBuffer;
+          pBuffer = m_pAudioPorts[1]->GetNextBuffer(pBuffer) )
+    {
+        BOMX_AudioDecoderOutputBufferInfo *pInfo;
+        pInfo = (BOMX_AudioDecoderOutputBufferInfo *)pBuffer->GetComponentPrivate();
+        pInfo->nexusOwned = false;
     }
 }
 
@@ -3989,6 +4004,10 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 if ( m_formatChangePending )
                 {
                     PortFormatChanged(m_pAudioPorts[1]);
+
+                    // Drop the remaining frames and return them back to NEXUS as the port format changed
+                    // event would trigger the output port reconfiguration.
+                    NEXUS_AudioDecoder_ConsumeDecodedFrames(m_hAudioDecoder, numFrames - i);
                     return;
                 }
             }
