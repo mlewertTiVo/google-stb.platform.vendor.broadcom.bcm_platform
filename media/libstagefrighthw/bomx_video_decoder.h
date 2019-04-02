@@ -348,6 +348,8 @@ protected:
     B_SchedulerTimerId m_inputBuffersTimerId;
     B_EventHandle m_hCheckpointEvent;
     NEXUS_Graphics2DHandle m_hGraphics2d;
+    NEXUS_SimpleVideoDecoderStartSettings m_vdecStartSettings;
+    bool m_deferDecoderStart;
     unsigned m_submittedDescriptors;
     unsigned m_maxDescriptorsPerBuffer;
     NEXUS_PlaypumpScatterGatherDescriptor *m_pPlaypumpDescList;
@@ -405,7 +407,7 @@ protected:
     native_handle_t *m_pTunnelNativeHandle;
     enum SeekingState {
       Seek_Idle,
-      Seek_WaitForStc,
+      Seek_WaitForStcSync,
       Seek_WaitForData,
       Seek_WaitForTargetPts,
       Seek_WaitForDecodePts
@@ -532,6 +534,7 @@ protected:
             OMX_IN OMX_PTR pAppPrivate,
             VideoDecoderOutputMetaData *pMetadata);
 
+    NEXUS_Error StartDecoder();
     void InvalidateDecodedFrames();
     void PollDecodedFrames();
     void ReturnDecodedFrames();

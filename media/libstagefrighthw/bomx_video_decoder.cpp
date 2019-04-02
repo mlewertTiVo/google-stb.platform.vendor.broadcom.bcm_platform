@@ -100,6 +100,8 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_TUNNEL_PTS_INVALID_VALUE (0xFFFFFFFF)
 #define B_OUTSTANDING_FRAMES_WATERMARK (6)
 #define B_OUTSTANDING_FRAME_MAX_AGE (4)
+#define B_MIN_START_STC_SYNC_DELAY_MS (250)
+#define B_MAX_START_STC_SYNC_DELAY_MS (2000)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -1480,6 +1482,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_inputBuffersTimerId(NULL),
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
+    m_deferDecoderStart(false),
     m_submittedDescriptors(0),
     m_maxDescriptorsPerBuffer(0),
     m_pPlaypumpDescList(NULL),
@@ -3861,91 +3864,28 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                       }
                    }
                 }
-                ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
-                if (BOMX_idpt() != NULL) {
-                   BOMX_idpt()->netcoal("vmode");
-                   if ( m_tunnelMode )
-                   {
-                      if ( m_tunnelHfr )
-                      {
-                         BOMX_idpt()->hfrvideo(DptHakHfrMode::TUNNEL);
-                      }
-                   }
-                   else
-                   {
-                      BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO);
-                   }
-                }
-                m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
-                if (m_tunnelMode && m_tunnelStcChannel)
-                {
-                    errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
-                    if ( errCode )
-                    {
-                        return BOMX_BERR_TRACE(errCode);
-                    }
-                }
-                errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
-                if ( errCode )
-                {
-                    if ( errCode == BERR_OUT_OF_DEVICE_MEMORY )
-                    {
-                        /* give another try after attempting a round of rmlmk, if
-                         * rmlmk fails (e.g. not enough memory could be freed up),
-                         * that's game over.
-                         */
-                        ALOGW("decoder start: running rmlmk to free up memory");
-                        nxwrap_rmlmk(m_pNxWrap);
-                        BKNI_Sleep(5); /* give settling time for rmlmk. */
-                        errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
-                    }
-
-                    if ( errCode )
-                    {
-                        return BOMX_BERR_TRACE(errCode);
-                    }
-                }
-                if (!property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
-                {
-                   NEXUS_SimpleVideoDecoderClientSettings videoDecoderClientsettings;
-                   NEXUS_SimpleVideoDecoder_GetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
-                   videoDecoderClientsettings.cache.timeout = 0;
-                   NEXUS_SimpleVideoDecoder_SetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
-                }
+                // Start playpump whether we defer start or not.
                 m_submittedDescriptors = 0;
                 m_inputDataTracker.PrintStats();
                 m_inputDataTracker.Reset();
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
                 if ( errCode )
                 {
-                    NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
-                    m_eosPending = false;
-                    m_eosDelivered = false;
-                    m_eosReceived = false;
-                    m_eosPts = UINT_MAX;
-                    m_renderedFrameHandler.Reset();
-                    m_ptsReceived = false;
-                    if (BOMX_idpt() != NULL) {
-                       BOMX_idpt()->netcoal("default");
-                       if ( m_tunnelMode )
-                       {
-                          if ( m_tunnelHfr )
-                          {
-                              BOMX_idpt()->hfrvideo(DptHakHfrMode::TUNNEL_DEFAULT);
-                          }
-                       }
-                       else
-                       {
-                          BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
-                       }
-                    }
                     return BOMX_BERR_TRACE(errCode);
                 }
 
-                if ( !m_tunnelMode && m_pVideoPorts[1]->IsEnabled() )
+                m_vdecStartSettings = vdecStartSettings;
+                m_deferDecoderStart = false;
+                // Defer start until we get an stc sync value when video peek isn't enabled
+                if ( m_tunnelMode && m_tunnelStcChannel && (m_vndExtNrdpVidPeek <= 0) )
                 {
-                    // Kick off the decoder frame queue
-                    OutputFrameEvent();
+                    m_deferDecoderStart = true;
+                    m_seekingState = Seek_WaitForStcSync;
+                    // Anchor start time here to measure the delay and start the decoder if
+                    // no stc sync is received within a specified time
+                    m_startTime = systemTime(CLOCK_MONOTONIC);
+                } else {
+                    return StartDecoder();
                 }
             }
             break;
@@ -3968,6 +3908,93 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             return BOMX_BERR_TRACE(BERR_NOT_SUPPORTED);
         }
     }
+    return NEXUS_SUCCESS;
+}
+
+NEXUS_Error BOMX_VideoDecoder::StartDecoder()
+{
+    NEXUS_Error errCode;
+
+    ALOGV("Start Decoder display %u appDM %u codec %u", m_vdecStartSettings.displayEnabled,
+            m_vdecStartSettings.settings.appDisplayManagement, m_vdecStartSettings.settings.codec);
+    if (BOMX_idpt() != NULL) {
+       BOMX_idpt()->netcoal("vmode");
+       if ( m_tunnelMode )
+       {
+          if ( m_tunnelHfr )
+          {
+             BOMX_idpt()->hfrvideo(DptHakHfrMode::TUNNEL);
+          }
+       }
+       else
+       {
+          BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO);
+       }
+    }
+    m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
+    if (m_tunnelMode && m_tunnelStcChannel)
+    {
+        errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
+        if ( errCode )
+        {
+            return BOMX_BERR_TRACE(errCode);
+        }
+    }
+    errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &m_vdecStartSettings);
+    if ( errCode )
+    {
+        if ( errCode == BERR_OUT_OF_DEVICE_MEMORY )
+        {
+            /* give another try after attempting a round of rmlmk, if
+             * rmlmk fails (e.g. not enough memory could be freed up),
+             * that's game over.
+             */
+            ALOGW("decoder start: running rmlmk to free up memory");
+            nxwrap_rmlmk(m_pNxWrap);
+            BKNI_Sleep(5); /* give settling time for rmlmk. */
+            errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &m_vdecStartSettings);
+        }
+
+        if ( errCode )
+        {
+            NEXUS_Playpump_Stop(m_hPlaypump);
+            m_eosPending = false;
+            m_eosDelivered = false;
+            m_eosReceived = false;
+            m_eosPts = UINT_MAX;
+            m_renderedFrameHandler.Reset();
+            m_ptsReceived = false;
+            if (BOMX_idpt() != NULL) {
+               BOMX_idpt()->netcoal("default");
+               if ( m_tunnelMode )
+               {
+                  if ( m_tunnelHfr )
+                  {
+                      BOMX_idpt()->hfrvideo(DptHakHfrMode::TUNNEL_DEFAULT);
+                  }
+               }
+               else
+               {
+                  BOMX_idpt()->hfrvideo(DptHakHfrMode::VIDEO_DEFAULT);
+               }
+            }
+            return BOMX_BERR_TRACE(errCode);
+        }
+    }
+
+    if (!property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0))
+    {
+       NEXUS_SimpleVideoDecoderClientSettings videoDecoderClientsettings;
+       NEXUS_SimpleVideoDecoder_GetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
+       videoDecoderClientsettings.cache.timeout = 0;
+       NEXUS_SimpleVideoDecoder_SetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
+    }
+    if ( !m_tunnelMode && m_pVideoPorts[1]->IsEnabled() )
+    {
+        // Kick off the decoder frame queue
+        OutputFrameEvent();
+    }
+
     return NEXUS_SUCCESS;
 }
 
@@ -4254,7 +4281,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                          if (errCode != NEXUS_SUCCESS)
                             ALOGW("%s: error resuming stc, playback may stall..", __FUNCTION__);
                     }
-                    m_seekingState = Seek_WaitForStc;
+                    m_seekingState = Seek_WaitForStcSync;
 
                     // Pause decoder until a valid stc is available
                     errCode = SetDecodeRate(0);
@@ -5689,7 +5716,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
     }
 
-    if ( !m_tunnelMode && (m_pVideoPorts[1]->QueueDepth() > 0) )
+    if ( (!m_tunnelMode && (m_pVideoPorts[1]->QueueDepth() > 0)) || m_deferDecoderStart )
     {
         // Force a check for new output frames each time a new input frame arrives if we have output buffers ready to fill
         B_Event_Set(m_hOutputFrameEvent);
@@ -7227,7 +7254,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             OMX_BUFFERHEADERTYPE omxHeader;
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
 
-            if ( (m_seekingState == Seek_WaitForStc) && (m_vidPeekState == VideoPeekState_eWaitForInput) )
+            if ( (m_seekingState == Seek_WaitForStcSync) && (m_vidPeekState == VideoPeekState_eWaitForInput) )
             {
                 ALOGV("Video peek is enabled, disable seek handling");
                 m_seekingState = Seek_Idle;
@@ -7243,9 +7270,34 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             case Seek_Idle:
                 break;
 
-            case Seek_WaitForStc:
+            case Seek_WaitForStcSync:
             {
                 uint32_t stcSync;
+
+                if ( m_deferDecoderStart ) {
+                    int deferredStartDelay = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
+                    // Determine how long to wait before forcing the decoder start.
+                    // If there is an indication of an audio track presence we assume it's safe to wait for
+                    // a longer period. Otherwise, force the start after B_MIN_START_STC_SYNC_DELAY_MS
+                    stc_channel_st stcInfo;
+                    BOMX_ReadHwSyncInfo(m_audioHwSync, &stcInfo);
+                    int max_deferred_start_delay = stcInfo.audio_stream_active ?
+                                                       B_MAX_START_STC_SYNC_DELAY_MS : B_MIN_START_STC_SYNC_DELAY_MS;
+                    if ( deferredStartDelay >= max_deferred_start_delay ) {
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Forcing start after %d msec without receiving stc sync!",
+                              __FUNCTION__, deferredStartDelay);
+                        errCode = StartDecoder();
+                        if (errCode != NEXUS_SUCCESS) {
+                            ALOGE("%s: error starting decoder, playback may stall..", __FUNCTION__);
+                        }
+
+                        m_deferDecoderStart = false;
+                        m_seekingState = Seek_Idle;
+                        break;
+                    }
+                    // Reschedule itself when waiting for stc sync
+                    B_Event_Set(m_hOutputFrameEvent);
+                }
 
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 if (stcSync == B_STC_SYNC_INVALID_VALUE)
@@ -7254,7 +7306,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 m_stcSyncValue = stcSync;
                 ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: target pts:%u", __FUNCTION__, stcSync);
 
-                // Pause stc while we reach targer pts
+                // Pause stc while we reach target pts
                 errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
                 if (errCode != NEXUS_SUCCESS) {
                     ALOGE("%s: error setting stc rate to 0!", __FUNCTION__);
@@ -7275,7 +7327,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     m_seekingState = Seek_WaitForDecodePts;
                     m_inputDataTracker.GetFirstAndLastPts(first, last);
                     if ( UNSIGNED_LESS_THAN(m_stcSyncValue, first) || (m_stcSyncValue == first) ) {
-                        // No need to call SetStartPts as frames are ahead of target pts
+                        // No need to call SetStartPts as frames are ahead of target pts,
+                        // just resume stc
                     } else {
                         errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, m_stcSyncValue);
                         ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u",
@@ -7285,14 +7338,22 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
                 }
 
-                if (m_seekingState != Seek_WaitForDecodePts)
+                if (m_seekingState == Seek_WaitForData)
                   break;
 
-                // Resume decoder as frames still need to be decoded and possibly discarded
-                // when trying to reach target pts
-                errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
-                if (errCode != NEXUS_SUCCESS) {
-                    ALOGE("%s: error resuming decoder, playback may stall..", __FUNCTION__);
+                if ( m_deferDecoderStart ) {
+                    m_deferDecoderStart = false;
+                    errCode = StartDecoder();
+                    if (errCode != NEXUS_SUCCESS) {
+                        ALOGE("%s: error starting decoder, playback may stall..", __FUNCTION__);
+                    }
+                } else {
+                    // Resume decoder as frames still need to be decoded and possibly discarded
+                    // when trying to reach target pts
+                    errCode = SetDecodeRate(NEXUS_NORMAL_DECODE_RATE);
+                    if (errCode != NEXUS_SUCCESS) {
+                        ALOGE("%s: error resuming decoder, playback may stall..", __FUNCTION__);
+                    }
                 }
 
                 // fall thru
