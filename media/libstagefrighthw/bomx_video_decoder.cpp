@@ -7372,7 +7372,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 if ( (omxHeader.nFlags & OMX_BUFFERFLAG_EOS) && m_eosDelivered )
                 {
                     (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventBufferFlag, m_videoPortBase+1, omxHeader.nFlags, NULL);
-                    m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, true);
+                    m_renderedFrameHandler.NewRenderedFrame(omxHeader.nTimeStamp, true, true);
                     ALOGD_IF((m_logMask & B_LOG_VDEC_OUTPUT), "Reporting eos, ts=%lld pts=%u now=%" PRIu64 "",
                             omxHeader.nTimeStamp, status.pts, now);
                 }
