@@ -459,6 +459,7 @@ protected:
     nsecs_t m_startTime;
     size_t m_texturedFrames;
 
+    int m_audioHwSync;
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannelSync;
 

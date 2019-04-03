@@ -1232,6 +1232,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
        bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
        bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
+       stc_st->audio_stream_active = true;
        nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
     }
 
@@ -1291,6 +1292,12 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
     pthread_mutex_lock(&bdev->lock);
     pthread_mutex_lock(&bout->lock);
 
+    if (bout->tunneled && (bdev->stc_channel_mem_hdl != NULL)) {
+       stc_channel_st *stc_st = NULL;
+       nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
+       stc_st->audio_stream_active = false;
+       nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
+    }
     bout->ops.do_bout_close(bout);
 
     for (i = 0; i < BRCM_DEVICE_OUT_MAX; i++) {

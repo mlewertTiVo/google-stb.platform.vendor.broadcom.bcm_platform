@@ -370,6 +370,7 @@ extern void brcm_audio_set_audio_clock_accuracy(void);
 typedef struct stc_channel_st {
    NEXUS_SimpleStcChannelHandle stc_channel;
    NEXUS_SimpleStcChannelHandle stc_channel_sync;
+   bool audio_stream_active;
 } stc_channel_st;
 
 extern NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);

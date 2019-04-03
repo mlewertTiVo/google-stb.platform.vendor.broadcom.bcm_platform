@@ -1345,6 +1345,31 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    return true;
 }
 
+// shared data structure with audio hal to transfer stc information
+// for tunneling mode
+typedef struct stc_channel_st {
+    NEXUS_SimpleStcChannelHandle stc_channel;
+    NEXUS_SimpleStcChannelHandle stc_channel_sync;
+    bool audio_stream_active;
+} stc_channel_st;
+
+static void BOMX_ReadHwSyncInfo(int audioHwSync, stc_channel_st* stc_info)
+{
+    ALOG_ASSERT( (audioHwSync > 0) && (stc_info != NULL) );
+
+    void *pMemory = NULL;
+    stc_channel_st *stcChannelSt = NULL;
+    memset(stc_info, 0, sizeof(stc_channel_st));
+    NEXUS_MemoryBlockHandle hdl = (NEXUS_MemoryBlockHandle)(intptr_t)audioHwSync;
+    if ((NEXUS_MemoryBlock_Lock(hdl, &pMemory) == NEXUS_SUCCESS) && (pMemory != NULL)) {
+        stcChannelSt = (stc_channel_st*)pMemory;
+        stc_info->stc_channel = stcChannelSt->stc_channel;
+        stc_info->stc_channel_sync = stcChannelSt->stc_channel_sync;
+        stc_info->audio_stream_active = stcChannelSt->audio_stream_active;
+        NEXUS_MemoryBlock_Unlock(hdl);
+    }
+}
+
 BOMX_InputDataTracker::BOMX_InputDataTracker()
 {
     Reset();
@@ -1552,6 +1577,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
     m_texturedFrames(0),
+    m_audioHwSync(0),
     m_tunnelStcChannel(NULL),
     m_tunnelStcChannelSync(NULL),
     m_inputFlushing(false),
@@ -3442,21 +3468,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         }
         if ( pTunnel->bTunneled && pTunnel->nAudioHwSync > 0)
         {
-            // A pair of stc channel handles are wrapped by the audio hal in a global memory block
-            typedef struct stc_channel_st {
-               NEXUS_SimpleStcChannelHandle stc_channel;
-               NEXUS_SimpleStcChannelHandle stc_channel_sync;
-            } stc_channel_st;
-            NEXUS_MemoryBlockHandle hdl = (NEXUS_MemoryBlockHandle)(intptr_t)pTunnel->nAudioHwSync;
-            void *pMemory = NULL;
-            stc_channel_st *stcChannelSt = NULL;
-            if ((NEXUS_MemoryBlock_Lock(hdl, &pMemory) == NEXUS_SUCCESS) && (pMemory != NULL)) {
-                stcChannelSt = (stc_channel_st*)pMemory;
-                m_tunnelStcChannel = stcChannelSt->stc_channel;
-                m_tunnelStcChannelSync = stcChannelSt->stc_channel_sync;
-                NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
-                NEXUS_MemoryBlock_Unlock(hdl);
-            }
+            m_audioHwSync = pTunnel->nAudioHwSync;
+
+            // Read the stc info received from the audio hal
+            stc_channel_st stcInfo;
+            BOMX_ReadHwSyncInfo(m_audioHwSync, &stcInfo);
+            m_tunnelStcChannel = stcInfo.stc_channel;
+            m_tunnelStcChannelSync = stcInfo.stc_channel_sync;
+            NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
             ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
                     m_tunnelStcChannel, m_tunnelStcChannelSync);
         }
