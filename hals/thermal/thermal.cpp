@@ -27,6 +27,7 @@
 #include <hardware/thermal.h>
 #include "nxclient.h"
 
+#define THERMAL_VERBOSE         0
 #define MAX_LENGTH              50
 
 #define CPU_USAGE_FILE          "/proc/stat"
@@ -153,7 +154,7 @@ static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t 
 
     dir = opendir(TEMPERATURE_DIR);
     if (dir == 0) {
-        ALOGE("%s: failed to open directory %s: %s", __func__, TEMPERATURE_DIR, strerror(-errno));
+        ALOGE_IF(THERMAL_VERBOSE, "%s: failed to open directory %s: %s", __func__, TEMPERATURE_DIR, strerror(-errno));
         return -errno;
     }
 
@@ -182,7 +183,7 @@ static ssize_t get_temperatures(thermal_module_t *, temperature_t *list, size_t 
 
             if (idx >= ZONE_LABEL_NUM) {
                 /* Should never happen but bailing just in case */
-                ALOGE("%s: out of zone labels", __func__);
+                ALOGE_IF(THERMAL_VERBOSE, "%s: out of zone labels", __func__);
                 closedir(dir);
                 return -EPERM;
             }
@@ -216,7 +217,7 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
     FILE *file = fopen(CPU_USAGE_FILE, "r");
 
     if (file == NULL) {
-        ALOGE("%s: failed to open: %s", __func__, strerror(errno));
+        ALOGE_IF(THERMAL_VERBOSE, "%s: failed to open: %s", __func__, strerror(errno));
         return -errno;
     }
 
@@ -236,7 +237,7 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
         len = 0;
 
         if (vals != 5) {
-            ALOGE("%s: failed to read CPU information from file: %s", __func__, strerror(errno));
+            ALOGE_IF(THERMAL_VERBOSE, "%s: failed to read CPU information from file: %s", __func__, strerror(errno));
             fclose(file);
             return errno ? -errno : -EIO;
         }
@@ -249,12 +250,12 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
         cpu_file = fopen(file_name, "r");
         online = 0;
         if (cpu_file == NULL) {
-            ALOGE("%s: failed to open file: %s (%s)", __func__, file_name, strerror(errno));
+            ALOGW_IF(THERMAL_VERBOSE, "%s: failed to open file: %s (%s)", __func__, file_name, strerror(errno));
             // /sys/devices/system/cpu/cpu0/online is missing on some systems, because cpu0 can't
             // be offline.
             online = cpu_num == 0;
         } else if (1 != fscanf(cpu_file, "%d", &online)) {
-            ALOGE("%s: failed to read CPU online information from file: %s (%s)", __func__,
+            ALOGW_IF(THERMAL_VERBOSE, "%s: failed to read CPU online information from file: %s (%s)", __func__,
                     file_name, strerror(errno));
             fclose(file);
             fclose(cpu_file);
@@ -265,7 +266,7 @@ static ssize_t get_cpu_usages(thermal_module_t *, cpu_usage_t *list) {
 
         if (cpu_num >= (int)CPU_LABEL_NUM) {
             /* Should never happen but bailing just in case */
-            ALOGE("%s: out of cpu labels", __func__);
+            ALOGE_IF(THERMAL_VERBOSE, "%s: out of cpu labels", __func__);
             fclose(file);
             return -EPERM;
         }
