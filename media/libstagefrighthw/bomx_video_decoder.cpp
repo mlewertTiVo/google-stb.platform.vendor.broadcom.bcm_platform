@@ -100,6 +100,10 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_TUNNEL_PTS_INVALID_VALUE (0xFFFFFFFF)
 #define B_OUTSTANDING_FRAMES_WATERMARK (6)
 #define B_OUTSTANDING_FRAME_MAX_AGE (4)
+#define B_MIN_START_STC_SYNC_DELAY_MS (250)
+#define B_MAX_START_STC_SYNC_DELAY_MS (2000)
+#define B_MIN_SEEK_JITTER_BUFFER (22500)   // 250 msec
+#define B_HIGH_WATERMARK_JITTER_CDB (75)   // 75% of CDB size
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -7262,19 +7266,34 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             }
             case Seek_WaitForData:
             {
+                // Do not call SetStartPts immediately to filter out transitional seek requests, which happen
+                // when the app is doing consecutive fast seeks trying to reach a particular point.
+                // The xdm may fall into a race condition when consecutive video clip requests are sent
+                // back to back. We try to prevent this situation by only sending the request when the app
+                // has fed at least some video frames trying to approach the target pts. Note, there is work
+                // currently in progress to address this xdm limitation.
                 if ( m_inputDataTracker.GetNumEntries() > 0 ) {
                     unsigned first, last;
 
-                    m_seekingState = Seek_WaitForDecodePts;
                     m_inputDataTracker.GetFirstAndLastPts(first, last);
                     if ( UNSIGNED_LESS_THAN(m_stcSyncValue, first) || (m_stcSyncValue == first) ) {
-                        // No need to call SetStartPts as frames are ahead of target pts
-                    } else {
+                        // No need to call SetStartPts as frames are ahead of target pts.
+                        // Just resume stc
+                        m_seekingState = Seek_ResumeStc;
+                    } else if ( UNSIGNED_LESS_THAN(m_stcSyncValue, last) ||
+                              (last - first) >=  B_MIN_SEEK_JITTER_BUFFER ||
+                              ((status.fifoDepth * 100) / status.fifoSize <= B_HIGH_WATERMARK_JITTER_CDB) ||
+                              (m_eosPending || m_eosReceived) ) {
+                        // Fill a small jitter buffer before requesting video clipping. The high watermark
+                        // provides a way out for high resolution streams which are not able to fill up the
+                        // jitter buffer
                         errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, m_stcSyncValue);
                         ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: setting startPts:%u",
                               __FUNCTION__, m_stcSyncValue);
                         if (errCode != NEXUS_SUCCESS)
                             ALOGE("%s: error setting start pts", __FUNCTION__);
+
+                        m_seekingState = Seek_WaitForDecodePts;
                     }
                 }
 
@@ -7291,9 +7310,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 // fall thru
             }
             case Seek_WaitForDecodePts:
+            case Seek_ResumeStc:
                ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u",
                                                       status.pts, m_stcSyncValue);
-               if ( UNSIGNED_LESS_THAN(m_stcSyncValue, status.pts) || (m_stcSyncValue == status.pts) ) {
+               if ( UNSIGNED_LESS_THAN(m_stcSyncValue, status.pts) || (m_stcSyncValue == status.pts) ||
+                    (m_seekingState == Seek_ResumeStc) ) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
                        ALOGE("%s: error resuming stc, playback may stall...", __FUNCTION__);
