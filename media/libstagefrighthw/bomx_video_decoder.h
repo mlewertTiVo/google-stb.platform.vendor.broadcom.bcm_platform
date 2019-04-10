@@ -410,6 +410,7 @@ protected:
       Seek_WaitForStcSync,
       Seek_WaitForData,
       Seek_WaitForTargetPts,
+      Seek_ResumeStc,
       Seek_WaitForDecodePts
     };
     SeekingState m_seekingState;
