@@ -39,17 +39,25 @@
 #ifndef BRCM_AUDIO_NEXUS_PARSER_H
 #define BRCM_AUDIO_NEXUS_PARSER_H
 
-#define B_AUDIO_PARSER_AC3_SYNCWORD 0x0B77
+#include "bac3_probe.h"
+
+#define EAC3_SYNCFRAME_HEADER_SIZE (B_AC3_SYNC_LEN + 5)
+
+#define EAC3_STRMTYP_0 0
+#define EAC3_STRMTYP_2 2
 
 using namespace android;
 
 extern const uint8_t g_nexus_parse_eac3_syncword[2];
 
 typedef struct {
+    bool valid;
     unsigned num_audio_blks;    // numblkscod
     unsigned sample_rate;
     unsigned bitrate;
     unsigned frame_size;
+    unsigned stream_type;
+    unsigned substream_id;
 } eac3_frame_hdr_info;
 
 const uint8_t *nexus_find_ac3_sync_frame(const uint8_t *data, size_t len, eac3_frame_hdr_info *info);

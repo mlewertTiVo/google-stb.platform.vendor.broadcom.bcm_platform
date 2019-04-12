@@ -82,6 +82,7 @@ extern "C" {
 #include "nexus_simple_audio_decoder.h"
 #include "nexus_playpump.h"
 #include "bmedia_util.h"
+#include "brcm_audio_nexus_parser.h"
 
 
 #ifndef UNUSED
@@ -223,6 +224,11 @@ struct brcm_stream_out {
                     struct timespec start_ts;
                     size_t lastCount;
                     unsigned bitrate;
+                    unsigned current_pos;
+                    unsigned last_syncframe_pos;
+                    unsigned next_syncframe_pos;
+                    eac3_frame_hdr_info last_info;
+                    uint8_t partial_header[EAC3_SYNCFRAME_HEADER_SIZE];
                     unsigned frame_multiplier;
                     uint32_t transcode_latency;
                     NxClient_AudioOutputMode savedHDMIOutputMode;

@@ -60,6 +60,9 @@ using namespace android;
 
 #define BITRATE_TO_BYTES_PER_250_MS(bitrate)    (bitrate * 1024/8/4)
 
+// Use a small negative seed position to stress rollover
+#define SEED_POSITION -1000000
+
 typedef struct {
     const char *key;
     int value;
@@ -517,6 +520,10 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.current_pos = SEED_POSITION;
+    bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.last_info.valid = false;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
@@ -552,6 +559,10 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
 
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.current_pos = SEED_POSITION;
+    bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.last_info.valid = false;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
@@ -613,20 +624,7 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
         bout->nexus.direct.paused = false;
         /* Prime again only if not yet resumed */
         if (!bout->nexus.direct.priming) {
-            NEXUS_AudioDecoderStatus decoderStatus;
-            NEXUS_PlaypumpStatus playpumpStatus;
-
-            NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
-            NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
-
-            BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
-                decoderStatus.codecStatus.ac3.bitrate,
-                decoderStatus.fifoDepth,
-                decoderStatus.fifoSize,
-                playpumpStatus.fifoDepth,
-                playpumpStatus.fifoSize);
-
-            BA_LOG(DIR_DBG, "%s, %p", __FUNCTION__, bout);
+            ALOGV_FIFO_INFO(simple_decoder, playpump);
 
             BA_LOG(DIR_DBG, "%s: priming decoder for resume", __FUNCTION__);
             bout->nexus.direct.priming = true;
@@ -703,6 +701,10 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
         bout->framesPlayedTotal = 0;
         bout->nexus.direct.lastCount = 0;
         bout->nexus.direct.bitrate = 0;
+        bout->nexus.direct.current_pos = SEED_POSITION;
+        bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
+        bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
+        bout->nexus.direct.last_info.valid = false;
         bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     }
 
@@ -816,26 +818,108 @@ static void nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
         }
     } else if (bout->config.format == AUDIO_FORMAT_E_AC3) {
         // For E-AC3, get bitrate from frame sizes of all dependent frames
-        const uint8_t *syncframe = NULL;
-        size_t bytes_to_copy = 0;
-        eac3_frame_hdr_info info;
 
-        // Look for first syncframe of independent substream 0 to determine frameszie
-        syncframe = nexus_find_eac3_independent_frame((uint8_t *)buffer, bytes, 0, &info);
-        if (bout->nexus.direct.bitrate == 0) {
-            if (syncframe == NULL) {
-                ALOGE("%s: Sync frame not found", __FUNCTION__);
-            } else if (syncframe != buffer) {
-                ALOGE("%s: Stream not starting with sync frame", __FUNCTION__);
+        // Make sure next posistion is valid
+        ALOG_ASSERT((((signed)bout->nexus.direct.next_syncframe_pos - (signed)bout->nexus.direct.current_pos) + EAC3_SYNCFRAM_HEADER_SIZE) > 0);
+
+        // Look for all available syncframes in buffer
+        while (((bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos) + EAC3_SYNCFRAME_HEADER_SIZE) <= bytes) {
+            eac3_frame_hdr_info info;
+            bool header_valid = false;
+
+            if (((signed)bout->nexus.direct.current_pos - (signed)bout->nexus.direct.next_syncframe_pos) > 0) {
+                // Handle partial header from previous buffer
+                size_t bytes_in_header = bout->nexus.direct.current_pos - bout->nexus.direct.next_syncframe_pos;
+                size_t bytes_to_copy = EAC3_SYNCFRAME_HEADER_SIZE - bytes_in_header;
+
+                memcpy(&bout->nexus.direct.partial_header[bytes_in_header], buffer, bytes_to_copy);
+                header_valid = nexus_parse_eac3_frame_hdr(bout->nexus.direct.partial_header, EAC3_SYNCFRAME_HEADER_SIZE, &info);
+            } else {
+                size_t start_pos = bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos;
+                header_valid = nexus_parse_eac3_frame_hdr((const uint8_t *)buffer + start_pos, bytes - start_pos, &info);
+            }
+
+            if (header_valid) {
+                BA_LOG(DIR_DBG, "%s: eac3 at %u: blks %u rate %u bitrate %u framesize %u type %u id %u", __FUNCTION__,
+                           bout->nexus.direct.next_syncframe_pos,
+                           info.num_audio_blks, info.sample_rate, info.bitrate,
+                           info.frame_size, info.stream_type, info.substream_id);
+                // Gather all framesizes until the next independent substream 0 to determine bitrate
+                if (((info.stream_type == EAC3_STRMTYP_0) || (info.stream_type == EAC3_STRMTYP_2)) && (info.substream_id == 0)) {
+                    if (bout->nexus.direct.last_info.valid && (bout->nexus.direct.next_syncframe_pos != bout->nexus.direct.last_syncframe_pos)) {
+                        size_t frame_size = bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.last_syncframe_pos;
+                        unsigned bitrate = (frame_size * 8 * bout->nexus.direct.last_info.sample_rate) /
+                                               (bout->nexus.direct.last_info.num_audio_blks * 256 * 1000);
+                        if (bitrate != bout->nexus.direct.bitrate) {
+                            ALOGI("%s: %u -> %u Kbps EAC3 detected @ %u/%u", __FUNCTION__, bout->nexus.direct.bitrate, bitrate,
+                                  bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos);
+                            bout->nexus.direct.bitrate = bitrate;
+                        }
+                    }
+                    bout->nexus.direct.last_syncframe_pos = bout->nexus.direct.next_syncframe_pos;
+                    bout->nexus.direct.last_info = info;
+                }
+                // Move to next syncframe
+                bout->nexus.direct.next_syncframe_pos += info.frame_size;
+            } else {
+                // Where did header go?!?
+                const uint8_t *syncframe = NULL;
+                size_t start_pos;
+
+                ALOGE("%s: Sync frame not found at %u [%u..%u]", __FUNCTION__,
+                    bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos, bout->nexus.direct.current_pos + bytes);
+
+                // Search buffer for first sync frame
+                if (((signed)bout->nexus.direct.current_pos - (signed)bout->nexus.direct.next_syncframe_pos) > 0) {
+                    // Search entire buffer if the last check was in partial buffer
+                    start_pos = 0;
+                } else {
+                    // Search the byte after the last predicted syncframe
+                    start_pos = bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos + B_AC3_SYNC_LEN;
+                }
+                if (bytes > start_pos) {
+                    syncframe = nexus_find_eac3_independent_frame((const uint8_t *)buffer + start_pos, bytes - start_pos, 0, &info);
+                }
+
+                if (syncframe) {
+                    bout->nexus.direct.last_syncframe_pos = bout->nexus.direct.current_pos + (syncframe - (const uint8_t *)buffer);
+                    bout->nexus.direct.last_info = info;
+                    bout->nexus.direct.next_syncframe_pos = bout->nexus.direct.last_syncframe_pos + info.frame_size;
+                    ALOGI("%s: Reset header position to %u -> %u", __FUNCTION__,
+                          bout->nexus.direct.last_syncframe_pos, bout->nexus.direct.next_syncframe_pos);
+                } else {
+                    // No syncframes in this buffer, start looking at next one
+                    bout->nexus.direct.last_syncframe_pos = bout->nexus.direct.current_pos + bytes;
+                    bout->nexus.direct.last_info.valid = false;
+                    bout->nexus.direct.next_syncframe_pos = bout->nexus.direct.last_syncframe_pos;
+                    ALOGI("%s: Look for header at %u", __FUNCTION__, bout->nexus.direct.next_syncframe_pos);
+                }
             }
         }
 
-        if (syncframe ) { //&& (info.sample_rate == 48000) && (info.num_audio_blks == 6)) {
-            if ((info.bitrate + 2) != bout->nexus.direct.bitrate) {
-                ALOGI("%s: %u -> %u Kbps EAC3 detected", __FUNCTION__, bout->nexus.direct.bitrate, info.bitrate + 2);
-                bout->nexus.direct.bitrate = (info.bitrate + 2);
+        if (((signed)bout->nexus.direct.next_syncframe_pos - (signed)bout->nexus.direct.current_pos) >= 0) {
+            // Save partial header at end of buffer
+            if ((bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos) < bytes) {
+                size_t bytes_to_copy = bytes - (bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos);
+                BA_LOG(DIR_WRITE, "%s: Partial header at %u [%u..%u] %u", __FUNCTION__,
+                    bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos, bout->nexus.direct.current_pos + bytes,
+                    bytes_to_copy);
+                memcpy(bout->nexus.direct.partial_header,
+                       (const uint8_t *)buffer + (bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos),
+                       bytes_to_copy);
             }
+        } else {
+            // This case only happens if a header is broken into more than 2 writes.
+            size_t bytes_in_header = bout->nexus.direct.current_pos - bout->nexus.direct.next_syncframe_pos;
+            size_t bytes_to_copy = bytes;
+
+            ALOG_ASSERT(bytes_in_header < EAC3_SYNCFRAME_HEADER_SIZE);
+            ALOG_ASSERT(bytes < (EAC3_SYNCFRAME_HEADER_SIZE - bytes_in_header));
+
+            ALOGW("%s: Saving %u bytes of hader at %u to %u",  __FUNCTION__, bytes, bout->nexus.direct.current_pos, bytes_in_header);
+            memcpy(&bout->nexus.direct.partial_header[bytes_in_header], buffer, bytes);
         }
+
     } else {
         // Should never get here
         ALOG_ASSERT(0);
@@ -1006,6 +1090,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+    int ret;
 
     if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
         ALOGE("%s: not ready to output audio samples", __FUNCTION__);
@@ -1014,9 +1099,14 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
 
     // For playpump mode, parse the frame header to determine the bitrate
     if (bout->nexus.direct.playpump_mode)
-        return nexus_direct_bout_write_playpump(bout, buffer, bytes);
+        ret = nexus_direct_bout_write_playpump(bout, buffer, bytes);
     else
-        return nexus_direct_bout_write_passthrough(bout, buffer, bytes);
+        ret = nexus_direct_bout_write_passthrough(bout, buffer, bytes);
+
+    if (ret > 0)
+        bout->nexus.direct.current_pos += ret;
+
+    return ret;
 }
 
 // returns true if nexus audio can enter standby
@@ -1259,6 +1349,10 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.direct.simple_decoder = simple_decoder;
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.current_pos = SEED_POSITION;
+    bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.last_info.valid = false;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;

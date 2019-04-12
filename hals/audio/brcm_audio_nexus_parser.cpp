@@ -56,9 +56,6 @@ const uint8_t g_nexus_parse_eac3_syncword[2] = { 0x0B, 0x77 };
 #define EAC3_FRMSIZ_MASK        0x07
 #define EAC3_FRMSIZ_SHIFT       0
 
-#define EAC3_STRMTYP_0 0
-#define EAC3_STRMTYP_2 2
-
 const uint8_t *nexus_find_ac3_sync_frame(const uint8_t *data, size_t len, eac3_frame_hdr_info *info)
 {
     const uint8_t *syncframe = NULL;
@@ -123,6 +120,8 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
 
     ALOG_ASSERT(data != NULL && info != NULL);
 
+    info->valid = false;
+
     if (len == 0) {
         return false;
     }
@@ -131,7 +130,7 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
     batom_cursor_from_vec(cursor, &vec, 1);
 
     syncword = batom_cursor_uint16_be(cursor);
-    if (syncword != B_AUDIO_PARSER_AC3_SYNCWORD) {
+    if (syncword != B_AC3_SYNC) {
         ALOGW("Incorrect syncword %u", syncword);
         return false;
     }
@@ -147,7 +146,10 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
     info->num_audio_blks = num_blocks;
     info->sample_rate = probe.sample_rate;
     info->bitrate = probe.bitrate;
-    info->frame_size = res;
+    info->frame_size = res + EAC3_SYNCFRAME_HEADER_SIZE;
+    info->stream_type = (data[2] >> EAC3_STRMTYP_SHIFT) & EAC3_STRMTYP_MASK;
+    info->substream_id = (data[2] >> EAC3_SUBSTREAMID_SHIFT) & EAC3_SUBSTREAMID_MASK;
+    info->valid = true;
 
     return true;
 }
