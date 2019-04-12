@@ -1651,8 +1651,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        }
     }
 
-    m_memTracker = BOMX_VideoDecoder_AdvertisePresence(m_secureDecoder);
-
     m_videoPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eVideoDecoder, OMX_PortDomainVideo);
 
     if ( numRoles==0 || pRoles==NULL )
@@ -3547,7 +3545,6 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
 NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
     ERROR_OUT_ON_NEXUS_ACTIVE_STANDBY;
-
     ALOGD_IF((m_logMask & B_LOG_VDEC_TRANS_PORT), "Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
@@ -3629,6 +3626,11 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BKNI_Memset(&m_colorAspectsStream, 0, sizeof(m_colorAspectsStream));
             BKNI_Memset(&m_colorAspectsFinal, 0, sizeof(m_colorAspectsFinal));
         }
+
+        if (m_memTracker != -1) {
+           close(m_memTracker);
+           m_memTracker = -1;
+        }
     }
     else
     {
@@ -3636,6 +3638,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         NEXUS_SimpleVideoDecoderStartSettings vdecStartSettings;
         NEXUS_VideoDecoderTrickState vdecTrickState;
         NEXUS_Error errCode;
+
+        if (m_memTracker != -1) {
+           m_memTracker = BOMX_VideoDecoder_AdvertisePresence(m_secureDecoder);
+        }
 
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
