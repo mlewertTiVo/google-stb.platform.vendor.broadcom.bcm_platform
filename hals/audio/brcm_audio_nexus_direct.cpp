@@ -1158,8 +1158,6 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NEXUS_PlaypumpHandle playpump;
     NEXUS_Error rc;
     android::status_t status;
-    NEXUS_AudioCapabilities audioCaps;
-    bool disable_ac3_passthrough;
     NxClient_AllocSettings allocSettings;
     NEXUS_SurfaceComposition surfSettings;
     NxClient_ConnectSettings connectSettings;
@@ -1177,7 +1175,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     if (config->format == 0)
         config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
-    bout->nexus.direct.playpump_mode = false;
+    bout->nexus.direct.playpump_mode = property_get_bool(BCM_RO_AUDIO_DIRECT_PLAYPUMP, true);
     bout->nexus.direct.transcode_latency = 0;
     bout->nexus.direct.paused = false;
 
@@ -1196,19 +1194,12 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             return -EINVAL;
         break;
     case AUDIO_FORMAT_AC3:
-        nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
-        NEXUS_GetAudioCapabilities(&audioCaps);
-        disable_ac3_passthrough = property_get_bool(BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH,
-                                                    formats_str.contains("AUDIO_FORMAT_AC3")?false:true);
-        if (disable_ac3_passthrough && audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
+        if (bout->nexus.direct.playpump_mode) {
             ALOGI("Enable play pump mode");
-            bout->nexus.direct.playpump_mode = true;
             bout->nexus.direct.transcode_latency = property_get_int32(
                             BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
                             BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
-        }
-
-        if (!bout->nexus.direct.playpump_mode) {
+        } else {
             /* Suggest PCM wrapped format */
             config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
             config->format = AUDIO_FORMAT_PCM_16_BIT;
@@ -1216,16 +1207,12 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         }
         break;
     case AUDIO_FORMAT_E_AC3:
-        NEXUS_GetAudioCapabilities(&audioCaps);
-        if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+        if (bout->nexus.direct.playpump_mode) {
             ALOGI("Enable play pump mode");
-            bout->nexus.direct.playpump_mode = true;
             bout->nexus.direct.transcode_latency = property_get_int32(
                             BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
                             BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
-        }
-
-        if (!bout->nexus.direct.playpump_mode) {
+        } else {
             /* Suggest PCM wrapped format */
             config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
             config->format = AUDIO_FORMAT_PCM_16_BIT;

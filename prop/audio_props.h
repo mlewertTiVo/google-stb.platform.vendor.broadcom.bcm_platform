@@ -43,7 +43,6 @@
 
 #define BCM_RO_AUDIO_TUNNEL_PROPERTY_PES_DEBUG             "ro.nx.media.aout_t_pes_debug"
 #define BCM_RO_AUDIO_OUTPUT_DEBUG                          "ro.nx.media.aout_debug"
-#define BCM_RO_AUDIO_DISABLE_ATMOS                         "ro.nx.media.disable_atmos"
 #define BCM_RO_AUDIO_OUTPUT_EAC3_TRANS_LATENCY             "ro.nx.eac3.trans_latency"
 #define BCM_RO_AUDIO_OUTPUT_CLOCK_ACCURACY                 "ro.nx.audio.clock_acc"
 #define BCM_RO_AUDIO_DIRECT_FORCE_PCM                      "ro.nx.media.direct_force_pcm"
@@ -51,8 +50,8 @@
 #define BCM_RO_AUDIO_DISABLE_ATMOS                         "ro.nx.media.disable_atmos"
 #define BCM_RO_AUDIO_OUTPUT_LATENCY                        "ro.nx.audio.output_latency"
 #define BCM_RO_AUDIO_OUTPUT_MIXER_LATENCY                  "ro.nx.audio.mixer_latency"
-#define BCM_RO_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH        "ro.nx.media.disable_ac3_passthru"
 #define BCM_RO_AUDIO_DIRECT_DOLBY_DRC_MODE                 "ro.nx.media.direct_drc_mode"
+#define BCM_RO_AUDIO_DIRECT_PLAYPUMP                       "ro.nx.media.direct_playpump"
 #define BCM_RO_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE      "ro.nx.media.direct_stereo_mode"
 #define BCM_RO_AUDIO_SOFT_MUTING                           "ro.nx.media.soft_muting"
 #define BCM_RO_AUDIO_SOFT_UNMUTING                         "ro.nx.media.soft_unmuting"
