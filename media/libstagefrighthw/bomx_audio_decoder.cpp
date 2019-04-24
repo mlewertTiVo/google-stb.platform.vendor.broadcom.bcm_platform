@@ -3897,7 +3897,7 @@ void BOMX_AudioDecoder::RemoveOutputBuffers()
         return;
     }
 
-    ALOGV("%d Removing %u output buffers from nexus, queue %u %s", m_instanceNum, numFrames, m_pAudioPorts[1]->QueueDepth(), bFlush ? "for flushing" : "");
+    ALOGV("%d Removing %u output buffers from nexus, queue %u", m_instanceNum, numFrames, m_pAudioPorts[1]->QueueDepth());
 
     for ( i = 0; i < numFrames; i++ )
     {
