@@ -549,7 +549,7 @@ static keymaster_error_t km_config(
    km_err = BERR_OS_ERROR;
    if (!pthread_mutex_lock(&km_hdl->mtx)) {
       if (km_hdl->handle)
-         km_err = KeymasterTl_Configure(km_hdl->handle, km_params);
+         km_err = KeymasterTl_Configure(km_hdl->handle, 0, km_params);
       pthread_mutex_unlock(&km_hdl->mtx);
    }
    if (km_err != BERR_SUCCESS) {
