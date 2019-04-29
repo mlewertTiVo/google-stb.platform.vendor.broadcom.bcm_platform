@@ -361,7 +361,7 @@ static int bout_set_volume(struct audio_stream_out *aout,
          __FUNCTION__, __LINE__, aout, left, right);
 
     pthread_mutex_lock(&bout->lock);
-    if (!bout->started || bout->suspended) {
+    if (bout->suspended) {
         ALOGE("%s: device already suspended.", __FUNCTION__);
         ret = -ENOSYS;
     } else {
