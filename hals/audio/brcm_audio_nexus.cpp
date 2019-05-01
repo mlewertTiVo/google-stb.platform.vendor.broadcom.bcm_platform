@@ -495,19 +495,11 @@ static bool nexus_bout_standby_monitor(void *context)
 {
     bool standby = true;
     struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
-    bool started;
 
     if (bout != NULL) {
         pthread_mutex_lock(&bout->lock);
-        started = bout->started;
+        standby = (bout->started == false);
         pthread_mutex_unlock(&bout->lock);
-        if (started) {
-            bout->aout.common.standby(&bout->aout.common);
-            bout->suspended = true;
-        }
-        else {
-            standby = (started == false);
-        }
     }
     BA_LOG(PRIM_DBG, "%s: standby=%d", __FUNCTION__, standby);
     return standby;

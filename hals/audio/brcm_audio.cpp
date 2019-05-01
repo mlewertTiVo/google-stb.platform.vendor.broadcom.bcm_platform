@@ -255,34 +255,9 @@ static int bout_set_parameters(struct audio_stream *stream,
     // To avoid unncessary mutex contention, check that the parameters to set in question
     // are actually ones that we care.
     parms = str_parms_create_str(kvpairs);
-    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE) ||
-        str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC) ||
+    if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC) ||
         str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK)) {
         pthread_mutex_lock(&bout->lock);
-
-        if (!bout->started || bout->suspended) {
-            ALOGE("%s: device already suspended.", __FUNCTION__);
-            pthread_mutex_unlock(&bout->lock);
-            str_parms_destroy(parms);
-            return -EINVAL;
-        }
-
-        if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
-            char value[8];
-            ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
-            if (ret > 0) {
-                if (strcmp(value, "off") == 0) {
-                    BA_LOG(MAIN_DBG, "%s: Need to enter power saving mode...", __FUNCTION__);
-                    ret = bout_standby_l(stream);
-                    bout->suspended = true;
-                }
-                else if (strcmp(value, "on") == 0) {
-                    BA_LOG(MAIN_DBG, "%s: Need to exit power saving mode...", __FUNCTION__);
-                    bout->suspended = false;
-                }
-            }
-        }
-
 
         if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
             int hw_sync_id = 0;
@@ -300,7 +275,7 @@ static int bout_set_parameters(struct audio_stream *stream,
             }
         }
 
-        if (str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK) && (bout->bdev->dolby_ms == 12)) {
+        if (str_parms_has_key(parms, AUDIO_PARAMETER_HDMI_DOLBY_ATMOS_LOCK) && (bout->bdev->dolby_ms == 12) && !bout->suspended) {
             int lock = 0;
             NxClient_AudioProcessingSettings audioProcessingSettings;
 
