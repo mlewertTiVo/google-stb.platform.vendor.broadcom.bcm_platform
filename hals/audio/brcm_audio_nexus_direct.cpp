@@ -1192,6 +1192,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
         if (config->channel_mask != AUDIO_CHANNEL_OUT_STEREO)
             return -EINVAL;
+        bout->nexus.direct.playpump_mode = false;
         break;
     case AUDIO_FORMAT_AC3:
         if (bout->nexus.direct.playpump_mode) {
