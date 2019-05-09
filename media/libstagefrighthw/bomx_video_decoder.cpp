@@ -4211,6 +4211,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
     OMX_U32 portIndex)
 {
     OMX_ERRORTYPE err = OMX_ErrorNone;
+    NEXUS_VideoDecoderStatus vdecStatus;
 
     if ( StateChangeInProgress() )
     {
@@ -4272,7 +4273,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             if ( (m_tunnelMode || (m_pVideoPorts[1]->IsEnabled() && m_pVideoPorts[1]->IsPopulated())) && m_hSimpleVideoDecoder != NULL )
             {
                 m_outputFlushing = true;
-
                 NEXUS_SimpleVideoDecoder_Flush(m_hSimpleVideoDecoder);
                 ReturnDecodedFrames();
                 m_pBufferTracker->Flush();
@@ -4284,14 +4284,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 m_displayFrameAvailable = false;
                 m_frameSerial = 0;
                 B_Mutex_Unlock(m_hDisplayMutex);
+                NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
 
                 m_outputFlushing = false;
                 // Handle possible timestamp discontinuity (seeking) after a flush command
-                if ( m_tunnelMode && m_tunnelStcChannel != NULL )
+                if ( m_tunnelMode && m_tunnelStcChannel != NULL && vdecStatus.started )
                 {
                     m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
                     m_vidPeekState = VideoPeekState_eDisabled;
                     NEXUS_Error errCode;
+                    uint32_t stcSync;
 
                     if ( m_seekingState != Seek_Idle )
                     {
@@ -4305,11 +4307,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                     // Pause decoder until a valid stc is available
                     errCode = SetDecodeRate(0);
-                    if (errCode != NEXUS_SUCCESS)
-                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+                    if (errCode != NEXUS_SUCCESS) {
+                        err = OMX_ErrorNone;
+                        goto exit_out_port;
+                    }
 
                     // Reset stc sync only if it hasn't changed its last value.
-                    uint32_t stcSync;
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                     ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
                     if (stcSync == m_stcSyncValue)
@@ -4319,6 +4322,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     }
                 }
             }
+exit_out_port:
             ReturnPortBuffers(m_pVideoPorts[1]);
             RemoveAllVdecOmxAssociation();
         }
