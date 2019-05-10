@@ -485,7 +485,7 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
                    threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness, rc, errno, strerror(errno));
              }
          } else if (key_process_list[i].mode == EMNiceness) {
-             key_process_list[j].default_niceness = threads[j].niceness;
+             key_process_list[i].default_niceness = threads[j].niceness;
              if (threads[j].niceness == key_process_list[i].niceness) {
                  ALOGV("%d already at nice:%d", threads[j].tid, threads[j].niceness);
                  continue;
