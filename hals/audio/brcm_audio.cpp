@@ -46,6 +46,7 @@
 #define BRCM_BUFFER_SIZE_MS     10
 #define BRCM_SUPPORTED_DOLBY_MS11 11
 #define BRCM_SUPPORTED_DOLBY_MS12 12
+#define BOUT_WAIT_CLOSE_DELAY_MS 5
 
 struct output_hdr {
     char tag[4];
@@ -1052,6 +1053,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     struct brcm_stream_out *bout;
     brcm_devices_out_t bdevices;
     int ret = 0;
+    bool wait_for_bout_close = true;
 
     UNUSED(handle);
     UNUSED(address);
@@ -1195,6 +1197,21 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        }
     }
 
+     while (bdev->bouts[bdevices]) {
+        ALOGV("output %d is open, yield lock briefly in case a thread is waiting to close it", bdevices);
+        if (wait_for_bout_close) {
+            wait_for_bout_close = false;
+            pthread_mutex_unlock(&bdev->lock);
+            usleep(1000 * BOUT_WAIT_CLOSE_DELAY_MS);
+            pthread_mutex_lock(&bdev->lock);
+            continue;
+        }
+        ALOGE("%s: at %d, output is already opened %d\n",
+             __FUNCTION__, __LINE__, devices);
+        ret = -EBUSY;
+        goto err_lock;
+    }
+
     if (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) {
        if (bdev->stc_channel_mem_hdl == NULL) {
           NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
@@ -1210,13 +1227,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        stc_st->audio_stream_active = true;
        BA_LOG(MAIN_DBG, "Allocated stc: [%p %p]", stc_st->stc_channel, stc_st->stc_channel_sync);
        nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
-    }
-
-    if (bdev->bouts[bdevices]) {
-        ALOGE("%s: at %d, output is already opened %d\n",
-             __FUNCTION__, __LINE__, devices);
-        ret = -EBUSY;
-        goto err_lock;
     }
 
     ret = bout->ops.do_bout_open(bout);
