@@ -187,6 +187,7 @@ COMMON_DRM_TL_SOURCES += ${PLAYBACK_SOURCES}
 COMMON_DRM_TL_DEFINES += ${PLAYBACK_DEFINES}
 endif
 
+ifeq ($(DTCP_IP_SAGE_SUPPORT),y)
 #################### DTCP IP ################################
 ifeq (${DTCP_IP_SAGE},OFF)
 else
@@ -194,14 +195,6 @@ include $(LOCAL_PATH)/drm_tl/dtcp_ip/dtcp_ip.inc
 COMMON_DRM_TL_SOURCES += ${DTCP_IP_TL_SOURCES}
 COMMON_DRM_TL_DEFINES += ${DTCP_IP_TL_DEFINES}
 endif
-
-#################### NETFLIX ################################
-ifeq (${NETFLIX_SAGE},OFF)
-#Cannot build non-TL version of Common DRM library)
-else
-include $(LOCAL_PATH)/drm_tl/netflix/netflix.inc
-COMMON_DRM_TL_SOURCES += ${NETFLIX_SOURCES}
-COMMON_DRM_TL_DEFINES += ${NETFLIX_DEFINES}
 endif
 
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
