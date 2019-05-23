@@ -321,7 +321,9 @@ static int32_t nexus_tunnel_sink_get_fifo_depth(struct brcm_stream_out *bout)
         ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
     }
 
-    BA_LOG(TUN_DBG, "%s: %u(%u/%u) thrs=%u/%u", __FUNCTION__, ppStatus.fifoDepth + decStatus.fifoDepth, ppStatus.fifoDepth, decStatus.fifoDepth, KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
+    BA_LOG(TUN_DBG, "%s: %zu(%zu/%zu) thrs=%u/%u", __FUNCTION__,
+       (size_t)(ppStatus.fifoDepth + decStatus.fifoDepth), ppStatus.fifoDepth, (size_t)decStatus.fifoDepth,
+       KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
 
     return ppStatus.fifoDepth + decStatus.fifoDepth;
 }
@@ -591,7 +593,7 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decoderStatus);
         NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
 
-        BA_LOG(TUN_DBG, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
+        BA_LOG(TUN_DBG, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %zu/%zu", __FUNCTION__,
             decoderStatus.codecStatus.ac3.bitrate,
             decoderStatus.fifoDepth,
             decoderStatus.fifoSize,

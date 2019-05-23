@@ -744,7 +744,7 @@ static int nexus_direct_bout_write_passthrough(struct brcm_stream_out *bout,
         BA_LOG(VERB, "%s: at %d, getPassthroughBuffer", __FUNCTION__, __LINE__);
         ret = NEXUS_SimpleAudioDecoder_GetPassthroughBuffer(simple_decoder,
                                                             &nexus_buffer, &nexus_space);
-        BA_LOG(VERB, "%s: at %d, getPassthroughBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+        BA_LOG(VERB, "%s: at %d, getPassthroughBuffer got %zu bytes", __FUNCTION__, __LINE__, nexus_space);
         if (ret) {
             ALOGE("%s: at %d, get buffer failed, ret = %d",
                  __FUNCTION__, __LINE__, ret);
@@ -889,7 +889,9 @@ static bool nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
                 size_t start_pos;
 
                 ALOGE("%s: Sync frame not found at %u [%u..%u]", __FUNCTION__,
-                    bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos, bout->nexus.direct.current_pos + bytes);
+                    bout->nexus.direct.next_syncframe_pos,
+                    bout->nexus.direct.current_pos,
+                    bout->nexus.direct.current_pos + (unsigned)bytes);
 
                 // Search buffer for first sync frame
                 if (((signed)bout->nexus.direct.current_pos - (signed)bout->nexus.direct.next_syncframe_pos) > 0) {
@@ -923,9 +925,9 @@ static bool nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
             // Save partial header at end of buffer
             if ((bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos) < bytes) {
                 size_t bytes_to_copy = bytes - (bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos);
-                BA_LOG(DIR_WRITE, "%s: Partial header at %u [%u..%u] %u", __FUNCTION__,
-                    bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos, bout->nexus.direct.current_pos + bytes,
-                    bytes_to_copy);
+                BA_LOG(DIR_WRITE, "%s: Partial header at %u [%u..%u] %zu", __FUNCTION__,
+                    bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos,
+                    bout->nexus.direct.current_pos + (unsigned)bytes, bytes_to_copy);
                 memcpy(bout->nexus.direct.partial_header,
                        (const uint8_t *)buffer + (bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos),
                        bytes_to_copy);
@@ -938,7 +940,7 @@ static bool nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
             ALOG_ASSERT(bytes_in_header < EAC3_SYNCFRAME_HEADER_SIZE);
             ALOG_ASSERT(bytes < (EAC3_SYNCFRAME_HEADER_SIZE - bytes_in_header));
 
-            ALOGW("%s: Saving %u bytes of hader at %u to %u",  __FUNCTION__, bytes, bout->nexus.direct.current_pos, bytes_in_header);
+            ALOGW("%s: Saving %zu bytes of hader at %u to %zu",  __FUNCTION__, bytes, bout->nexus.direct.current_pos, bytes_in_header);
             memcpy(&bout->nexus.direct.partial_header[bytes_in_header], buffer, bytes);
         }
 
@@ -973,7 +975,7 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
         NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
         NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
         NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-        BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+        BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %zu/%zu, trick=%u", __FUNCTION__,
             decoderStatus.codecStatus.ac3.bitrate,
             decoderStatus.fifoDepth,
             decoderStatus.fifoSize,
@@ -1008,7 +1010,7 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
 
         BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
         ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
-        BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+        BA_LOG(VERB, "%s: at %d, Playpump_GetBuffer got %zu bytes", __FUNCTION__, __LINE__, nexus_space);
 
         if (ret) {
             ALOGE("%s: at %d, get buffer failed, ret = %d",
@@ -1079,7 +1081,7 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
             NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
             NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
             NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
-            BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+            BA_LOG(VERB, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %zu/%zu, trick=%u", __FUNCTION__,
                 decoderStatus.codecStatus.ac3.bitrate,
                 decoderStatus.fifoDepth,
                 decoderStatus.fifoSize,

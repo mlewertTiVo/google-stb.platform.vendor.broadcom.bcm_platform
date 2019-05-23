@@ -404,7 +404,7 @@ static ssize_t bout_write(struct audio_stream_out *aout,
 
     pthread_mutex_unlock(&bout->lock);
 
-    BA_LOG(VERB, "%s: at %d, stream = %p, bytes = %d, bytes_written = %d",
+    BA_LOG(VERB, "%s: at %d, stream = %p, bytes = %zu, bytes_written = %zu",
           __FUNCTION__, __LINE__, aout, bytes, bytes_written);
 
     if (bout->outDebugFile != NULL) {
@@ -800,7 +800,7 @@ static ssize_t bin_read(struct audio_stream_in *ain,
 
     pthread_mutex_unlock(&bin->lock);
 
-    BA_LOG(VERB, "%s: at %d, stream = %p, bytes = %d, bytes_read = %d\n",
+    BA_LOG(VERB, "%s: at %d, stream = %p, bytes = %zu, bytes_read = %zu\n",
           __FUNCTION__, __LINE__, ain, bytes, bytes_read);
 
     return bytes_read;

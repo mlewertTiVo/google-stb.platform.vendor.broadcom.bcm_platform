@@ -294,7 +294,7 @@ static int tunnel_base_bout_write(struct brcm_stream_out *bout, const void* buff
                             pts_buffer_u8[2], pts_buffer_u8[3]);
                     } else {
                         BA_LOG(VERB, "%s: found header at expected offset:%d, bytes:%zu",
-                        __FUNCTION__, ((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
+                        __FUNCTION__, (int)((uint8_t*)pts_buffer - (uint8_t*)buffer), bytes);
                         header_found = true;
                     }
                 } else {
@@ -457,7 +457,7 @@ static int tunnel_base_bout_write(struct brcm_stream_out *bout, const void* buff
             frame_bytes = bytes;
 
         ret = bout->tunnel_base.sink.write(bout, buffer, frame_bytes, new_frame ? &frame_header : NULL);
-        BA_LOG(TUN_WRITE, "sink write, frame_bytes:%d, ret:%d", frame_bytes, ret);
+        BA_LOG(TUN_WRITE, "sink write, frame_bytes:%zu, ret:%d", frame_bytes, ret);
         if (ret > 0) {
             bytes_written += frame_bytes;
             current_buff.add_bytes(frame_bytes);

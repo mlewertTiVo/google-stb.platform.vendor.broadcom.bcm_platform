@@ -140,7 +140,7 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
         ALOGW("Error parsing AC3 header");
         return false;
     }
-    BA_LOG(VERB, "res:%u codec:%u ch:%u sample_size:%u bitrate:%u sample_rate:%u",
+    BA_LOG(VERB, "res:%zu codec:%u ch:%u sample_size:%u bitrate:%u sample_rate:%u",
         res, probe.codec, probe.channel_count, probe.sample_size, probe.bitrate, probe.sample_rate);
 
     info->num_audio_blks = num_blocks;
