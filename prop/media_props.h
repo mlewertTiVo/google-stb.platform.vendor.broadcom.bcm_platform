@@ -55,6 +55,7 @@
 #define BCM_RO_MEDIA_OUTPUT_PORT_BUF_NUM                 "ro.nx.media.vdec_outportbuf"
 #define BCM_RO_MEDIA_FORCE_SCAN_MODE_1080P               "ro.nx.media.vdec.fsm1080p"
 #define BCM_RO_MEDIA_PROG_OVERRIDE_MODE                  "ro.nx.media.vdec.progoverride"
+#define BCM_RO_MEDIA_STC_START_TIMEOUT                   "ro.nx.media.vdec.stc_start_tout"
 
 #define BCM_RO_MEDIA_ADEC_PES_DEBUG                      "ro.nx.media.adec_pes_debug"
 #define BCM_RO_MEDIA_ADEC_INPUT_DEBUG                    "ro.nx.media.adec_input_debug"

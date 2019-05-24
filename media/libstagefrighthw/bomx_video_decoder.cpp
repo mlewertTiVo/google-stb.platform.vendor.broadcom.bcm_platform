@@ -100,8 +100,7 @@ using namespace bcm::hardware::dpthak::V1_0;
 #define B_TUNNEL_PTS_INVALID_VALUE (0xFFFFFFFF)
 #define B_OUTSTANDING_FRAMES_WATERMARK (6)
 #define B_OUTSTANDING_FRAME_MAX_AGE (4)
-#define B_MIN_START_STC_SYNC_DELAY_MS (1000)
-#define B_MAX_START_STC_SYNC_DELAY_MS (2000)
+#define B_START_STC_SYNC_TIMEOUT_SEC  (10)
 #define B_MIN_SEEK_JITTER_BUFFER (22500)   // 250 msec
 #define B_HIGH_WATERMARK_JITTER_CDB (75)   // 75% of CDB size
 /****************************************************************************
@@ -7300,14 +7299,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                 if ( m_deferDecoderStart ) {
                     int deferredStartDelay = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
-                    // Determine how long to wait before forcing the decoder start.
-                    // If there is an indication of an audio track presence we assume it's safe to wait for
-                    // a longer period. Otherwise, force the start after B_MIN_START_STC_SYNC_DELAY_MS
-                    stc_channel_st stcInfo;
-                    BOMX_ReadHwSyncInfo(m_audioHwSync, &stcInfo);
-                    int max_deferred_start_delay = stcInfo.audio_stream_active ?
-                                                       B_MAX_START_STC_SYNC_DELAY_MS : B_MIN_START_STC_SYNC_DELAY_MS;
-                    if ( deferredStartDelay >= max_deferred_start_delay ) {
+                    int maxDelay = property_get_int32(BCM_RO_MEDIA_STC_START_TIMEOUT, B_START_STC_SYNC_TIMEOUT_SEC) * 1000;
+                    if ( deferredStartDelay >= maxDelay ) {
                         ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "%s: Forcing start after %d msec without receiving stc sync!",
                               __FUNCTION__, deferredStartDelay);
                         errCode = StartDecoder();
