@@ -647,6 +647,7 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
 
 static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
 {
+    NEXUS_Error res;
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
 
@@ -658,8 +659,29 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
 
     ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
-        nexus_direct_bout_stop(bout);
-        nexus_direct_bout_start(bout);
+        if (bout->nexus.direct.playpump_mode) {
+            res = NEXUS_Playpump_Flush(playpump);
+            if (res != NEXUS_SUCCESS) {
+                ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
+                return -ENOMEM;
+            }
+        }
+
+        NEXUS_SimpleAudioDecoder_Flush(simple_decoder);
+        if (bout->nexus.direct.playpump_mode) {
+            NEXUS_AudioDecoderTrickState trickState;
+            NEXUS_Error res;
+            ALOGV("%s: pausing to prime decoder", __FUNCTION__);
+            NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+            trickState.rate = 0;
+            res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+            if (res == NEXUS_SUCCESS) {
+                bout->nexus.direct.priming = true;
+            } else {
+                bout->nexus.direct.priming = false;
+                ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+            }
+        }
     }
 
     bout->framesPlayed = 0;
