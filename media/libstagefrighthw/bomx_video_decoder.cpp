@@ -7358,6 +7358,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     if ( UNSIGNED_LESS_THAN(m_stcSyncValue, first) || (m_stcSyncValue == first) ) {
                         // No need to call SetStartPts as frames are ahead of target pts.
                         // Just resume stc
+                        ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "resume on first pts:%u, target:%u", first, m_stcSyncValue);
                         m_seekingState = Seek_ResumeStc;
                     } else if ( UNSIGNED_LESS_THAN(m_stcSyncValue, last) ||
                               (last - first) >=  B_MIN_SEEK_JITTER_BUFFER ||
@@ -7398,10 +7399,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             }
             case Seek_WaitForDecodePts:
             case Seek_ResumeStc:
-               ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u",
-                                                      status.pts, m_stcSyncValue);
-               if ( UNSIGNED_LESS_THAN(m_stcSyncValue, status.pts) || (m_stcSyncValue == status.pts) ||
-                    (m_seekingState == Seek_ResumeStc) ) {
+            {
+               ALOGD_IF((m_logMask & B_LOG_VDEC_STC), "Trying to resume, pts:%u, stc:%u, decoded:%u, firstPts:%d, state:%u",
+                                     status.pts, m_stcSyncValue, status.numDecoded, status.firstPtsPassed, m_seekingState);
+               bool reachedStcSync = (status.numDecoded > 0) &&
+                    (UNSIGNED_LESS_THAN(m_stcSyncValue, status.pts) || (m_stcSyncValue == status.pts));
+               if ( reachedStcSync || (m_seekingState == Seek_ResumeStc) ) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
                        ALOGE("%s: error resuming stc, playback may stall...", __FUNCTION__);
@@ -7412,7 +7415,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                }
 
                break;
-
+            }
             default:
                break;
 
