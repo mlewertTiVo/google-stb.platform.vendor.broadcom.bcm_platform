@@ -1602,6 +1602,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     bool uhdDisplay = false;
     int row = 0, roh = 0;
 
+    if ( tunnel && property_get_bool(BCM_RO_NX_DEBUG_NO_TUNNEL, false))
+    {
+        ALOGW("Tunnel support is disabled");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
 
