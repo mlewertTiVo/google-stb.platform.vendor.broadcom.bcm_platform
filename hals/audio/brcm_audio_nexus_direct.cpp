@@ -794,9 +794,11 @@ static int nexus_direct_bout_write_passthrough(struct brcm_stream_out *bout,
     return bytes_written;
 }
 
-static void nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
+static bool nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
                                           const void* buffer, size_t bytes)
 {
+    bool changed = false;
+
     // For playpump mode, parse the frame header to determine the bitrate
     if (bout->config.format == AUDIO_FORMAT_AC3) {
         // For AC3, get bitrate from the first header, do not adapt bitrate
@@ -812,6 +814,7 @@ static void nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
                     ALOGE("%s: Stream not starting with sync frame", __FUNCTION__);
                 }
                 bout->nexus.direct.bitrate = info.bitrate;
+                changed = true;
                 ALOGI("%s: %u Kbps AC3 detected, mpy:%u", __FUNCTION__,
                     bout->nexus.direct.bitrate, bout->nexus.direct.frame_multiplier);
             }
@@ -854,6 +857,7 @@ static void nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
                             ALOGI("%s: %u -> %u Kbps EAC3 detected @ %u/%u", __FUNCTION__, bout->nexus.direct.bitrate, bitrate,
                                   bout->nexus.direct.next_syncframe_pos, bout->nexus.direct.current_pos);
                             bout->nexus.direct.bitrate = bitrate;
+                            changed = true;
                         }
                     }
                     bout->nexus.direct.last_syncframe_pos = bout->nexus.direct.next_syncframe_pos;
@@ -924,6 +928,8 @@ static void nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
         // Should never get here
         ALOG_ASSERT(0);
     }
+
+    return changed;
 }
 
 static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
@@ -934,9 +940,10 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
     BKNI_EventHandle event = bout->nexus.event;
     size_t bytes_written = 0;
     int ret = 0;
+    bool bitrate_changed;
 
     // determine the bitrate
-    nexus_direct_bout_get_bitrate(bout, buffer, bytes);
+    bitrate_changed = nexus_direct_bout_get_bitrate(bout, buffer, bytes);
 
     while (bytes > 0) {
         void *nexus_buffer;
@@ -957,8 +964,8 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
             trickState.rate);
 
         if ( !bout->nexus.direct.priming && trickState.rate ) {
-            /* If not priming nor paused, do not buffer too much data */
-            if (bout->nexus.direct.bitrate &&
+            /* If not priming nor paused, do not buffer too much data unless bitrate change pending */
+            if (!bitrate_changed && bout->nexus.direct.bitrate &&
                 (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
                      BITRATE_TO_BYTES_PER_250_MS(bout->nexus.direct.bitrate)) {
                 BA_LOG(VERB, "%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
