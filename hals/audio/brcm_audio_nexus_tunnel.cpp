@@ -410,12 +410,15 @@ static int32_t nexus_tunnel_bout_get_fifo_depth(struct brcm_stream_out *bout)
         case NEXUS_AudioCodec_eAc3:
         case NEXUS_AudioCodec_eAc3Plus: {
             bitrate = decStatus.codecStatus.ac3.bitrate;
+            break;
         }
         case NEXUS_AudioCodec_eDts:
         case NEXUS_AudioCodec_eDtsHd: {
             bitrate = decStatus.codecStatus.dts.bitRate;
+            break;
         }
         default: {
+            break;
         }
     }
     if (bitrate > 0 && bitrate != bout->nexus.tunnel.bitrate) {
