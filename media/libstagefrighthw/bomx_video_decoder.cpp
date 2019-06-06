@@ -3782,21 +3782,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 InvalidateDecodedFrames();
                 NEXUS_Playpump_Stop(m_hPlaypump);
                 NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
-                m_eosPending = false;
-                m_eosDelivered = false;
-                m_eosReceived = false;
-                m_eosPts = UINT_MAX;
-                m_renderedFrameHandler.Reset();
-                m_ptsReceived = false;
-                m_pBufferTracker->Flush();
-                ReturnPortBuffers(m_pVideoPorts[0]);
-                m_submittedDescriptors = 0;
-                m_videoStreamInfo.valid = false;
-                m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
-                m_vndExtNrdpVidPeek = -1;
-                m_vidPeekState = VideoPeekState_eDisabled;
-                m_inputDataTracker.PrintStats();
-                m_inputDataTracker.Reset();
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
@@ -3815,6 +3800,21 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                    }
                 }
             }
+            m_eosPending = false;
+            m_eosDelivered = false;
+            m_eosReceived = false;
+            m_eosPts = UINT_MAX;
+            m_renderedFrameHandler.Reset();
+            m_ptsReceived = false;
+            m_pBufferTracker->Flush();
+            ReturnPortBuffers(m_pVideoPorts[0]);
+            m_submittedDescriptors = 0;
+            m_videoStreamInfo.valid = false;
+            m_tunnelCurrentPts = B_TUNNEL_PTS_INVALID_VALUE;
+            m_vndExtNrdpVidPeek = -1;
+            m_vidPeekState = VideoPeekState_eDisabled;
+            m_inputDataTracker.PrintStats();
+            m_inputDataTracker.Reset();
             break;
         case OMX_StateExecuting:
             if ( vdecStatus.started )
