@@ -173,6 +173,8 @@ struct av_header_t {
     }
     void reset() {
         length = 0;
+        hdr_length = 0;
+        hdr_version = 0;
         offset = 0;
     }
 private:
