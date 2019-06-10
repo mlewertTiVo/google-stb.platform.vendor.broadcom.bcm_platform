@@ -171,11 +171,18 @@ struct av_header_t {
         else
             return false;
     }
+    // resets length/offset. Use this function when parsing a stream once the header
+    // version has been locked
     void reset() {
         length = 0;
+        offset = 0;
+    }
+    // clears all data, including the header version. Use this function only when
+    // opening/closing an output stream.
+    void clear() {
+        reset();
         hdr_length = 0;
         hdr_version = 0;
-        offset = 0;
     }
 private:
     size_t length;
@@ -688,7 +695,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
        BA_LOG(TUN_DBG, "%s:      ... done", __FUNCTION__);
     }
 
-    av_header.reset();
+    av_header.clear();
     current_buff.reset();
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
@@ -1597,7 +1604,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
-    av_header.reset();
+    av_header.clear();
     current_buff.reset();
 
     bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE,true);
