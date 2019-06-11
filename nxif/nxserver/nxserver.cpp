@@ -1571,6 +1571,25 @@ static void nxserver_rmlmk(uint64_t client)
    }
 }
 
+static void nxserver_client_joined()
+{
+   int32_t dolby = property_get_int32(BCM_RO_AUDIO_DOLBY_MS, 0);
+
+   switch (dolby) {
+   case 12: {
+      NxClient_AudioProcessingSettings aps;
+      NxClient_GetAudioProcessingSettings(&aps);
+      if (aps.dolby.ddre.profile != NEXUS_DolbyDigitalReencodeProfile_eNoCompression) {
+         aps.dolby.ddre.profile = NEXUS_DolbyDigitalReencodeProfile_eNoCompression;
+         NxClient_SetAudioProcessingSettings(&aps);
+      }
+      break;
+   }
+   default:
+   break;
+   }
+}
+
 #define NXWRAP_JOIN_V "/vendor/usr/jwl"
 int main(void)
 {
@@ -1704,6 +1723,8 @@ int main(void)
           g_app.standby_monitor.running = 0;
        }
        pthread_attr_destroy(&attr);
+       ALOGI("server post-join tweaks.");
+       nxserver_client_joined();
     }
 
     ALOGI("starting i-nexus.");

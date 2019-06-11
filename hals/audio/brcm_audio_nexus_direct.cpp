@@ -1286,6 +1286,16 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
         connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+
+        NEXUS_AudioCodec nxcodec = brcm_audio_get_codec_from_format(config->format);
+        if ((nxcodec == NEXUS_AudioCodec_eAc3) || (nxcodec == NEXUS_AudioCodec_eAc3Plus)) {
+           NxClient_AudioProcessingSettings aps;
+           NxClient_GetAudioProcessingSettings(&aps);
+           if (aps.dolby.ddre.profile == NEXUS_DolbyDigitalReencodeProfile_eNoCompression) {
+              aps.dolby.ddre.profile = NEXUS_DolbyDigitalReencodeProfile_eFilmStandardCompression;
+              NxClient_SetAudioProcessingSettings(&aps);
+           }
+        }
     }
 
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
@@ -1442,6 +1452,15 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
     }
 
     // Restore output  mode if necessary
+    if (bout->nexus.direct.playpump_mode && (bout->bdev->dolby_ms == 12)) {
+       NxClient_AudioProcessingSettings aps;
+       NxClient_GetAudioProcessingSettings(&aps);
+       if (aps.dolby.ddre.profile != NEXUS_DolbyDigitalReencodeProfile_eNoCompression) {
+          aps.dolby.ddre.profile = NEXUS_DolbyDigitalReencodeProfile_eNoCompression;
+          NxClient_SetAudioProcessingSettings(&aps);
+       }
+    }
+
     if ((bout->nexus.direct.savedHDMIOutputMode != NxClient_AudioOutputMode_eMax) ||
         (bout->nexus.direct.savedSPDIFOutputMode != NxClient_AudioOutputMode_eMax))
     {
