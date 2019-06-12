@@ -90,14 +90,14 @@ public class BootCompletedReceiver extends BroadcastReceiver {
 
     /**
      *  Support NRDP HdrOutputTypes:
-     *    - "always": Force the mode to HDR always, regardless of the source data.
-     *    - "input": Let the sink output mode track the input.
+     *    - "always": DPI set to HDR_OUTPUT_ALWAYS - Device outputs HDR at all times
+     *    - "playback": DPI set to HDR_OUTPUT_PLAYBACK - Device outputs HDR only when playing HDR content.
      */
     private String getHdrOutputTypeStr() {
         String nrdpHdrOutputTypeStr = "always";
         boolean forceEotf = android.os.SystemProperties.getBoolean(forceEotfPropertyKey, true);
         if (!forceEotf) {
-            nrdpHdrOutputTypeStr = "input";
+            nrdpHdrOutputTypeStr = "playback";
         }
         return nrdpHdrOutputTypeStr;
     }
