@@ -69,6 +69,10 @@
 #define B_DRC_TO_NEXUS(cutboost) (((cutboost)*100)/127)
 #define B_DRC_FROM_NEXUS(cutboost) (((cutboost)*127)/100)
 
+#define B_STEREO_DOWNMIX_AUTO ("auto")
+#define B_STEREO_DOWNMIX_LTRT ("LtRt")
+#define B_STEREO_DOWNMIX_LORO ("LoRo")
+
 #define B_DATA_BUFFER_SIZE (12288)       // Value may be large for aac/mp3 but it's needed to accommodate high bitrates for eac3
 #define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC, also fits 7.1 with 1536 samples/frame (ac3/eac3)
 #define B_NUM_BUFFERS (6)
@@ -1002,6 +1006,21 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     }
     codecSettings.codecSettings.ac3.cut = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
     codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    if ( property_get(BCM_RO_MEDIA_ADEC_STEREO_DOWNMIX_DD, property, NULL) )
+    {
+        if ( !strcmp(property, B_STEREO_DOWNMIX_AUTO) )
+        {
+            codecSettings.codecSettings.ac3.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eAutomatic;
+        }
+        else if ( !strcmp(property, B_STEREO_DOWNMIX_LTRT) )
+        {
+            codecSettings.codecSettings.ac3.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eDolbySurroundCompatible;
+        }
+        else if ( !strcmp(property, B_STEREO_DOWNMIX_LORO) )
+        {
+            codecSettings.codecSettings.ac3.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eStandard;
+        }
+    }
 
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
@@ -1037,6 +1056,21 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     }
     codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
     codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(BCM_RO_MEDIA_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    if ( property_get(BCM_RO_MEDIA_ADEC_STEREO_DOWNMIX_DD, property, NULL) )
+    {
+        if ( !strcmp(property, B_STEREO_DOWNMIX_AUTO) )
+        {
+            codecSettings.codecSettings.ac3Plus.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eAutomatic;
+        }
+        else if ( !strcmp(property, B_STEREO_DOWNMIX_LTRT) )
+        {
+            codecSettings.codecSettings.ac3Plus.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eDolbySurroundCompatible;
+        }
+        else if ( !strcmp(property, B_STEREO_DOWNMIX_LORO) )
+        {
+            codecSettings.codecSettings.ac3Plus.stereoDownmixMode = NEXUS_AudioDecoderDolbyStereoDownmixMode_eStandard;
+        }
+    }
 
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )

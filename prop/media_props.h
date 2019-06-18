@@ -68,6 +68,7 @@
 #define BCM_RO_MEDIA_ADEC_DRC_CUT                        "ro.nx.media.adec_drc_cut"
 #define BCM_RO_MEDIA_ADEC_DRC_BOOST                      "ro.nx.media.adec_drc_boost"
 #define BCM_RO_MEDIA_ADEC_DRC_ENC_LEVEL                  "ro.nx.media.adec_drc_enc_level"
+#define BCM_RO_MEDIA_ADEC_STEREO_DOWNMIX_DD              "ro.nx.media.adec_stereo_dd"
 
 #define BCM_DYN_MEDIA_VDEV_MAIN_VIRT                     "dyn.nx.media.vdec.main.virt"
 #define BCM_DYN_MEDIA_PORT_RESET_ON_HWTEX                "dyn.nx.media.hwtex.reset_port"
