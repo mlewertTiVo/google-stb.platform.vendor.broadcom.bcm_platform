@@ -379,9 +379,9 @@ NEXUS_Error BOMX_VideoDecoder_Secure::SecureCopy(void *pDest, const void *pSrc, 
         rc = NEXUS_DmaJob_GetStatus(job, &status);
         BDBG_ASSERT(!rc && (status.currentState == NEXUS_DmaJobState_eComplete));
     }
-    else {
+    // NEXUS_SUCCESS: transfer completed atomically.
+    else if (rc != NEXUS_SUCCESS) {
         ALOGE("%s: error in dma transfer, err:%d", __FUNCTION__, rc);
-        return rc;
     }
 
     NEXUS_DmaJob_Destroy(job);
