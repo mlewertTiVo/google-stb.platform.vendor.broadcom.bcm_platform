@@ -668,33 +668,35 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
 #endif
       if (update) {
          rc = NxClient_SetDisplaySettings(&settings);
-         if (!rc) {
-            switch (settings.format) {
-            case NEXUS_VideoFormat_e4096x2160p60hz:
-            case NEXUS_VideoFormat_e3840x2160p60hz:
-            case NEXUS_VideoFormat_e4096x2160p50hz:
-            case NEXUS_VideoFormat_e3840x2160p50hz:
-            case NEXUS_VideoFormat_e4096x2160p30hz:
-            case NEXUS_VideoFormat_e3840x2160p30hz:
-            case NEXUS_VideoFormat_e4096x2160p25hz:
-            case NEXUS_VideoFormat_e3840x2160p25hz:
-            case NEXUS_VideoFormat_e4096x2160p24hz:
-            case NEXUS_VideoFormat_e3840x2160p24hz:
-               if (adv_4k) {
-                  property_set(BCM_VDR_DISPLAY_SIZE, "3840x2160");
-                  property_set(BCM_DYN_NX_DISPLAY_SIZE, "3840x2160");
-                  break;
-               } else {
-                  /* FALL THRU */
-               }
-            default:
-               property_set(BCM_VDR_DISPLAY_SIZE, "1920x1080");
-               property_set(BCM_DYN_NX_DISPLAY_SIZE, "1920x1080");
-            break;
-            }
-         }
       }
    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
+
+   // update display-size property when connected
+   if (state == HDMI_PLUGGED) {
+      switch (settings.format) {
+      case NEXUS_VideoFormat_e4096x2160p60hz:
+      case NEXUS_VideoFormat_e3840x2160p60hz:
+      case NEXUS_VideoFormat_e4096x2160p50hz:
+      case NEXUS_VideoFormat_e3840x2160p50hz:
+      case NEXUS_VideoFormat_e4096x2160p30hz:
+      case NEXUS_VideoFormat_e3840x2160p30hz:
+      case NEXUS_VideoFormat_e4096x2160p25hz:
+      case NEXUS_VideoFormat_e3840x2160p25hz:
+      case NEXUS_VideoFormat_e4096x2160p24hz:
+      case NEXUS_VideoFormat_e3840x2160p24hz:
+         if (adv_4k) {
+            property_set(BCM_VDR_DISPLAY_SIZE, "3840x2160");
+            property_set(BCM_DYN_NX_DISPLAY_SIZE, "3840x2160");
+            break;
+         } else {
+            /* FALL THRU */
+         }
+      default:
+         property_set(BCM_VDR_DISPLAY_SIZE, "1920x1080");
+         property_set(BCM_DYN_NX_DISPLAY_SIZE, "1920x1080");
+      break;
+      }
+   }
 
    // propagate the hpd state change to the registered listeners.
    for (v = mHpdCb.begin(); v != mHpdCb.end(); ++v) {
