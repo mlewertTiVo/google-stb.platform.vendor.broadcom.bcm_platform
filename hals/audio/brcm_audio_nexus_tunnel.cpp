@@ -906,18 +906,40 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
 
     BA_LOG(TUN_STATE, "%s, %p, started=%s", __FUNCTION__, bout, bout->nexus.tunnel.started?"true":"false");
     if (bout->started) {
-        nexus_tunnel_bout_stop(bout);
-        bout->started = false;
-        bout->framesPlayedTotal = 0;
-    } else {
-        bout->framesPlayed = 0;
-        bout->framesPlayedTotal = 0;
-        bout->nexus.tunnel.lastCount = 0;
-        bout->nexus.tunnel.started = false;
-        bout->nexus.tunnel.audioblocks_per_frame = 0;
-        bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
-        bout->nexus.tunnel.bitrate = 0;
+        if (bout->nexus.tunnel.debounce) {
+            // Wait for the debouncing thread to finish
+            BA_LOG(TUN_DBG, "%s: Waiting for the debouncing to finish", __FUNCTION__);
+            pthread_t thread = bout->nexus.tunnel.debounce_thread;
+            bout->nexus.tunnel.debounce_stopping = true;
+            pthread_mutex_unlock(&bout->lock);
+            pthread_join(thread, NULL);
+            pthread_mutex_lock(&bout->lock);
+            BA_LOG(TUN_DBG, "%s:     ... done", __FUNCTION__);
+        }
+        res = NEXUS_Playpump_Flush(playpump);
+        if (res != NEXUS_SUCCESS) {
+            ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
+            return -ENOMEM;
+        }
+
+        NEXUS_SimpleAudioDecoder_Flush(audio_decoder);
+        bout->nexus.tunnel.priming = false;
+        res = nexus_common_mute_and_pause(bout->bdev, audio_decoder, bout->nexus.tunnel.stc_channel, 0, 0);
+        if (res != NEXUS_SUCCESS) {
+            ALOGE("%s: Error pausing audio decoder for priming %u", __FUNCTION__, res);
+        } else {
+            bout->nexus.tunnel.priming = true;
+        }
     }
+
+    bout->started = false;
+    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
+    bout->nexus.tunnel.lastCount = 0;
+    bout->nexus.tunnel.started = false;
+    bout->nexus.tunnel.audioblocks_per_frame = 0;
+    bout->nexus.tunnel.frame_multiplier = nexus_tunnel_bout_get_frame_multipler(bout);
+    bout->nexus.tunnel.bitrate = 0;
 
     return 0;
 }

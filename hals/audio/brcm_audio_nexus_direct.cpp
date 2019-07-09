@@ -684,6 +684,7 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+    NEXUS_Error res;
 
     if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
         ALOGE("%s: at %d, device not open",
@@ -693,20 +694,37 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
 
     BA_LOG(DIR_STATE, "%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
-        nexus_direct_bout_stop(bout);
-        bout->started = false;
-        bout->framesPlayedTotal = 0;
-    } else {
-        bout->framesPlayed = 0;
-        bout->framesPlayedTotal = 0;
-        bout->nexus.direct.lastCount = 0;
-        bout->nexus.direct.bitrate = 0;
-        bout->nexus.direct.current_pos = SEED_POSITION;
-        bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
-        bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
-        bout->nexus.direct.last_info.valid = false;
-        bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
+        if (bout->nexus.direct.playpump_mode) {
+            res = NEXUS_Playpump_Flush(playpump);
+            if (res != NEXUS_SUCCESS) {
+                ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
+                return -ENOMEM;
+            }
+        }
+
+        NEXUS_SimpleAudioDecoder_Flush(simple_decoder);
+        if (bout->nexus.direct.playpump_mode) {
+            BA_LOG(DIR_DBG, "%s: pausing to prime decoder", __FUNCTION__);
+            res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.direct.simple_decoder, NULL, 0, 0);
+
+            if (res == NEXUS_SUCCESS) {
+                bout->nexus.direct.priming = true;
+            } else {
+                bout->nexus.direct.priming = false;
+                ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+            }
+        }
     }
+
+    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
+    bout->nexus.direct.lastCount = 0;
+    bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.current_pos = SEED_POSITION;
+    bout->nexus.direct.last_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.next_syncframe_pos = SEED_POSITION;
+    bout->nexus.direct.last_info.valid = false;
+    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
 
     return 0;
 }
