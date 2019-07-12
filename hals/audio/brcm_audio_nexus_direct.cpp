@@ -992,7 +992,7 @@ static int nexus_direct_bout_write_playpump(struct brcm_stream_out *bout,
                       (decoderStatus.fifoDepth + playpumpStatus.fifoDepth),
                        BITRATE_TO_BYTES_PER_250_MS(decoderStatus.codecStatus.ac3.bitrate));
                 pthread_mutex_unlock(&bout->lock);
-                ret = BKNI_WaitForEvent(event, 50);
+                ret = BKNI_WaitForEvent(event, 5);
                 pthread_mutex_lock(&bout->lock);
                 // Suspend check when relocking
                 if (bout->suspended) {

@@ -1241,7 +1241,7 @@ static int nexus_tunnel_sink_pace(struct brcm_stream_out *bout)
                     /* Enough data accumulated in playpump and decoder */
                     BKNI_ResetEvent(event);
                     pthread_mutex_unlock(&bout->lock);
-                    ret = BKNI_WaitForEvent(event, 50);
+                    ret = BKNI_WaitForEvent(event, 5);
                     pthread_mutex_lock(&bout->lock);
                     // Suspend check when relocking
                     if (bout->suspended) {
@@ -1277,7 +1277,7 @@ static int nexus_tunnel_sink_pace(struct brcm_stream_out *bout)
                         /* Enough data accumulated in playpump and decoder */
                         BKNI_ResetEvent(event);
                         pthread_mutex_unlock(&bout->lock);
-                        ret = BKNI_WaitForEvent(event, 50);
+                        ret = BKNI_WaitForEvent(event, 5);
                         pthread_mutex_lock(&bout->lock);
                         // Suspend check when relocking
                         if (bout->suspended) {
