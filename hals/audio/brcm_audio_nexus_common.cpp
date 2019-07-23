@@ -42,7 +42,8 @@
 using namespace android;
 
 #define MAX_TRICKRATE_TRIES 10
-#define MIN_FADE_DURATION 5
+#define MIN_FADE_DURATION 30
+#define MIN_MUTE_DURATION 5
 
 bool nexus_common_is_paused(NEXUS_SimpleAudioDecoderHandle simple_decoder) {
     NEXUS_AudioDecoderTrickState trickState;
@@ -69,8 +70,13 @@ NEXUS_Error nexus_common_set_volume(struct brcm_device *bdev,
             *old_level = settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
         settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = level;
-        settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration =
-            (duration < MIN_FADE_DURATION) ? MIN_FADE_DURATION : duration;
+        if (level == 0) {
+            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration =
+                (duration < MIN_MUTE_DURATION) ? MIN_MUTE_DURATION : duration;
+        } else {
+            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration =
+                (duration < MIN_FADE_DURATION) ? MIN_FADE_DURATION : duration;
+        }
         ALOGV("%s: Setting fade level to: %d (%d ms)", __FUNCTION__, level,
             settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration);
         rc = NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
