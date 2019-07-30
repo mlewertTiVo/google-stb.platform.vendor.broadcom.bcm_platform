@@ -79,7 +79,7 @@
 #define B_NUM_INPUT_BUFFERS_SECURE (4)
 #define B_STREAM_ID 0xc0
 #define B_FRAME_TIMER_INTERVAL (32)
-#define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
+#define B_INPUT_BUFFER_RET_INTERVAL_DEF (5000)
 #define B_AAC_ADTS_HEADER_LEN (7)
 #define B_RAVE_PACKET_SIZE    (188)
 #define B_MAX_AUDIO_DECODERS (2)
@@ -1769,7 +1769,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             {
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
-            ALOGI("Configuring decoder for %u channels", pPcm->nChannels);
+            ALOGI("Configuring decoder for %u channels at %u", pPcm->nChannels, pPcm->nSamplingRate);
             if ( pPcm->nChannels >= 2 )
             {
                 // Round up to nearest supported channel count of 2/6/8.
@@ -2164,7 +2164,6 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_decoderState = BOMX_AudioDecoderState_eStarted;
             case BOMX_AudioDecoderState_eStarted:
                 StopDecoder();
-                RemoveOutputBuffers();
                 break;
             }
             break;
@@ -2532,7 +2531,6 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
                 else
                 {
                     NEXUS_AudioDecoder_Flush(m_hAudioDecoder);
-                    RemoveOutputBuffers();
                     m_pBufferTracker->Flush();
                     RemoveOutputBuffers();
                     m_eosDelivered = false;
@@ -3665,11 +3663,15 @@ void BOMX_AudioDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGD_IF((m_logMask & B_LOG_ADEC_IN_RET), "%s: (%d) reached zero input buffers, minputBuffersTimerId:%p",
-              __FUNCTION__, m_instanceNum, m_inputBuffersTimerId);
+        unsigned tmrInterval = B_INPUT_BUFFER_RET_INTERVAL_DEF;
+        if ( m_sampleRate > 0 )
+        {
+            tmrInterval = 10000000 / m_sampleRate;
+        }
+
+        ALOGD_IF((m_logMask & B_LOG_ADEC_IN_RET), "(%d) reached zero input buffers, tmrId:%p interval:%u", m_instanceNum, m_inputBuffersTimerId, tmrInterval);
         CancelTimerId(m_inputBuffersTimerId);
-        m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_RETURN_INTERVAL,
-                                BOMX_AudioDecoder_InputBuffersTimer, static_cast<void *>(this));
+        m_inputBuffersTimerId = StartTimer(tmrInterval, BOMX_AudioDecoder_InputBuffersTimer, static_cast<void *>(this));
     }
 }
 
@@ -4018,7 +4020,6 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 BOMX_AudioDecoderOutputBufferInfo *pInfo;
                 pInfo = (BOMX_AudioDecoderOutputBufferInfo *)pBuffer->GetComponentPrivate();
                 ALOG_ASSERT(NULL != pInfo);
-                pInfo->nexusOwned = false;
 
                 pHeader = pBuffer->GetHeader();
                 pHeader->nOffset = 0;
@@ -4137,6 +4138,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 ReturnInputBuffers(pHeader->nTimeStamp, false);
                 // Consume this from the decoder's queue
                 NEXUS_AudioDecoder_ConsumeDecodedFrames(m_hAudioDecoder, 1);
+                pInfo->nexusOwned = false;
                 m_pesTracker.SetLastReturnedPts(m_pFrameStatus[i].pts);
             }
         }
