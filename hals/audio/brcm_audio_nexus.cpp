@@ -469,9 +469,16 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             // Sanity check when relocking
             simple_playback = bout->nexus.primary.simple_playback;
             ALOG_ASSERT(simple_playback == prev_simple_playback);
-            if (ret != BERR_SUCCESS) {
-                ALOGE("%s: at %d, playback timeout, ret = %d\n",
-                     __FUNCTION__, __LINE__, ret);
+            if (ret == NEXUS_TIMEOUT) {
+                // Should not happen under normal conditions but if it does, don't return
+                // any error or else the framework will toss out the data and that may lead
+                // to other errors (such as out of sync playback). Simply exit the function
+                // and allow the framework to try writing the same data again.
+                ALOGW("%s: timeout waiting for playpump write buffer", __FUNCTION__);
+                ret = 0;
+                break;
+            } else if (ret != NEXUS_SUCCESS) {
+                ALOGE("%s: error waiting for playpump buffer, ret:%d", __FUNCTION__, ret);
 
                 /* Stop playback */
                 NEXUS_SimpleAudioPlayback_Stop(simple_playback);
