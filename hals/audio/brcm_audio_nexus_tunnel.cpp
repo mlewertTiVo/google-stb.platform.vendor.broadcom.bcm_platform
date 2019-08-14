@@ -81,7 +81,6 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_TUNNEL_HALF_DURATION_US      (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
 #define BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS      (200)
 #define BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER       (BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS / BRCM_AUDIO_TUNNEL_DURATION_MS)
-#define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
 #define BRCM_AUDIO_TUNNEL_NEXUS_LATENCY_MS      (128)   // Audio latency is 128ms + lipsync offset in standard latency mode
 
 #define BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE      (2048)
@@ -94,9 +93,6 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define PCM_STOP_FILL_TARGET                    250 // 250 ms
 #define PCM_START_PLAY_TARGET                   375 // 375 ms
-
-#define PCM_DEBOUNCE_STOP_FILL_TARGET           300 // 300 ms
-#define PCM_DEBOUNCE_START_PLAY_TARGET          400 // 400 ms
 
 #define KBITRATE_TO_BYTES_PER_250MS(kbr)        ((kbr) * 32)    // 1024/8/8*2
 #define KBITRATE_TO_BYTES_PER_375MS(kbr)        ((kbr) * 48)    // 1024/8/8*3
@@ -321,6 +317,11 @@ static int32_t nexus_tunnel_sink_get_fifo_depth(struct brcm_stream_out *bout)
         ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
     }
 
+    BA_LOG(TUN_DBG, "%s: written ts=%" PRIu64 " pts=%" PRIu32 " -> status pts=%" PRIu32, __FUNCTION__,
+                bout->tunnel_base.last_written_ts,
+                BOMX_TickToPts((OMX_TICKS *)&bout->tunnel_base.last_written_ts),
+                decStatus.pts);
+
     BA_LOG(TUN_DBG, "%s: %zu(%zu/%zu) thrs=%u/%u", __FUNCTION__,
        (size_t)(ppStatus.fifoDepth + decStatus.fifoDepth), ppStatus.fifoDepth, (size_t)decStatus.fifoDepth,
        KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
@@ -370,9 +371,7 @@ static bool nexus_tunnel_sink_resume_int(struct brcm_stream_out *bout)
     if ((bout->nexus.tunnel.pcm_format && (uint32_t)fifoDepth >= get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                                bout->config.format,
                                                                popcount(bout->config.channel_mask),
-                                                               bout->nexus.tunnel.no_debounce?
-                                                                   PCM_START_PLAY_TARGET:
-                                                                   PCM_DEBOUNCE_START_PLAY_TARGET)) ||
+                                                               PCM_START_PLAY_TARGET)) ||
         (!bout->nexus.tunnel.pcm_format &&
           bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate))) {
         BA_LOG(TUN_DBG, "%s: Resume without priming", __FUNCTION__);
@@ -432,16 +431,6 @@ static bool nexus_tunnel_sink_resume_int(struct brcm_stream_out *bout)
     return true;
 }
 
-static void nexus_tunnel_sink_debounce_reset(struct brcm_stream_out *bout)
-{
-    bout->nexus.tunnel.debounce = false;
-    bout->nexus.tunnel.debounce_pausing = false;
-    bout->nexus.tunnel.debounce_more = false;
-    bout->nexus.tunnel.debounce_expired = false;
-    bout->nexus.tunnel.debounce_stopping = false;
-    bout->nexus.tunnel.last_pause_time = 0;
-}
-
 static int nexus_tunnel_sink_start(struct brcm_stream_out *bout)
 {
     UNUSED(bout);
@@ -478,9 +467,7 @@ static int nexus_tunnel_sink_start_int(struct brcm_stream_out *bout)
         threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                bout->config.format,
                                                popcount(bout->config.channel_mask),
-                                               bout->nexus.tunnel.no_debounce?
-                                                   PCM_START_PLAY_TARGET:
-                                                   PCM_DEBOUNCE_START_PLAY_TARGET);
+                                               PCM_START_PLAY_TARGET);
     } else {
         threshold = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
     }
@@ -553,8 +540,6 @@ static int nexus_tunnel_sink_start_int(struct brcm_stream_out *bout)
         bout->nexus.tunnel.priming = true;
     }
 
-    nexus_tunnel_sink_debounce_reset(bout);
-
     bout->nexus.tunnel.last_write_time = 0;
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
@@ -571,17 +556,6 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
     NEXUS_Error ret;
 
     BA_LOG(TUN_STATE, "%s", __FUNCTION__);
-    if (bout->nexus.tunnel.debounce) {
-       // Wait for the debouncing thread to finish
-       BA_LOG(TUN_DBG, "%s: Waiting for debouncing to finish", __FUNCTION__);
-       pthread_t thread = bout->nexus.tunnel.debounce_thread;
-       bout->nexus.tunnel.debounce_stopping = true;
-
-       pthread_mutex_unlock(&bout->lock);
-       pthread_join(thread, NULL);
-       pthread_mutex_lock(&bout->lock);
-       BA_LOG(TUN_DBG, "%s:      ... done", __FUNCTION__);
-    }
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
@@ -632,55 +606,6 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
     return 0;
 }
 
-static void *nexus_tunnel_sink_debounce_task(void *argv)
-{
-    struct brcm_stream_out *bout = (struct brcm_stream_out *)argv;
-    nsecs_t now;
-    int delta_ms;
-
-    BA_LOG(TUN_DBG, "%s: Debouncing started", __FUNCTION__);
-
-    usleep(BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS * 1000);
-
-    pthread_mutex_lock(&bout->lock);
-    while (!bout->nexus.tunnel.debounce_stopping && bout->nexus.tunnel.debounce_more) {
-       bout->nexus.tunnel.debounce_more = false;
-
-       now = systemTime(SYSTEM_TIME_MONOTONIC);
-       delta_ms = BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS - toMillisecondTimeoutDelay(bout->nexus.tunnel.last_pause_time, now);
-       if (delta_ms > 0 && delta_ms <= BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS) {
-          BA_LOG(TUN_DBG, "%s: Debouncing more for %d ms",
-                    __FUNCTION__, delta_ms);
-          pthread_mutex_unlock(&bout->lock);
-          usleep(delta_ms * 1000);
-          pthread_mutex_lock(&bout->lock);
-       }
-    }
-
-    bout->nexus.tunnel.debounce_expired = true;
-
-    if (!bout->nexus.tunnel.debounce_stopping) {
-       if (bout->nexus.tunnel.debounce_pausing) {
-          BA_LOG(TUN_DBG, "%s: Pause after debouncing", __FUNCTION__);
-          nexus_tunnel_sink_pause(bout);
-       }
-       else {
-          BA_LOG(TUN_DBG, "%s: Resume after debouncing", __FUNCTION__);
-          nexus_tunnel_sink_resume(bout);
-       }
-
-       pthread_detach(pthread_self());
-    }
-
-    nexus_tunnel_sink_debounce_reset(bout);
-
-    pthread_mutex_unlock(&bout->lock);
-
-    BA_LOG(TUN_DBG, "%s: Debouncing stopped", __FUNCTION__);
-
-    return NULL;
-}
-
 static int nexus_tunnel_sink_pause(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
@@ -690,35 +615,6 @@ static int nexus_tunnel_sink_pause(struct brcm_stream_out *bout)
     }
 
     BA_LOG(TUN_STATE, "%s", __FUNCTION__);
-    if (!bout->nexus.tunnel.no_debounce && !bout->nexus.tunnel.priming) {
-        // Audio underruns can happen when the app is not feeding the audio frames fast enough
-        // especially at the beginning of the playback or after seeking. We debounce the pause/resume
-        // operations in such underruns by deferring the pause for 0.3 seconds.
-        if (!bout->nexus.tunnel.debounce) {
-           if (pthread_create(&bout->nexus.tunnel.debounce_thread, NULL, nexus_tunnel_sink_debounce_task, bout) != 0) {
-              ALOGE("%s: Error starting debouncing", __FUNCTION__);
-           }
-           else {
-              pthread_setname_np(bout->nexus.tunnel.debounce_thread, "baudio_debounce");
-              bout->nexus.tunnel.debounce = true;
-              bout->nexus.tunnel.debounce_pausing = true;
-
-              return 0;
-           }
-        }
-
-        // No-op when debouncing
-        if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
-           BA_LOG(TUN_DBG, "%s: No-op", __FUNCTION__);
-           if (!bout->nexus.tunnel.debounce_pausing) {
-              bout->nexus.tunnel.debounce_more = true;
-              bout->nexus.tunnel.last_pause_time = systemTime(SYSTEM_TIME_MONOTONIC);
-           }
-           bout->nexus.tunnel.debounce_pausing = true;
-           return 0;
-        }
-    }
-
     if (!bout->nexus.tunnel.priming) {
         if (!nexus_tunnel_sink_pause_int(bout)) {
             return -ENOMEM;
@@ -741,13 +637,6 @@ static int nexus_tunnel_sink_resume(struct brcm_stream_out *bout)
     }
 
     BA_LOG(TUN_STATE, "%s", __FUNCTION__);
-    // No-op when debouncing
-    if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
-       BA_LOG(TUN_DBG, "%s: No-op", __FUNCTION__);
-       bout->nexus.tunnel.debounce_pausing = false;
-       bout->nexus.tunnel.debounce_more = false;
-       return 0;
-    }
 
     if (!bout->nexus.tunnel.priming) {
         BA_LOG(TUN_DBG, "%s: priming decoder for resume", __FUNCTION__);
@@ -777,16 +666,6 @@ static int nexus_tunnel_sink_flush(struct brcm_stream_out *bout)
 
     BA_LOG(TUN_STATE, "%s, %p, started=%s", __FUNCTION__, bout, bout->tunnel_base.started?"true":"false");
     if (bout->started) {
-        if (bout->nexus.tunnel.debounce) {
-            // Wait for the debouncing thread to finish
-            BA_LOG(TUN_DBG, "%s: Waiting for the debouncing to finish", __FUNCTION__);
-            pthread_t thread = bout->nexus.tunnel.debounce_thread;
-            bout->nexus.tunnel.debounce_stopping = true;
-            pthread_mutex_unlock(&bout->lock);
-            pthread_join(thread, NULL);
-            pthread_mutex_lock(&bout->lock);
-            BA_LOG(TUN_DBG, "%s:     ... done", __FUNCTION__);
-        }
         res = NEXUS_Playpump_Flush(playpump);
         if (res != NEXUS_SUCCESS) {
             ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
@@ -993,7 +872,6 @@ static int nexus_tunnel_sink_open(struct brcm_stream_out *bout)
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
-    bout->nexus.tunnel.no_debounce = property_get_bool(BCM_RO_AUDIO_TUNNEL_NO_DEBOUNCE,true);
     bout->nexus.tunnel.soft_muting = property_get_int32(BCM_RO_AUDIO_SOFT_MUTING, 10);
     bout->nexus.tunnel.soft_unmuting = property_get_int32(BCM_RO_AUDIO_SOFT_UNMUTING, 30);
     bout->nexus.tunnel.sleep_after_mute = property_get_int32(BCM_RO_AUDIO_SLEEP_AFTER_MUTE, 30);
@@ -1213,9 +1091,7 @@ static int nexus_tunnel_sink_pace(struct brcm_stream_out *bout)
                 int32_t threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                                bout->config.format,
                                                                popcount(bout->config.channel_mask),
-                                                               bout->nexus.tunnel.no_debounce?
-                                                                   PCM_STOP_FILL_TARGET:
-                                                                   PCM_DEBOUNCE_STOP_FILL_TARGET);
+                                                               PCM_STOP_FILL_TARGET);
 
                 fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
                 if (fifoDepth > threshold) {
