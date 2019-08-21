@@ -586,20 +586,7 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
-    {
-        NEXUS_AudioDecoderStatus decoderStatus;
-        NEXUS_PlaypumpStatus playpumpStatus;
-
-        NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decoderStatus);
-        NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
-
-        BA_LOG(TUN_DBG, "%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %zu/%zu", __FUNCTION__,
-            decoderStatus.codecStatus.ac3.bitrate,
-            decoderStatus.fifoDepth,
-            decoderStatus.fifoSize,
-            playpumpStatus.fifoDepth,
-            playpumpStatus.fifoSize);
-    }
+    ALOGV_FIFO_INFO(audio_decoder, playpump);
 
     if (audio_decoder) {
         NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
@@ -637,12 +624,10 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
     }
 
     BA_LOG(TUN_DBG, "%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
-    bout->tunnel_base.started = false;
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_sink_get_frame_multipler(bout);
     bout->nexus.tunnel.bitrate = 0;
-    bout->framesPlayed = 0;
 
     return 0;
 }
@@ -818,11 +803,7 @@ static int nexus_tunnel_sink_flush(struct brcm_stream_out *bout)
         }
     }
 
-    bout->started = false;
-    bout->framesPlayed = 0;
-    bout->framesPlayedTotal = 0;
     bout->nexus.tunnel.lastCount = 0;
-    bout->tunnel_base.started = false;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_sink_get_frame_multipler(bout);
     bout->nexus.tunnel.bitrate = 0;

@@ -190,9 +190,14 @@ static int tunnel_base_bout_start(struct brcm_stream_out *bout)
 
 static int tunnel_base_bout_stop(struct brcm_stream_out *bout)
 {
+    int ret = bout->tunnel_base.sink.stop(bout);
+
     av_header.clear();
     current_buff.reset();
-    return bout->tunnel_base.sink.stop(bout);
+    bout->framesPlayed = 0;
+    bout->tunnel_base.started = false;
+    bout->tunnel_base.last_written_ts = UINT64_MAX;
+    return ret;
 }
 
 static int tunnel_base_bout_pause(struct brcm_stream_out *bout)
@@ -212,7 +217,15 @@ static int tunnel_base_bout_drain(struct brcm_stream_out *bout, int action)
 
 static int tunnel_base_bout_flush(struct brcm_stream_out *bout)
 {
-    return bout->tunnel_base.sink.flush(bout);
+    int ret = bout->tunnel_base.sink.flush(bout);
+    av_header.clear();
+    current_buff.reset();
+    bout->started = false;
+    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
+    bout->tunnel_base.started = false;
+    bout->tunnel_base.last_written_ts = UINT64_MAX;
+    return ret;
 }
 
 static int tunnel_base_bout_write(struct brcm_stream_out *bout, const void* buffer, size_t bytes)
