@@ -39,6 +39,9 @@
 #ifndef BRCM_AUDIO_H
 #define BRCM_AUDIO_H
 
+/* LOG_NDEBUG = 0 allows debug logs */
+//#define LOG_NDEBUG 0
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>

@@ -45,8 +45,6 @@
 #ifndef BOMX_AUDIO_LOG_H__
 #define BOMX_AUDIO_LOG_H__
 
-/* LOG_NDEBUG = 0 allows debug logs */
-//#define LOG_NDEBUG 0
 #ifdef LOG_TAG
 #undef LOG_TAG
 #endif

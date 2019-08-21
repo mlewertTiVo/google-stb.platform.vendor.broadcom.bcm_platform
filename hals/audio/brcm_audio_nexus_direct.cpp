@@ -841,7 +841,7 @@ static bool nexus_direct_bout_get_bitrate(struct brcm_stream_out *bout,
         // For E-AC3, get bitrate from frame sizes of all dependent frames
 
         // Make sure next posistion is valid
-        ALOG_ASSERT((((signed)bout->nexus.direct.next_syncframe_pos - (signed)bout->nexus.direct.current_pos) + EAC3_SYNCFRAM_HEADER_SIZE) > 0);
+        ALOG_ASSERT((((signed)bout->nexus.direct.next_syncframe_pos - (signed)bout->nexus.direct.current_pos) + EAC3_SYNCFRAME_HEADER_SIZE) > 0);
 
         // Look for all available syncframes in buffer
         while (((bout->nexus.direct.next_syncframe_pos - bout->nexus.direct.current_pos) + EAC3_SYNCFRAME_HEADER_SIZE) <= bytes) {
