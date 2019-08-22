@@ -319,7 +319,10 @@ struct brcm_stream_out {
                     unsigned audioblocks_per_frame;
                     unsigned frame_multiplier;
                     unsigned bitrate;
+                    bool validDecoderPts;
+                    unsigned firstPts;
                     bool priming;
+                    bool paused;
                     unsigned fadeLevel;
                     int32_t soft_muting;
                     int32_t soft_unmuting;

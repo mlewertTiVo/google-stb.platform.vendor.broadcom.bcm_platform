@@ -91,13 +91,12 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID      (0xFFFFFFFF)
 
-#define PCM_STOP_FILL_TARGET                    250 // 250 ms
-#define PCM_START_PLAY_TARGET                   375 // 375 ms
-
-#define KBITRATE_TO_BYTES_PER_250MS(kbr)        ((kbr) * 32)    // 1024/8/8*2
-#define KBITRATE_TO_BYTES_PER_375MS(kbr)        ((kbr) * 48)    // 1024/8/8*3
+#define STOP_FILL_TARGET                        250 // 250 ms
+#define START_PLAY_TARGET                       375 // 375 ms
 
 #define PCM_MUTE_TIME                           10
+
+#define pts_diff_ms(a,b) ((((int32_t)a) - ((int32_t)b)) / 45)
 
 /*
  * Function declarations
@@ -283,17 +282,13 @@ static uint32_t nexus_tunnel_sink_get_latency(struct brcm_stream_out *bout)
 static int32_t nexus_tunnel_sink_get_fifo_depth(struct brcm_stream_out *bout)
 {
     NEXUS_AudioDecoderStatus decStatus;
-    NEXUS_PlaypumpStatus ppStatus;
     unsigned bitrate = 0;
+    unsigned playedPts;
+    int32_t deltaMs = 0;
 
     NEXUS_Error rc = NEXUS_SimpleAudioDecoder_GetStatus(bout->nexus.tunnel.audio_decoder, &decStatus);
     if (rc != NEXUS_SUCCESS) {
         ALOGE("%s: Error retriving audio decoder status %u", __FUNCTION__, rc);
-        return -1;
-    }
-    rc = NEXUS_Playpump_GetStatus(bout->nexus.tunnel.playpump, &ppStatus);
-    if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: Error retriving playpump status %u", __FUNCTION__, rc);
         return -1;
     }
 
@@ -317,42 +312,30 @@ static int32_t nexus_tunnel_sink_get_fifo_depth(struct brcm_stream_out *bout)
         ALOGI("%s: new bitrate detected: %u", __FUNCTION__, bout->nexus.tunnel.bitrate);
     }
 
-    BA_LOG(TUN_DBG, "%s: written ts=%" PRIu64 " pts=%" PRIu32 " -> status pts=%" PRIu32, __FUNCTION__,
-                bout->tunnel_base.last_written_ts,
-                BOMX_TickToPts((OMX_TICKS *)&bout->tunnel_base.last_written_ts),
-                decStatus.pts);
+    if (!bout->nexus.tunnel.validDecoderPts) {
+        playedPts = bout->nexus.tunnel.firstPts;
 
-    BA_LOG(TUN_DBG, "%s: %zu(%zu/%zu) thrs=%u/%u", __FUNCTION__,
-       (size_t)(ppStatus.fifoDepth + decStatus.fifoDepth), ppStatus.fifoDepth, (size_t)decStatus.fifoDepth,
-       KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate), KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate));
-
-    return ppStatus.fifoDepth + decStatus.fifoDepth;
-}
-
-static bool nexus_tunnel_sink_pause_int(struct brcm_stream_out *bout)
-{
-    NEXUS_Error res;
-
-    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
-    ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
-
-    // Stop volume deferral as soon as paused
-    bout->nexus.tunnel.deferred_volume = false;
-
-    res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
-                                     bout->nexus.tunnel.soft_muting,
-                                     bout->nexus.tunnel.sleep_after_mute);
-
-    if (res != NEXUS_SUCCESS) {
-        ALOGE("%s: Error pausing %u", __FUNCTION__, res);
-        return false;
+        if (decStatus.valid && decStatus.framesDecoded) {
+            ALOGI("%s: first valid decoder pts=%" PRIu32 " frames=%" PRIu32, __FUNCTION__, decStatus.pts, decStatus.framesDecoded);
+            bout->nexus.tunnel.validDecoderPts = true;
+        }
     }
 
-    ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
-    return true;
+    if (bout->nexus.tunnel.validDecoderPts) {
+        playedPts = decStatus.pts;
+    }
+
+    deltaMs = pts_diff_ms(BOMX_TickToPts((OMX_TICKS *)&bout->tunnel_base.last_written_ts), playedPts);
+
+    BA_LOG(TUN_DBG, "%s: written ts=%" PRIu64 " pts=%" PRIu32 " -> status pts=%" PRIu32 " = %" PRIu32 "ms", __FUNCTION__,
+                bout->tunnel_base.last_written_ts,
+                BOMX_TickToPts((OMX_TICKS *)&bout->tunnel_base.last_written_ts),
+                playedPts, deltaMs);
+
+    return deltaMs;
 }
 
-static bool nexus_tunnel_sink_resume_int(struct brcm_stream_out *bout)
+static NEXUS_Error nexus_tunnel_finish_priming(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
@@ -360,75 +343,55 @@ static bool nexus_tunnel_sink_resume_int(struct brcm_stream_out *bout)
 
     if (!nexus_common_is_paused(bout->nexus.tunnel.audio_decoder)) {
         // Not paused. Nothing to resume
-        return true;
+        return NEXUS_SUCCESS;
     }
 
-    int32_t fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
-    if (fifoDepth < 0) {
-        return false;
-    }
+    if (bout->nexus.tunnel.deferred_volume) {
+        if (bout->nexus.tunnel.deferred_volume_ms) {
+            struct timespec now;
+            int32_t deferred_ms;
 
-    if ((bout->nexus.tunnel.pcm_format && (uint32_t)fifoDepth >= get_brcm_audio_buffer_size(bout->config.sample_rate,
-                                                               bout->config.format,
-                                                               popcount(bout->config.channel_mask),
-                                                               PCM_START_PLAY_TARGET)) ||
-        (!bout->nexus.tunnel.pcm_format &&
-          bout->nexus.tunnel.bitrate > 0 && (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_375MS(bout->nexus.tunnel.bitrate))) {
-        BA_LOG(TUN_DBG, "%s: Resume without priming", __FUNCTION__);
+            clock_gettime(CLOCK_MONOTONIC, &now);
 
-        if (bout->nexus.tunnel.deferred_volume) {
-            if (bout->nexus.tunnel.deferred_volume_ms) {
-                struct timespec now;
-                int32_t deferred_ms;
-
-                clock_gettime(CLOCK_MONOTONIC, &now);
-
-                if (bout->nexus.tunnel.pcm_format) {
-                    // Resume muted first, then apply deferred volume
-                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
-                                                         0, 0);
-                    nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, 0, NULL, PCM_MUTE_TIME, 1);
-                    nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.fadeLevel, NULL,
-                                                         bout->nexus.tunnel.deferred_volume_ms, -1);
-                } else {
-                    // Apply existing deferred volume
-                    res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
-                                                         bout->nexus.tunnel.deferred_volume_ms, bout->nexus.tunnel.fadeLevel);
-                }
-
-                // Record delta between resume and first start as subsequent deferral amount
-                deferred_ms = (int32_t)((now.tv_sec - bout->nexus.tunnel.start_ts.tv_sec) * 1000) +
-                              (int32_t)((now.tv_nsec - bout->nexus.tunnel.start_ts.tv_nsec)/1000000);
-                bout->nexus.tunnel.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
-
-                // Set deferral window
-                bout->nexus.tunnel.deferred_window = now;
-                timespec_add_ms(bout->nexus.tunnel.deferred_window, MAX_VOLUME_DEFERRAL);
+            if (bout->nexus.tunnel.pcm_format) {
+                // Resume muted first, then apply deferred volume
+                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
+                                                     0, 0);
+                nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, 0, NULL, PCM_MUTE_TIME, 1);
+                nexus_common_set_volume(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.fadeLevel, NULL,
+                                                     bout->nexus.tunnel.deferred_volume_ms, -1);
             } else {
-                // No volume was set during priming, no need to defer
-                bout->nexus.tunnel.deferred_volume = false;
+                // Apply existing deferred volume
+                res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
+                                                     bout->nexus.tunnel.deferred_volume_ms, bout->nexus.tunnel.fadeLevel);
             }
-        }
 
-        if (!bout->nexus.tunnel.deferred_volume) {
-            res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
-                                                 bout->nexus.tunnel.soft_unmuting, bout->nexus.tunnel.fadeLevel);
-        }
+            // Record delta between resume and first start as subsequent deferral amount
+            deferred_ms = (int32_t)((now.tv_sec - bout->nexus.tunnel.start_ts.tv_sec) * 1000) +
+                          (int32_t)((now.tv_nsec - bout->nexus.tunnel.start_ts.tv_nsec)/1000000);
+            bout->nexus.tunnel.deferred_volume_ms = (deferred_ms > MAX_VOLUME_DEFERRAL) ? MAX_VOLUME_DEFERRAL : deferred_ms;
 
-
-        if (res != NEXUS_SUCCESS) {
-           ALOGE("%s: Error resuming %u", __FUNCTION__, res);
-           return false;
+            // Set deferral window
+            bout->nexus.tunnel.deferred_window = now;
+            timespec_add_ms(bout->nexus.tunnel.deferred_window, MAX_VOLUME_DEFERRAL);
+        } else {
+            // No volume was set during priming, no need to defer
+            bout->nexus.tunnel.deferred_volume = false;
         }
-        BA_LOG(TUN_DBG, "%s: Resume priming over", __FUNCTION__);
-        bout->nexus.tunnel.priming = false;
-    }
-    else {
-        BA_LOG(TUN_DBG, "%s: Resume with priming", __FUNCTION__);
-        bout->nexus.tunnel.priming = true;
     }
 
-    return true;
+    if (!bout->nexus.tunnel.deferred_volume) {
+        res = nexus_common_resume_and_unmute(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
+                                             bout->nexus.tunnel.soft_unmuting, bout->nexus.tunnel.fadeLevel);
+    }
+
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error resuming %u", __FUNCTION__, res);
+       return res;
+    }
+    BA_LOG(TUN_DBG, "%s: Resume priming over", __FUNCTION__);
+    bout->nexus.tunnel.priming = false;
+    return NEXUS_SUCCESS;
 }
 
 static int nexus_tunnel_sink_start(struct brcm_stream_out *bout)
@@ -438,6 +401,8 @@ static int nexus_tunnel_sink_start(struct brcm_stream_out *bout)
     BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     /* Nothing to do here.  Handle the real start when the first valid PTS is detected */
     clock_gettime(CLOCK_MONOTONIC, &bout->nexus.tunnel.start_ts);
+
+    bout->nexus.tunnel.paused = false;
 
     return 0;
 }
@@ -467,7 +432,7 @@ static int nexus_tunnel_sink_start_int(struct brcm_stream_out *bout)
         threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
                                                bout->config.format,
                                                popcount(bout->config.channel_mask),
-                                               PCM_START_PLAY_TARGET);
+                                               START_PLAY_TARGET);
     } else {
         threshold = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
     }
@@ -616,14 +581,23 @@ static int nexus_tunnel_sink_pause(struct brcm_stream_out *bout)
 
     BA_LOG(TUN_STATE, "%s", __FUNCTION__);
     if (!bout->nexus.tunnel.priming) {
-        if (!nexus_tunnel_sink_pause_int(bout)) {
-            return -ENOMEM;
+        // Stop volume deferral as soon as paused
+        bout->nexus.tunnel.deferred_volume = false;
+
+        ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
+        res = nexus_common_mute_and_pause(bout->bdev, bout->nexus.tunnel.audio_decoder, bout->tunnel_base.stc_channel,
+                                         bout->nexus.tunnel.soft_muting,
+                                         bout->nexus.tunnel.sleep_after_mute);
+
+        if (res != NEXUS_SUCCESS) {
+            ALOGE("%s: Error pausing %u", __FUNCTION__, res);
         }
-    }
-    else {
+        ALOGV_FIFO_INFO(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.playpump);
+    } else {
         BA_LOG(TUN_DBG, "%s: Stop priming", __FUNCTION__);
         bout->nexus.tunnel.priming = false;
     }
+    bout->nexus.tunnel.paused = true;
 
     return 0;
 }
@@ -636,8 +610,11 @@ static int nexus_tunnel_sink_resume(struct brcm_stream_out *bout)
        return -ENOENT;
     }
 
-    BA_LOG(TUN_STATE, "%s", __FUNCTION__);
+    BA_LOG(TUN_STATE, "%s, %p", __FUNCTION__, bout);
 
+    bout->nexus.tunnel.paused = false;
+
+    /* Prime again only if not yet resumed */
     if (!bout->nexus.tunnel.priming) {
         BA_LOG(TUN_DBG, "%s: priming decoder for resume", __FUNCTION__);
         bout->nexus.tunnel.priming = true;
@@ -686,6 +663,7 @@ static int nexus_tunnel_sink_flush(struct brcm_stream_out *bout)
     bout->nexus.tunnel.audioblocks_per_frame = 0;
     bout->nexus.tunnel.frame_multiplier = nexus_tunnel_sink_get_frame_multipler(bout);
     bout->nexus.tunnel.bitrate = 0;
+    bout->nexus.tunnel.validDecoderPts = false;
 
     return 0;
 }
@@ -730,6 +708,7 @@ static int nexus_tunnel_sink_open(struct brcm_stream_out *bout)
 
     bout->framesPlayedTotal = 0;
     bout->tunnel_base.started = false;
+    bout->nexus.tunnel.paused = false;
 
     size_t bytes_per_sample = audio_bytes_per_sample(config->format);
     bout->nexus.tunnel.pcm_format = (bytes_per_sample == 0) ? false : true;
@@ -1080,77 +1059,34 @@ static int nexus_tunnel_sink_pace(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
     BKNI_EventHandle event = bout->nexus.event;
-    NEXUS_AudioDecoderTrickState trickState;
     NEXUS_Error ret = 0;
 
-    if (bout->tunnel_base.started) {
-        if (bout->nexus.tunnel.pcm_format) {
-            NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
-            if (!bout->nexus.tunnel.priming && trickState.rate != 0) {
-                int32_t fifoDepth;
-                int32_t threshold = get_brcm_audio_buffer_size(bout->config.sample_rate,
-                                                               bout->config.format,
-                                                               popcount(bout->config.channel_mask),
-                                                               PCM_STOP_FILL_TARGET);
+    // do not pace when priming or paused
+    BA_LOG(TUN_WRITE, "%s: started:%c priming:%c paused:%c", __FUNCTION__,
+        bout->tunnel_base.started?'y':'n',
+        bout->nexus.tunnel.priming?'y':'n',
+        bout->nexus.tunnel.paused?'y':'n');
 
-                fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
-                if (fifoDepth > threshold) {
-                    /* Enough data accumulated in playpump and decoder */
-                    BKNI_ResetEvent(event);
-                    pthread_mutex_unlock(&bout->lock);
-                    ret = BKNI_WaitForEvent(event, 5);
-                    pthread_mutex_lock(&bout->lock);
-                    // Suspend check when relocking
-                    if (bout->suspended) {
-                        ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
-                        return -ENOSYS;
-                    }
-                    if (ret == BERR_TIMEOUT) {
-                        return -ETIMEDOUT;
-                    } else {
-                        /* Check again */
-                        return -EAGAIN;
-                    }
-                }
+    if (bout->tunnel_base.started && !bout->nexus.tunnel.priming && !bout->nexus.tunnel.paused) {
+        int32_t fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
+
+        if (fifoDepth > STOP_FILL_TARGET) {
+            /* Enough data accumulated in playpump and decoder */
+            BKNI_ResetEvent(event);
+            pthread_mutex_unlock(&bout->lock);
+            ret = BKNI_WaitForEvent(event, 5);
+            pthread_mutex_lock(&bout->lock);
+
+            // Suspend check when relocking
+            if (bout->suspended) {
+                ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
+                return -ENOSYS;
             }
-            else if (bout->nexus.tunnel.priming) {
-                nexus_tunnel_sink_resume_int(bout);
-            }
-        } else {
-            NEXUS_SimpleAudioDecoder_GetTrickState(audio_decoder, &trickState);
-            if (!bout->nexus.tunnel.priming && trickState.rate != 0) {
-                /* Limit from accumulating too much data */
-                if (bout->nexus.tunnel.bitrate > 0) {
-                    unsigned bitrate;
-                    int32_t fifoDepth;
-                    fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
-                    // Not supposed to happen but if it does, we just exit the function
-                    // quietly and wait for the next run to try again.
-                    if (fifoDepth < 0) {
-                        return -ETIMEDOUT;
-                    }
-                    if (bout->nexus.tunnel.bitrate > 0 &&
-                        (uint32_t)fifoDepth >= KBITRATE_TO_BYTES_PER_250MS(bout->nexus.tunnel.bitrate)) {
-                        /* Enough data accumulated in playpump and decoder */
-                        BKNI_ResetEvent(event);
-                        pthread_mutex_unlock(&bout->lock);
-                        ret = BKNI_WaitForEvent(event, 5);
-                        pthread_mutex_lock(&bout->lock);
-                        // Suspend check when relocking
-                        if (bout->suspended) {
-                            ALOGE("%s: at %d, device already suspended\n", __FUNCTION__, __LINE__);
-                            return -ENOSYS;
-                        }
-                        if (ret == BERR_TIMEOUT) {
-                            return -ETIMEDOUT;
-                        }
-                        /* Check again */
-                        return -EAGAIN;
-                    }
-                }
-            }
-            else if (bout->nexus.tunnel.priming) {
-                nexus_tunnel_sink_resume_int(bout);
+            if (ret == BERR_TIMEOUT) {
+                return -ETIMEDOUT;
+            } else {
+                /* Check again */
+                return -EAGAIN;
             }
         }
     }
@@ -1167,6 +1103,8 @@ static int nexus_tunnel_sink_set_start_pts(struct brcm_stream_out *bout, unsigne
     // init stc with the first audio timestamp
     NEXUS_SimpleStcChannel_SetStc(bout->tunnel_base.stc_channel_sync, pts);
     BA_LOG(TUN_WRITE, "%s: stc-sync initialized to:%u", __FUNCTION__, pts);
+    bout->nexus.tunnel.validDecoderPts = false;
+    bout->nexus.tunnel.firstPts = pts;
     return 0;
 }
 
@@ -1294,6 +1232,24 @@ static int nexus_tunnel_sink_write(struct brcm_stream_out *bout, const void* buf
                         __FUNCTION__, ret, nexus_space, ppStatus.fifoSize, ppStatus.fifoDepth);
                 ret = -ENOSYS;
                 break;
+            }
+        }
+
+        /* Finish priming playpump if enough data */
+        if (bout->nexus.tunnel.priming) {
+            int32_t fifoDepth = nexus_tunnel_sink_get_fifo_depth(bout);
+
+            if (fifoDepth > START_PLAY_TARGET) {
+                NEXUS_Error res;
+
+                BA_LOG(TUN_WRITE, "%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                ALOGI("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                res = nexus_tunnel_finish_priming(bout);
+                if (res == NEXUS_SUCCESS) {
+                    continue;
+                } else {
+                    ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+                }
             }
         }
     }
