@@ -183,6 +183,65 @@ struct brcm_stream_out_ops {
     int (*do_bout_get_next_write_timestamp)(struct brcm_stream_out *bout, int64_t *timestamp);
 };
 
+/*
+ * The structure below defines sink operations. A sink in this context, is just a level of
+ * abstraction of the device to which the audio is being routed. The idea is that output
+ * streams implementation should be independent of the audio route. For example, the tunneling
+ * output stream should equally output data to a digital receiver via Nexus or to a bluetooth
+ * device via a2dp simply by choosing different sinks.
+*/
+
+struct brcm_frame_header {
+    unsigned frame_length;
+    unsigned pts;
+};
+
+struct brcm_stream_sink_ops {
+    int (*open)(struct brcm_stream_out *bout);
+
+    int (*close)(struct brcm_stream_out *bout);
+
+    uint32_t (*get_latency)(struct brcm_stream_out *bout);
+
+    int (*start)(struct brcm_stream_out *bout);
+
+    int (*stop)(struct brcm_stream_out *bout);
+
+    int (*pause)(struct brcm_stream_out *bout);
+
+    int (*resume)(struct brcm_stream_out *bout);
+
+    int (*drain)(struct brcm_stream_out *bout, int action);
+
+    int (*flush)(struct brcm_stream_out *bout);
+
+    int (*set_volume)(struct brcm_stream_out *bout,
+                              float left, float right);
+
+    int (*get_render_position)(struct brcm_stream_out *bout,
+                                        uint32_t *dsp_frames);
+
+    int (*get_presentation_position)(struct brcm_stream_out *bout,
+                              uint64_t *frames);
+
+    char *(*get_parameters)(struct brcm_stream_out *bout, const char *keys);
+
+    int (*set_parameters)(struct brcm_stream_out *bout, const char *keys);
+
+    int (*dump)(struct brcm_stream_out *bout, int fd);
+
+    bool (*is_ready)(struct brcm_stream_out *bout);
+
+    int (*pace)(struct brcm_stream_out *bout);
+
+    int (*set_start_pts)(struct brcm_stream_out *bout, unsigned pts);
+
+    int (*write)(struct brcm_stream_out *bout, const void* buffer, size_t bytes,
+                 struct brcm_frame_header *frame_header);
+
+    void (*throttle)(struct brcm_stream_out *bout);
+};
+
 struct brcm_stream_out {
     struct audio_stream_out aout;
     struct brcm_stream_out_ops ops;
@@ -244,18 +303,14 @@ struct brcm_stream_out {
                     struct timespec deferred_window;
                 } direct;
                 struct {
-                    bool started;
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
                     NEXUS_PlaypumpHandle playpump;
-                    NEXUS_SimpleStcChannelHandle stc_channel;
-                    NEXUS_SimpleStcChannelHandle stc_channel_sync;
                     NEXUS_PidChannelHandle pid_channel;
                     struct timespec start_ts;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_write_time;
                     nsecs_t last_pause_time;
-                    uint64_t last_written_ts;
                     bool debounce;
                     bool debounce_pausing;
                     bool debounce_more;
@@ -267,7 +322,6 @@ struct brcm_stream_out {
                     unsigned audioblocks_per_frame;
                     unsigned frame_multiplier;
                     unsigned bitrate;
-                    FILE *pes_debug;
                     bool priming;
                     unsigned fadeLevel;
                     bool no_debounce;
@@ -288,6 +342,15 @@ struct brcm_stream_out {
         } dummy;
 #endif
     };
+
+    struct {
+        struct brcm_stream_sink_ops sink;
+        bool started;
+        uint64_t last_written_ts;
+        NEXUS_SimpleStcChannelHandle stc_channel;
+        NEXUS_SimpleStcChannelHandle stc_channel_sync;
+        FILE *pes_debug;
+    } tunnel_base;
 
     struct brcm_device *bdev;
 };
@@ -344,7 +407,9 @@ extern size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
 
 extern struct brcm_stream_out_ops nexus_bout_ops;
 extern struct brcm_stream_out_ops nexus_direct_bout_ops;
-extern struct brcm_stream_out_ops nexus_tunnel_bout_ops;
+extern struct brcm_stream_out_ops brcm_tunnel_bout_ops;
+
+extern struct brcm_stream_sink_ops nexus_tunnel_sink_ops;
 
 #if DUMMY_AUDIO_OUT
 extern struct brcm_stream_out_ops dummy_bout_ops;

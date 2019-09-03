@@ -1094,7 +1094,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         bout->ops = nexus_direct_bout_ops;
         break;
     case BRCM_DEVICE_OUT_NEXUS_TUNNEL:
-        bout->ops = nexus_tunnel_bout_ops;
+        bout->ops = brcm_tunnel_bout_ops;
         break;
     case BRCM_DEVICE_OUT_USB:
     default:
@@ -1205,9 +1205,10 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        }
        stc_channel_st *stc_st = NULL;
        nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
-       bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
-       bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
+       bout->tunnel_base.stc_channel = stc_st->stc_channel;
+       bout->tunnel_base.stc_channel_sync = stc_st->stc_channel_sync;
        stc_st->audio_stream_active = true;
+       BA_LOG(MAIN_DBG, "Allocated stc: [%p %p]", stc_st->stc_channel, stc_st->stc_channel_sync);
        nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
     }
 
@@ -1574,7 +1575,6 @@ static int bdev_open(const hw_module_t *module, const char *name,
     bdev->standbyThread->Start();
 
     bdev->dolby_ms = property_get_int32(BCM_RO_AUDIO_DOLBY_MS,0);
-
     ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;
 }

@@ -41,6 +41,7 @@ LOCAL_SRC_FILES += \
 	brcm_audio_nexus_direct.cpp \
 	brcm_audio_nexus_hdmi.cpp \
 	brcm_audio_nexus_parser.cpp \
+	brcm_tunnel_base.cpp \
 	brcm_audio_nexus_tunnel.cpp \
 	brcm_audio_nexus_common.cpp \
 	brcm_audio_builtin.cpp \
