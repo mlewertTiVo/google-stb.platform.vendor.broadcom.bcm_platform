@@ -1940,7 +1940,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        }
 
        m_secureRuntimeHeaps = m_secureDecoder;
-       if ( (g_decInstanceCount == 1) && !BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder) )
+       if ( (g_decInstanceCount == 1) && m_secureDecoder && !BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder) )
        {
            BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
            // failed, so forced to assume picture buffer heaps are secured.
@@ -4127,6 +4127,19 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
     }
     case OMX_StateIdle:
     {
+        if (oldState == OMX_StateLoaded) {
+            g_decActiveStateLock.lock();
+            if ( !property_get_int32(BCM_RO_NX_CAPABLE_DTU, 0) && (g_decInstanceCount == 1) &&
+                 !m_secureDecoder && !BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder) )
+                {
+                    BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+                    // failed, so forced to assume picture buffer heaps are secured.
+                    m_secureRuntimeHeaps = true;
+                }
+            g_decActiveState = m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR;
+            g_decActiveStateLock.unlock();
+        }
+
         // Reset saved codec config on transition to idle
         err = ConfigBufferInit();
         if (err != OMX_ErrorNone)
