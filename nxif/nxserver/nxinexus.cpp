@@ -589,10 +589,7 @@ void NexusImpl::cbHotplug(void *context, int param __unused) {
          return;
       }
       isConnected = (status.hdmi.status.connected) ? HDMI_PLUGGED : HDMI_UNPLUGGED;
-      if ((isConnected == pNexusImpl->mHpd) &&
-          (isConnected == HDMI_PLUGGED)) {
-         pNexusImpl->cbHpdAction(HDMI_UNPLUGGED);
-      }
+      if (isConnected && !status.hdmi.status.rxPowered) isConnected = HDMI_UNPLUGGED;
       pNexusImpl->mHpd = isConnected;
       pNexusImpl->cbHpdAction(isConnected);
    }
