@@ -663,9 +663,9 @@ void NexusImpl::cbHpdAction(hdmi_state state) {
          update = true;
       }
 #endif
-      if (update) {
-         rc = NxClient_SetDisplaySettings(&settings);
-      }
+
+      rc = update ? NxClient_SetDisplaySettings(&settings) : NEXUS_SUCCESS;
+
    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 
    // update display-size property when connected
