@@ -41,7 +41,6 @@
 #define LOG_VDEV_TO_GR    0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
-
 #include <fcntl.h>
 #include <log/log.h>
 #include <cutils/sched_policy.h>
@@ -8678,6 +8677,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
         NEXUS_SurfaceComposition composition;
         NEXUS_SurfaceClientSettings settings;
         NEXUS_Error errCode;
+        bool updateVideoWindow = false;
 
         NxClient_GetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
         if ( composition.virtualDisplay.width != gfxWidth ||
@@ -8687,6 +8687,16 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
              composition.visible != visible ||
              composition.contentMode != NEXUS_VideoWindowContentMode_eFull )
         {
+                // in the case of PIP video window being initialized to less than full screen, we need to trigger video window update here to maintain
+                // correct relative sizes when the PIP surface is changed.
+                if (m_redux)
+                {
+                    if(composition.position.width != pPosition->width || composition.position.height != pPosition->height)
+                    {
+                        updateVideoWindow = true;
+                    }
+                }
+
             composition.virtualDisplay.width = gfxWidth;
             composition.virtualDisplay.height = gfxHeight;
             composition.position = *pPosition;
@@ -8742,7 +8752,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
                 newX = (4096*pClipRect->x) / videoPosition.width;
                 newY = (4096*pClipRect->y) / videoPosition.height;
 
-                if ( aspectOld != aspectNew || oldW != newW || oldH != newH || oldX != newX || oldY != newY )
+                if ( updateVideoWindow || aspectOld != aspectNew || oldW != newW || oldH != newH || oldX != newX || oldY != newY )
                 {
                     settings.composition.virtualDisplay.width = videoPosition.width;
                     settings.composition.virtualDisplay.height = videoPosition.height;
