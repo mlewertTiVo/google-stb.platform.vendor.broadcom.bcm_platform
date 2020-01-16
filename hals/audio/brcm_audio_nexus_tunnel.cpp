@@ -554,14 +554,6 @@ static int nexus_tunnel_sink_stop(struct brcm_stream_out *bout)
         NEXUS_Playpump_Stop(playpump);
     }
 
-    // In case stc channel was left frozen by the previous output stream (during seeking)
-    ret = NEXUS_SimpleStcChannel_Freeze(bout->tunnel_base.stc_channel, false);
-    if (ret != NEXUS_SUCCESS) {
-       ALOGE("%s: Error starting STC %d", __FUNCTION__, ret);
-       NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
-       return -ENOSYS;
-    }
-
     BA_LOG(TUN_DBG, "%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     bout->nexus.tunnel.lastCount = 0;
     bout->nexus.tunnel.audioblocks_per_frame = 0;
