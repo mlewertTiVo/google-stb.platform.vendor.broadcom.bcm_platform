@@ -4335,6 +4335,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                         err = OMX_ErrorNone;
                         goto exit_out_port;
                     }
+                    NEXUS_Playpump_SetPause(m_hPlaypump, true);
 
                     // Reset stc sync only if it hasn't changed its last value.
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
@@ -7358,7 +7359,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     break;
                 }
 
-                 m_seekingState = Seek_WaitForData;
+                NEXUS_Playpump_SetPause(m_hPlaypump, false);
+                m_seekingState = Seek_WaitForData;
                 // fall thru
             }
             case Seek_WaitForData:
